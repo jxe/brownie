@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import MediaPlayer
 
 class MeditationPlayer: NSObject, ObservableObject {
     @Published var isPlaying = false
@@ -12,6 +13,7 @@ class MeditationPlayer: NSObject, ObservableObject {
     private var pauseTimer: Timer?
     private var isPaused = false
     private var silencePlayer: AVAudioPlayer?
+    private var currentTitle = ""
 
     @Published var selectedVoiceID: String {
         didSet { UserDefaults.standard.set(selectedVoiceID, forKey: "selectedVoiceID") }
@@ -48,24 +50,25 @@ class MeditationPlayer: NSObject, ObservableObject {
         super.init()
         synthesizer.delegate = self
         configureAudioSession()
+        setupRemoteCommands()
     }
 
-    private func makeSilencePlayer(duration: TimeInterval) -> AVAudioPlayer? {
+    private func makeSilencePlayer() -> AVAudioPlayer? {
+        // Generate a short silent WAV that loops indefinitely
         let sampleRate: Double = 44100
-        let numSamples = Int(sampleRate * duration)
+        let seconds: Double = 1
+        let numSamples = Int(sampleRate * seconds)
         let dataSize = numSamples * 2 // 16-bit mono
 
         var wav = Data()
-        // RIFF header
         wav.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
         var chunkSize = UInt32(36 + dataSize)
         wav.append(Data(bytes: &chunkSize, count: 4))
         wav.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
-        // fmt subchunk
         wav.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
         var subchunk1Size: UInt32 = 16
         wav.append(Data(bytes: &subchunk1Size, count: 4))
-        var audioFormat: UInt16 = 1 // PCM
+        var audioFormat: UInt16 = 1
         wav.append(Data(bytes: &audioFormat, count: 2))
         var numChannels: UInt16 = 1
         wav.append(Data(bytes: &numChannels, count: 2))
@@ -77,18 +80,19 @@ class MeditationPlayer: NSObject, ObservableObject {
         wav.append(Data(bytes: &blockAlign, count: 2))
         var bitsPerSample: UInt16 = 16
         wav.append(Data(bytes: &bitsPerSample, count: 2))
-        // data subchunk
         wav.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
         var subchunk2Size = UInt32(dataSize)
         wav.append(Data(bytes: &subchunk2Size, count: 4))
-        wav.append(Data(count: dataSize)) // all zeros = silence
+        wav.append(Data(count: dataSize))
 
-        return try? AVAudioPlayer(data: wav)
+        let player = try? AVAudioPlayer(data: wav)
+        player?.numberOfLoops = -1 // loop forever
+        return player
     }
 
-    private func startSilence(duration: TimeInterval) {
-        silencePlayer?.stop()
-        silencePlayer = makeSilencePlayer(duration: duration)
+    private func startSilence() {
+        guard silencePlayer == nil else { return }
+        silencePlayer = makeSilencePlayer()
         silencePlayer?.play()
     }
 
@@ -97,10 +101,35 @@ class MeditationPlayer: NSObject, ObservableObject {
         silencePlayer = nil
     }
 
+    private func setupRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in
+            self?.resume()
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            self?.pause()
+            return .success
+        }
+        center.togglePlayPauseCommand.isEnabled = false
+    }
+
+    private func updateNowPlayingInfo() {
+        var info = [String: Any]()
+        info[MPMediaItemPropertyTitle] = currentTitle
+        info[MPMediaItemPropertyArtist] = "Brownie"
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func clearNowPlayingInfo() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
     private func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.duckOthers])
+            try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
         } catch {
             print("Audio session error: \(error)")
@@ -116,6 +145,9 @@ class MeditationPlayer: NSObject, ObservableObject {
         stepIndex = 0
         isPlaying = true
         isPaused = false
+        currentTitle = meditation.title
+        startSilence()
+        updateNowPlayingInfo()
         runCurrentStep()
     }
 
@@ -136,16 +168,19 @@ class MeditationPlayer: NSObject, ObservableObject {
         pauseTimer?.invalidate()
         pauseTimer = nil
         stopSilence()
+        updateNowPlayingInfo()
     }
 
     func resume() {
         isPaused = false
         isPlaying = true
+        startSilence()
         if synthesizer.isPaused {
             synthesizer.continueSpeaking()
         } else {
             runCurrentStep()
         }
+        updateNowPlayingInfo()
     }
 
     func stop() {
@@ -159,6 +194,8 @@ class MeditationPlayer: NSObject, ObservableObject {
         stepIndex = 0
         totalSteps = 0
         currentText = ""
+        currentTitle = ""
+        clearNowPlayingInfo()
     }
 
     // MARK: - Step Execution
@@ -167,6 +204,8 @@ class MeditationPlayer: NSObject, ObservableObject {
         guard isPlaying, stepIndex < steps.count else {
             isPlaying = false
             currentText = ""
+            stopSilence()
+            clearNowPlayingInfo()
             return
         }
 
@@ -174,7 +213,6 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         switch step {
         case .speak(let text):
-            stopSilence()
             currentText = text
             let utterance = AVSpeechUtterance(string: text)
             utterance.rate = speakingRate
@@ -184,10 +222,8 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         case .pause(let duration):
             currentText = ""
-            startSilence(duration: duration)
             pauseTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
                 guard let self = self, self.isPlaying else { return }
-                self.stopSilence()
                 self.stepIndex += 1
                 self.runCurrentStep()
             }
