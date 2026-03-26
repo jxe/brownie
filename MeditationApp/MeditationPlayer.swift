@@ -8,6 +8,7 @@ class MeditationPlayer: NSObject, ObservableObject {
     @Published var stepIndex = 0
     @Published var totalSteps = 0
     @Published var currentSourceURL: URL?
+    @Published var elapsedSeconds: Int = 0
 
     @Published var selectedVoiceID: String {
         didSet { UserDefaults.standard.set(selectedVoiceID, forKey: "selectedVoiceID") }
@@ -282,6 +283,7 @@ class MeditationPlayer: NSObject, ObservableObject {
         currentText = ""
         currentTitle = ""
         playbackStarted = false
+        elapsedSeconds = 0
         clearNowPlayingInfo()
     }
 
@@ -302,6 +304,11 @@ class MeditationPlayer: NSObject, ObservableObject {
         guard let player = streamingPlayer,
               let position = player.currentPlaybackPosition() else { return }
 
+        if let elapsed = player.currentTime() {
+            let secs = Int(elapsed)
+            if elapsedSeconds != secs { elapsedSeconds = secs }
+        }
+
         if let marker = player.stepMarker(at: position) {
             if stepIndex != marker.stepIndex {
                 stepIndex = marker.stepIndex
@@ -317,6 +324,7 @@ class MeditationPlayer: NSObject, ObservableObject {
     private func handlePlaybackFinished() {
         isPlaying = false
         currentText = ""
+        elapsedSeconds = 0
         stopPositionTracking()
         clearNowPlayingInfo()
     }

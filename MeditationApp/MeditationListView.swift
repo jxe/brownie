@@ -12,70 +12,11 @@ struct MeditationListView: View {
         NavigationStack {
             List {
                 ForEach(files, id: \.self) { url in
-                    HStack {
-                        Button {
-                            editFile(url)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(titleFor(url))
-                                    .font(.body)
-                                Text(url.deletingPathExtension().lastPathComponent)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        Button {
-                            if player.currentSourceURL == url {
-                                player.togglePause()
-                            } else {
-                                playFile(url)
-                            }
-                        } label: {
-                            Image(systemName: player.currentSourceURL == url && player.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.callout)
-                                .foregroundStyle(.white)
-                                .frame(width: 36, height: 36)
-                                .background(player.currentSourceURL == url ? Color.accentColor : Color.accentColor.opacity(0.8))
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.borderless)
-                        .padding(.trailing, 4)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { deleteFile(url) } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button { duplicateFile(url) } label: {
-                            Label("Duplicate", systemImage: "doc.on.doc")
-                        }
-                        .tint(.indigo)
-                    }
-                    .contextMenu {
-                        Button { editFile(url) } label: {
-                            Label("Edit", systemImage: "pencil")
-                        }
-                        Button { duplicateFile(url) } label: {
-                            Label("Duplicate", systemImage: "doc.on.doc")
-                        }
-                        Button { playFile(url) } label: {
-                            Label("Play", systemImage: "play")
-                        }
-                        Divider()
-                        Button(role: .destructive) { deleteFile(url) } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
+                    rowView(for: url)
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Meditations")
+            .navigationTitle("Brownie")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     NavigationLink {
@@ -107,6 +48,81 @@ struct MeditationListView: View {
                 refreshFiles()
             }
         }
+    }
+
+    @ViewBuilder
+    private func rowView(for url: URL) -> some View {
+        let isCurrent = player.currentSourceURL == url
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(titleFor(url))
+                    .font(.body)
+                if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
+                    Text(formatTime(player.elapsedSeconds))
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                } else {
+                    Text(url.deletingPathExtension().lastPathComponent)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 2)
+
+            Spacer()
+
+            Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill")
+                .font(.callout)
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(isCurrent ? Color.accentColor : Color.accentColor.opacity(0.8))
+                .clipShape(Circle())
+                .padding(.trailing, 4)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isCurrent {
+                player.togglePause()
+            } else {
+                playFile(url)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) { deleteFile(url) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .leading) {
+            Button { editFile(url) } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.accentColor)
+            Button { duplicateFile(url) } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
+            .tint(.indigo)
+        }
+        .contextMenu {
+            Button { editFile(url) } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            Button { duplicateFile(url) } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
+            Button { playFile(url) } label: {
+                Label("Play", systemImage: "play")
+            }
+            Divider()
+            Button(role: .destructive) { deleteFile(url) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    private func formatTime(_ totalSeconds: Int) -> String {
+        let m = totalSeconds / 60
+        let s = totalSeconds % 60
+        return String(format: "%d:%02d", m, s)
     }
 
     private func refreshFiles() {
