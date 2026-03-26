@@ -7,6 +7,7 @@ class MeditationPlayer: NSObject, ObservableObject {
     @Published var currentText = ""
     @Published var stepIndex = 0
     @Published var totalSteps = 0
+    @Published var currentSourceURL: URL?
 
     private let synthesizer = AVSpeechSynthesizer()
     private var steps: [MeditationStep] = []
@@ -138,8 +139,9 @@ class MeditationPlayer: NSObject, ObservableObject {
 
     // MARK: - Controls
 
-    func play(_ meditation: Meditation) {
+    func play(_ meditation: Meditation, sourceURL: URL? = nil) {
         stop()
+        currentSourceURL = sourceURL
         steps = meditation.steps
         totalSteps = steps.count
         stepIndex = 0
@@ -186,6 +188,7 @@ class MeditationPlayer: NSObject, ObservableObject {
     func stop() {
         isPaused = false
         isPlaying = false
+        currentSourceURL = nil
         synthesizer.stopSpeaking(at: .immediate)
         pauseTimer?.invalidate()
         pauseTimer = nil

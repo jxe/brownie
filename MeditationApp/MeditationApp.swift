@@ -55,18 +55,15 @@ struct MiniPlayerBar: View {
             ProgressView(value: Double(player.stepIndex), total: max(Double(player.totalSteps), 1))
                 .tint(.white.opacity(0.7))
 
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 Text(player.currentText.isEmpty ? "..." : player.currentText)
                     .font(.subheadline)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button {
-                    player.togglePause()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title3)
-                }
+                Image(systemName: "chevron.up")
+                    .font(.caption)
+                    .opacity(0.6)
 
                 Button {
                     player.stop()

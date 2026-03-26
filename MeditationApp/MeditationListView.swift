@@ -30,13 +30,17 @@ struct MeditationListView: View {
                         Spacer()
 
                         Button {
-                            playFile(url)
+                            if player.currentSourceURL == url {
+                                player.togglePause()
+                            } else {
+                                playFile(url)
+                            }
                         } label: {
-                            Image(systemName: "play.fill")
+                            Image(systemName: player.currentSourceURL == url && player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.callout)
                                 .foregroundStyle(.white)
                                 .frame(width: 36, height: 36)
-                                .background(Color.accentColor)
+                                .background(player.currentSourceURL == url ? Color.accentColor : Color.accentColor.opacity(0.8))
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.borderless)
@@ -126,7 +130,7 @@ struct MeditationListView: View {
     private func playFile(_ url: URL) {
         guard let content = FileManager.default.readMeditation(at: url) else { return }
         let meditation = MeditationParser.parse(content)
-        player.play(meditation)
+        player.play(meditation, sourceURL: url)
     }
 
     private func editFile(_ url: URL) {
