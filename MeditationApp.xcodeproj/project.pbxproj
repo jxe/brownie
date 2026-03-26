@@ -19,6 +19,8 @@
 		A100000A000000000000000A /* MedTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B000000000000000B /* MedTextEditor.swift */; };
 		A100000C000000000000000C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A200000E000000000000000E /* Assets.xcassets */; };
 		A100000F000000000000000F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000F000000000000000F /* SettingsView.swift */; };
+		A10000100000000000000010 /* AudioRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000100000000000000010 /* AudioRenderer.swift */; };
+		A10000110000000000000011 /* StreamingPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000110000000000000011 /* StreamingPlayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +38,8 @@
 		A200000D000000000000000D /* MeditationApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MeditationApp.entitlements; sourceTree = "<group>"; };
 		A200000E000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A200000F000000000000000F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A20000100000000000000010 /* AudioRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRenderer.swift; sourceTree = "<group>"; };
+		A20000110000000000000011 /* StreamingPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlayer.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* MeditationApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeditationApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -65,6 +69,8 @@
 				A20000020000000000000002 /* MeditationModels.swift */,
 				A20000030000000000000003 /* MeditationParser.swift */,
 				A20000040000000000000004 /* MeditationPlayer.swift */,
+				A20000100000000000000010 /* AudioRenderer.swift */,
+				A20000110000000000000011 /* StreamingPlayer.swift */,
 				A20000050000000000000005 /* MeditationListView.swift */,
 				A20000060000000000000006 /* MeditationEditorView.swift */,
 				A20000070000000000000007 /* PlayerView.swift */,
@@ -162,6 +168,8 @@
 				A10000090000000000000009 /* SampleMeditations.swift in Sources */,
 				A100000A000000000000000A /* MedTextEditor.swift in Sources */,
 				A100000F000000000000000F /* SettingsView.swift in Sources */,
+				A10000100000000000000010 /* AudioRenderer.swift in Sources */,
+				A10000110000000000000011 /* StreamingPlayer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
