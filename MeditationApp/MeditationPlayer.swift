@@ -9,8 +9,9 @@ class MeditationPlayer: NSObject, ObservableObject {
 
     private let synthesizer = AVSpeechSynthesizer()
     private var steps: [MeditationStep] = []
-    private var pauseWorkItem: DispatchWorkItem?
+    private var pauseTimer: Timer?
     private var isPaused = false
+    private var silencePlayer: AVAudioPlayer?
 
     @Published var selectedVoiceID: String {
         didSet { UserDefaults.standard.set(selectedVoiceID, forKey: "selectedVoiceID") }
@@ -49,6 +50,53 @@ class MeditationPlayer: NSObject, ObservableObject {
         configureAudioSession()
     }
 
+    private func makeSilencePlayer(duration: TimeInterval) -> AVAudioPlayer? {
+        let sampleRate: Double = 44100
+        let numSamples = Int(sampleRate * duration)
+        let dataSize = numSamples * 2 // 16-bit mono
+
+        var wav = Data()
+        // RIFF header
+        wav.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+        var chunkSize = UInt32(36 + dataSize)
+        wav.append(Data(bytes: &chunkSize, count: 4))
+        wav.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+        // fmt subchunk
+        wav.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
+        var subchunk1Size: UInt32 = 16
+        wav.append(Data(bytes: &subchunk1Size, count: 4))
+        var audioFormat: UInt16 = 1 // PCM
+        wav.append(Data(bytes: &audioFormat, count: 2))
+        var numChannels: UInt16 = 1
+        wav.append(Data(bytes: &numChannels, count: 2))
+        var sr = UInt32(sampleRate)
+        wav.append(Data(bytes: &sr, count: 4))
+        var byteRate = UInt32(sampleRate * 2)
+        wav.append(Data(bytes: &byteRate, count: 4))
+        var blockAlign: UInt16 = 2
+        wav.append(Data(bytes: &blockAlign, count: 2))
+        var bitsPerSample: UInt16 = 16
+        wav.append(Data(bytes: &bitsPerSample, count: 2))
+        // data subchunk
+        wav.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+        var subchunk2Size = UInt32(dataSize)
+        wav.append(Data(bytes: &subchunk2Size, count: 4))
+        wav.append(Data(count: dataSize)) // all zeros = silence
+
+        return try? AVAudioPlayer(data: wav)
+    }
+
+    private func startSilence(duration: TimeInterval) {
+        silencePlayer?.stop()
+        silencePlayer = makeSilencePlayer(duration: duration)
+        silencePlayer?.play()
+    }
+
+    private func stopSilence() {
+        silencePlayer?.stop()
+        silencePlayer = nil
+    }
+
     private func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
@@ -85,8 +133,9 @@ class MeditationPlayer: NSObject, ObservableObject {
         if synthesizer.isSpeaking {
             synthesizer.pauseSpeaking(at: .word)
         }
-        pauseWorkItem?.cancel()
-        pauseWorkItem = nil
+        pauseTimer?.invalidate()
+        pauseTimer = nil
+        stopSilence()
     }
 
     func resume() {
@@ -103,8 +152,9 @@ class MeditationPlayer: NSObject, ObservableObject {
         isPaused = false
         isPlaying = false
         synthesizer.stopSpeaking(at: .immediate)
-        pauseWorkItem?.cancel()
-        pauseWorkItem = nil
+        pauseTimer?.invalidate()
+        pauseTimer = nil
+        stopSilence()
         steps = []
         stepIndex = 0
         totalSteps = 0
@@ -124,6 +174,7 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         switch step {
         case .speak(let text):
+            stopSilence()
             currentText = text
             let utterance = AVSpeechUtterance(string: text)
             utterance.rate = speakingRate
@@ -133,17 +184,13 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         case .pause(let duration):
             currentText = ""
-            let work = DispatchWorkItem { [weak self] in
+            startSilence(duration: duration)
+            pauseTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
                 guard let self = self, self.isPlaying else { return }
-                DispatchQueue.main.async {
-                    self.stepIndex += 1
-                    self.runCurrentStep()
-                }
+                self.stopSilence()
+                self.stepIndex += 1
+                self.runCurrentStep()
             }
-            pauseWorkItem = work
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(
-                deadline: .now() + duration, execute: work
-            )
 
         case .countdown(let totalSeconds):
             expandAndRunCountdown(totalSeconds)
