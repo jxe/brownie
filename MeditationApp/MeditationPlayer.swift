@@ -264,6 +264,7 @@ class MeditationPlayer: NSObject, ObservableObject {
     func resume() {
         isPaused = false
         isPlaying = true
+        configureAudioSession()
         streamingPlayer?.resume()
         updateNowPlayingInfo()
     }

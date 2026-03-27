@@ -70,7 +70,15 @@ class StreamingPlayer {
     }
 
     func resume() {
+        ensureRunning()
         playerNode.play()
+    }
+
+    /// Restart the audio engine if iOS stopped it (e.g. after interruption or long background pause).
+    func ensureRunning() {
+        if !engine.isRunning {
+            try? engine.start()
+        }
     }
 
     func stop() {

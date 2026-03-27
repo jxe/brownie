@@ -52,8 +52,12 @@ struct MeditationListView: View {
                     filename: $editorFilename,
                     isNew: isNewFile
                 ) {
-                    _ = FileManager.default.saveMeditation(editorContent, filename: editorFilename)
+                    let savedURL = FileManager.default.saveMeditation(editorContent, filename: editorFilename)
                     refreshFiles()
+                    // If we just edited the currently-playing meditation, stop so next tap re-parses
+                    if let savedURL, player.currentSourceURL == savedURL {
+                        player.stop()
+                    }
                 }
             }
             .onAppear { refreshFiles() }
@@ -110,8 +114,8 @@ struct MeditationListView: View {
                 Label("Edit", systemImage: "pencil")
             }
             .tint(.accentColor)
-            Button { duplicateFile(url) } label: {
-                Label("Duplicate", systemImage: "doc.on.doc")
+            Button { editCopy(url) } label: {
+                Label("Edit a Copy", systemImage: "doc.badge.plus")
             }
             .tint(.indigo)
         }
@@ -119,8 +123,8 @@ struct MeditationListView: View {
             Button { editFile(url) } label: {
                 Label("Edit", systemImage: "pencil")
             }
-            Button { duplicateFile(url) } label: {
-                Label("Duplicate", systemImage: "doc.on.doc")
+            Button { editCopy(url) } label: {
+                Label("Edit a Copy", systemImage: "doc.badge.plus")
             }
             Button { playFile(url) } label: {
                 Label("Play", systemImage: "play")
@@ -169,7 +173,7 @@ struct MeditationListView: View {
         showingEditor = true
     }
 
-    private func duplicateFile(_ url: URL) {
+    private func editCopy(_ url: URL) {
         guard let content = FileManager.default.readMeditation(at: url) else { return }
         let baseName = url.deletingPathExtension().lastPathComponent
 
@@ -193,17 +197,26 @@ struct MeditationListView: View {
         let existingNames = Set(files.map { $0.deletingPathExtension().lastPathComponent })
 
         // Try today-suffix first, then today-v2-suffix, today-v3-suffix, ...
-        let candidate = "\(today)-\(suffix)"
-        if !existingNames.contains(candidate) {
-            _ = FileManager.default.saveMeditation(content, filename: candidate)
+        let candidate: String
+        let base = "\(today)-\(suffix)"
+        if !existingNames.contains(base) {
+            candidate = base
         } else {
             var counter = 2
             while existingNames.contains("\(today)-v\(counter)-\(suffix)") {
                 counter += 1
             }
-            _ = FileManager.default.saveMeditation(content, filename: "\(today)-v\(counter)-\(suffix)")
+            candidate = "\(today)-v\(counter)-\(suffix)"
         }
+
+        _ = FileManager.default.saveMeditation(content, filename: candidate)
         refreshFiles()
+
+        // Open the editor on the new copy
+        editorContent = content
+        editorFilename = candidate
+        isNewFile = false
+        showingEditor = true
     }
 
     private func newFile() {
