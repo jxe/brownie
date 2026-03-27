@@ -10,11 +10,10 @@ iOS meditation app built with SwiftUI. Uses a custom text-based meditation scrip
 - Build: `xcodebuild -project MeditationApp.xcodeproj -scheme MeditationApp -destination 'platform=iOS Simulator,name=iPhone 16'`
 
 ## Architecture
-- **MeditationApp.swift** - App entry point, ContentView, MiniPlayerBar
+- **MeditationApp.swift** - App entry point, ContentView
 - **MeditationModels.swift** - Core types: Pool, Gender, PronounResolver, MeditationStep, Meditation
 - **MeditationParser.swift** - Parses meditation script text into Meditation steps
 - **MeditationPlayer.swift** - AVSpeechSynthesizer-based playback engine
-- **PlayerView.swift** - Full-screen player UI
 - **MeditationListView.swift** - Main list of meditations
 - **MeditationEditorView.swift** - Editor for meditation scripts
 - **MedTextEditor.swift** - Custom text editor component

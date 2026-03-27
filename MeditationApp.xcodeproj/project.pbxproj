@@ -13,7 +13,6 @@
 		A10000040000000000000004 /* MeditationPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000004 /* MeditationPlayer.swift */; };
 		A10000050000000000000005 /* MeditationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000005 /* MeditationListView.swift */; };
 		A10000060000000000000006 /* MeditationEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000060000000000000006 /* MeditationEditorView.swift */; };
-		A10000070000000000000007 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000070000000000000007 /* PlayerView.swift */; };
 		A10000080000000000000008 /* FileManager+Meditations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000080000000000000008 /* FileManager+Meditations.swift */; };
 		A10000090000000000000009 /* SampleMeditations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000090000000000000009 /* SampleMeditations.swift */; };
 		A100000A000000000000000A /* MedTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B000000000000000B /* MedTextEditor.swift */; };
@@ -30,7 +29,6 @@
 		A20000040000000000000004 /* MeditationPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationPlayer.swift; sourceTree = "<group>"; };
 		A20000050000000000000005 /* MeditationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationListView.swift; sourceTree = "<group>"; };
 		A20000060000000000000006 /* MeditationEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationEditorView.swift; sourceTree = "<group>"; };
-		A20000070000000000000007 /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
 		A20000080000000000000008 /* FileManager+Meditations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FileManager+Meditations.swift"; sourceTree = "<group>"; };
 		A20000090000000000000009 /* SampleMeditations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleMeditations.swift; sourceTree = "<group>"; };
 		A200000A000000000000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -73,7 +71,6 @@
 				A20000110000000000000011 /* StreamingPlayer.swift */,
 				A20000050000000000000005 /* MeditationListView.swift */,
 				A20000060000000000000006 /* MeditationEditorView.swift */,
-				A20000070000000000000007 /* PlayerView.swift */,
 				A20000080000000000000008 /* FileManager+Meditations.swift */,
 				A20000090000000000000009 /* SampleMeditations.swift */,
 				A200000B000000000000000B /* MedTextEditor.swift */,
@@ -163,7 +160,6 @@
 				A10000040000000000000004 /* MeditationPlayer.swift in Sources */,
 				A10000050000000000000005 /* MeditationListView.swift in Sources */,
 				A10000060000000000000006 /* MeditationEditorView.swift in Sources */,
-				A10000070000000000000007 /* PlayerView.swift in Sources */,
 				A10000080000000000000008 /* FileManager+Meditations.swift in Sources */,
 				A10000090000000000000009 /* SampleMeditations.swift in Sources */,
 				A100000A000000000000000A /* MedTextEditor.swift in Sources */,
