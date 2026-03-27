@@ -7,6 +7,7 @@ struct MeditationListView: View {
     @State private var editorContent = ""
     @State private var editorFilename = ""
     @State private var isNewFile = false
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -34,12 +35,15 @@ struct MeditationListView: View {
                 .padding(.bottom, 20)
             }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    NavigationLink {
-                        SettingsView()
-                    } label: {
-                        Text("Settings")
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Settings") {
+                        showingSettings = true
                     }
+                }
+            }
+            .sheet(isPresented: $showingSettings) {
+                NavigationStack {
+                    SettingsView()
                 }
             }
             .sheet(isPresented: $showingEditor) {
