@@ -7,10 +7,7 @@ struct MeditationListView: View {
     @State private var editorContent = ""
     @State private var editorFilename = ""
     @State private var isNewFile = false
-    @State private var showingSettings = false
-
     var body: some View {
-        NavigationStack {
             ZStack(alignment: .bottomTrailing) {
                 List {
                     ForEach(files, id: \.self) { url in
@@ -41,18 +38,7 @@ struct MeditationListView: View {
                 .padding(.bottom, 0)
                 .ignoresSafeArea(.container, edges: .bottom)
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Settings") {
-                        showingSettings = true
-                    }
-                }
-            }
-            .sheet(isPresented: $showingSettings) {
-                NavigationStack {
-                    SettingsView()
-                }
-            }
+            .navigationTitle("Meditations")
             .sheet(isPresented: $showingEditor) {
                 MeditationEditorView(
                     content: $editorContent,
@@ -72,7 +58,6 @@ struct MeditationListView: View {
             .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { _ in
                 refreshFiles()
             }
-        }
     }
 
     @ViewBuilder

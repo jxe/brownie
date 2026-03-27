@@ -3,6 +3,8 @@ import AVFoundation
 
 struct SettingsView: View {
     @EnvironmentObject var player: MeditationPlayer
+    @State private var isRefreshing = false
+    @State private var metadataQuery: NSMetadataQuery?
 
     var body: some View {
         List {
@@ -51,8 +53,15 @@ struct SettingsView: View {
                 Button {
                     refreshFromiCloud()
                 } label: {
-                    Label("Refresh from iCloud", systemImage: "arrow.clockwise.icloud")
+                    HStack {
+                        Label("Refresh from iCloud", systemImage: "arrow.clockwise.icloud")
+                        if isRefreshing {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
                 }
+                .disabled(isRefreshing)
             }
         }
         .navigationTitle("Settings")
@@ -105,20 +114,57 @@ struct SettingsView: View {
     // MARK: - iCloud refresh
 
     private func refreshFromiCloud() {
-        // Trigger iCloud download for any evicted files
-        let dir = FileManager.default.meditationsDirectory
-        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.ubiquitousItemDownloadingStatusKey], options: [.skipsHiddenFiles]) else { return }
+        guard !isRefreshing else { return }
 
-        for file in files where file.pathExtension == "med" {
-            let values = try? file.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
-            if let status = values?.ubiquitousItemDownloadingStatus,
-               status != .current {
-                try? FileManager.default.startDownloadingUbiquitousItem(at: file)
+        // If iCloud is not available, just reload local files
+        guard FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joeedelman.meditations") != nil else {
+            NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
+            return
+        }
+
+        isRefreshing = true
+
+        let query = NSMetadataQuery()
+        query.predicate = NSPredicate(format: "%K LIKE '*.med'", NSMetadataItemFSNameKey)
+        query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
+
+        // When query finishes gathering, download any non-current files
+        let observer = NotificationCenter.default.addObserver(
+            forName: .NSMetadataQueryDidFinishGathering,
+            object: query,
+            queue: .main
+        ) { [weak query] _ in
+            guard let query else { return }
+            query.disableUpdates()
+
+            for item in query.results {
+                guard let mdItem = item as? NSMetadataItem,
+                      let url = mdItem.value(forAttribute: NSMetadataItemURLKey) as? URL else { continue }
+                let status = mdItem.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String
+                if status != NSMetadataUbiquitousItemDownloadingStatusCurrent {
+                    try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+                }
+            }
+
+            query.stop()
+
+            // Brief delay so downloads can begin before we reload the file list
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
+                isRefreshing = false
             }
         }
 
-        // Post notification so the list refreshes
-        NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
+        // Timeout after 10s in case the query never finishes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak query] in
+            guard let query, query.isGathering else { return }
+            query.stop()
+            NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
+            isRefreshing = false
+        }
+
+        metadataQuery = query
+        query.start()
     }
 }
 
