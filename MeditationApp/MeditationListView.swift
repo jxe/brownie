@@ -15,9 +15,15 @@ struct MeditationListView: View {
                 List {
                     ForEach(files, id: \.self) { url in
                         rowView(for: url)
+                            .listRowBackground(
+                                player.currentSourceURL == url
+                                    ? Color("HighlightColor")
+                                    : Color("BackgroundColor")
+                            )
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
 
                 Button {
                     newFile()
@@ -32,7 +38,8 @@ struct MeditationListView: View {
                         .shadow(radius: 4, y: 2)
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 20)
+                .padding(.bottom, 0)
+                .ignoresSafeArea(.container, edges: .bottom)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -51,8 +58,8 @@ struct MeditationListView: View {
                     content: $editorContent,
                     filename: $editorFilename,
                     isNew: isNewFile
-                ) {
-                    let savedURL = FileManager.default.saveMeditation(editorContent, filename: editorFilename)
+                ) { savedFilename, savedContent in
+                    let savedURL = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
                     refreshFiles()
                     // If we just edited the currently-playing meditation, stop so next tap re-parses
                     if let savedURL, player.currentSourceURL == savedURL {
@@ -60,6 +67,7 @@ struct MeditationListView: View {
                     }
                 }
             }
+            .background(Color("BackgroundColor"))
             .onAppear { refreshFiles() }
             .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { _ in
                 refreshFiles()
@@ -74,6 +82,7 @@ struct MeditationListView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(titleFor(url))
                     .font(.body)
+                    .fontWeight(.medium)
                 if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
                     Text(formatTime(player.elapsedSeconds))
                         .font(.caption)
@@ -84,15 +93,15 @@ struct MeditationListView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, 4)
 
             Spacer()
 
             Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill")
                 .font(.callout)
                 .foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(isCurrent ? Color.accentColor : Color.accentColor.opacity(0.8))
+                .frame(width: 40, height: 40)
+                .background(Color.accentColor)
                 .clipShape(Circle())
                 .padding(.trailing, 4)
         }
@@ -221,7 +230,9 @@ struct MeditationListView: View {
 
     private func newFile() {
         editorContent = "# New Meditation\n\n"
-        editorFilename = ""
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        editorFilename = dateFormatter.string(from: Date())
         isNewFile = true
         showingEditor = true
     }

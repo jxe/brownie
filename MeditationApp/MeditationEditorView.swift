@@ -4,7 +4,7 @@ struct MeditationEditorView: View {
     @Binding var content: String
     @Binding var filename: String
     let isNew: Bool
-    let onSave: () -> Void
+    let onSave: (_ filename: String, _ content: String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -28,12 +28,7 @@ struct MeditationEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        if isNew && filename.isEmpty {
-                            let dateFormatter = DateFormatter()
-                            dateFormatter.dateFormat = "yyyy-MM-dd"
-                            filename = dateFormatter.string(from: Date())
-                        }
-                        onSave()
+                        onSave(filename, content)
                         dismiss()
                     }
                 }
