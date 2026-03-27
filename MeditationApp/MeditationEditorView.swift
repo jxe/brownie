@@ -30,8 +30,8 @@ struct MeditationEditorView: View {
                     Button("Save") {
                         if isNew && filename.isEmpty {
                             let dateFormatter = DateFormatter()
-                            dateFormatter.dateFormat = "yyyyMMMdd"
-                            filename = dateFormatter.string(from: Date()).lowercased()
+                            dateFormatter.dateFormat = "yyyy-MM-dd"
+                            filename = dateFormatter.string(from: Date())
                         }
                         onSave()
                         dismiss()

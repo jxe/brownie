@@ -10,26 +10,35 @@ struct MeditationListView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(files, id: \.self) { url in
-                    rowView(for: url)
+            ZStack(alignment: .bottomTrailing) {
+                List {
+                    ForEach(files, id: \.self) { url in
+                        rowView(for: url)
+                    }
                 }
+                .listStyle(.plain)
+
+                Button {
+                    newFile()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Color.accentColor)
+                        .clipShape(Circle())
+                        .shadow(radius: 4, y: 2)
+                }
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
             }
-            .listStyle(.plain)
-            .navigationTitle("Brownie")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     NavigationLink {
                         SettingsView()
                     } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        newFile()
-                    } label: {
-                        Image(systemName: "plus")
+                        Text("Settings")
                     }
                 }
             }
@@ -159,8 +168,37 @@ struct MeditationListView: View {
     private func duplicateFile(_ url: URL) {
         guard let content = FileManager.default.readMeditation(at: url) else { return }
         let baseName = url.deletingPathExtension().lastPathComponent
-        let newName = baseName + "-copy"
-        _ = FileManager.default.saveMeditation(content, filename: newName)
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = dateFormatter.string(from: Date())
+
+        // Regex: optional date prefix, optional -vN counter, then the rest
+        let datePattern = #"^(\d{4}-\d{2}-\d{2})(?:-v(\d+))?-(.+)$"#
+        let suffix: String
+        if let match = baseName.range(of: datePattern, options: .regularExpression),
+           let _ = match as Range<String.Index>?,
+           let regex = try? NSRegularExpression(pattern: datePattern),
+           let result = regex.firstMatch(in: baseName, range: NSRange(baseName.startIndex..., in: baseName)) {
+            suffix = String(baseName[Range(result.range(at: 3), in: baseName)!])
+        } else {
+            // No date prefix — use the whole name as suffix
+            suffix = baseName
+        }
+
+        let existingNames = Set(files.map { $0.deletingPathExtension().lastPathComponent })
+
+        // Try today-suffix first, then today-v2-suffix, today-v3-suffix, ...
+        let candidate = "\(today)-\(suffix)"
+        if !existingNames.contains(candidate) {
+            _ = FileManager.default.saveMeditation(content, filename: candidate)
+        } else {
+            var counter = 2
+            while existingNames.contains("\(today)-v\(counter)-\(suffix)") {
+                counter += 1
+            }
+            _ = FileManager.default.saveMeditation(content, filename: "\(today)-v\(counter)-\(suffix)")
+        }
         refreshFiles()
     }
 
