@@ -3,7 +3,7 @@ import SwiftUI
 struct MeditationEditorView: View {
     @Binding var content: String
     @Binding var filename: String
-    let isNew: Bool
+    @Binding var isNew: Bool
     let onSave: (_ filename: String, _ content: String) -> Void
     @Environment(\.dismiss) private var dismiss
 

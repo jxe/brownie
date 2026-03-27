@@ -57,7 +57,7 @@ struct MeditationListView: View {
                 MeditationEditorView(
                     content: $editorContent,
                     filename: $editorFilename,
-                    isNew: isNewFile
+                    isNew: $isNewFile
                 ) { savedFilename, savedContent in
                     let savedURL = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
                     refreshFiles()
