@@ -2,6 +2,8 @@ import SwiftUI
 
 enum SidebarDestination: String, CaseIterable, Identifiable {
     case meditations
+    case feelings
+    case journal
     case settings
 
     var id: String { rawValue }
@@ -9,6 +11,8 @@ enum SidebarDestination: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .meditations: return "Meditations"
+        case .feelings: return "Feelings"
+        case .journal: return "Journal"
         case .settings: return "Settings"
         }
     }
@@ -16,6 +20,8 @@ enum SidebarDestination: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .meditations: return "list.bullet"
+        case .feelings: return "heart.text.square"
+        case .journal: return "book.closed"
         case .settings: return "gear"
         }
     }
@@ -24,6 +30,7 @@ enum SidebarDestination: String, CaseIterable, Identifiable {
 @main
 struct MeditationApp: App {
     @StateObject private var player = MeditationPlayer()
+    @State private var emotionStore = EmotionStore()
 
     init() {
         SampleMeditations.installIfNeeded()
@@ -34,6 +41,7 @@ struct MeditationApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(player)
+                .environment(emotionStore)
         }
     }
 }
@@ -53,6 +61,10 @@ struct ContentView: View {
             switch selectedDestination {
             case .meditations, .none:
                 MeditationListView()
+            case .feelings:
+                CheckInView()
+            case .journal:
+                JournalView()
             case .settings:
                 SettingsView()
             }

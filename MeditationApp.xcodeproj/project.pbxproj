@@ -20,6 +20,11 @@
 		A100000F000000000000000F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000F000000000000000F /* SettingsView.swift */; };
 		A10000100000000000000010 /* AudioRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000100000000000000010 /* AudioRenderer.swift */; };
 		A10000110000000000000011 /* StreamingPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000110000000000000011 /* StreamingPlayer.swift */; };
+		A10000120000000000000012 /* EmotionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000120000000000000012 /* EmotionModels.swift */; };
+		A10000130000000000000013 /* EmotionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000130000000000000013 /* EmotionStore.swift */; };
+		A10000140000000000000014 /* CheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000140000000000000014 /* CheckInView.swift */; };
+		A10000150000000000000015 /* ReflectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000150000000000000015 /* ReflectionView.swift */; };
+		A10000160000000000000016 /* JournalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000160000000000000016 /* JournalView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +43,11 @@
 		A200000F000000000000000F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000100000000000000010 /* AudioRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRenderer.swift; sourceTree = "<group>"; };
 		A20000110000000000000011 /* StreamingPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlayer.swift; sourceTree = "<group>"; };
+		A20000120000000000000012 /* EmotionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmotionModels.swift; sourceTree = "<group>"; };
+		A20000130000000000000013 /* EmotionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmotionStore.swift; sourceTree = "<group>"; };
+		A20000140000000000000014 /* CheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInView.swift; sourceTree = "<group>"; };
+		A20000150000000000000015 /* ReflectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReflectionView.swift; sourceTree = "<group>"; };
+		A20000160000000000000016 /* JournalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalView.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* MeditationApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeditationApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -75,6 +85,11 @@
 				A20000090000000000000009 /* SampleMeditations.swift */,
 				A200000B000000000000000B /* MedTextEditor.swift */,
 				A200000F000000000000000F /* SettingsView.swift */,
+				A20000120000000000000012 /* EmotionModels.swift */,
+				A20000130000000000000013 /* EmotionStore.swift */,
+				A20000140000000000000014 /* CheckInView.swift */,
+				A20000150000000000000015 /* ReflectionView.swift */,
+				A20000160000000000000016 /* JournalView.swift */,
 				A200000A000000000000000A /* Info.plist */,
 				A200000D000000000000000D /* MeditationApp.entitlements */,
 				A200000E000000000000000E /* Assets.xcassets */,
@@ -166,6 +181,11 @@
 				A100000F000000000000000F /* SettingsView.swift in Sources */,
 				A10000100000000000000010 /* AudioRenderer.swift in Sources */,
 				A10000110000000000000011 /* StreamingPlayer.swift in Sources */,
+				A10000120000000000000012 /* EmotionModels.swift in Sources */,
+				A10000130000000000000013 /* EmotionStore.swift in Sources */,
+				A10000140000000000000014 /* CheckInView.swift in Sources */,
+				A10000150000000000000015 /* ReflectionView.swift in Sources */,
+				A10000160000000000000016 /* JournalView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -188,7 +208,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -218,7 +238,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -282,7 +302,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -336,7 +356,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
