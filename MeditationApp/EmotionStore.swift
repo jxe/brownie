@@ -4,6 +4,7 @@ import Observation
 @Observable
 class EmotionStore {
     var emotionCounts: [String: Int] = [:]
+    var inFlightEmotions: Set<String> = []
     private(set) var journalEntries: [JournalEntry] = []
 
     init() {

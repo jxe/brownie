@@ -25,6 +25,7 @@
 		A10000140000000000000014 /* CheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000140000000000000014 /* CheckInView.swift */; };
 		A10000150000000000000015 /* ReflectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000150000000000000015 /* ReflectionView.swift */; };
 		A10000160000000000000016 /* JournalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000160000000000000016 /* JournalView.swift */; };
+		A10000170000000000000017 /* ChipFlightAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000170000000000000017 /* ChipFlightAnimator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -48,6 +49,7 @@
 		A20000140000000000000014 /* CheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInView.swift; sourceTree = "<group>"; };
 		A20000150000000000000015 /* ReflectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReflectionView.swift; sourceTree = "<group>"; };
 		A20000160000000000000016 /* JournalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalView.swift; sourceTree = "<group>"; };
+		A20000170000000000000017 /* ChipFlightAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipFlightAnimator.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* MeditationApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeditationApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -90,6 +92,7 @@
 				A20000140000000000000014 /* CheckInView.swift */,
 				A20000150000000000000015 /* ReflectionView.swift */,
 				A20000160000000000000016 /* JournalView.swift */,
+				A20000170000000000000017 /* ChipFlightAnimator.swift */,
 				A200000A000000000000000A /* Info.plist */,
 				A200000D000000000000000D /* MeditationApp.entitlements */,
 				A200000E000000000000000E /* Assets.xcassets */,
@@ -186,6 +189,7 @@
 				A10000140000000000000014 /* CheckInView.swift in Sources */,
 				A10000150000000000000015 /* ReflectionView.swift in Sources */,
 				A10000160000000000000016 /* JournalView.swift in Sources */,
+				A10000170000000000000017 /* ChipFlightAnimator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

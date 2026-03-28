@@ -3,11 +3,11 @@ import SwiftUI
 struct CheckInView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
-    @Namespace private var chipNamespace
 
     @State private var showingNegativeSheet = false
     @State private var showingPositiveSheet = false
     @State private var navigationPath = NavigationPath()
+    @State private var destinationFrames: [String: CGRect] = [:]
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -29,9 +29,9 @@ struct CheckInView: View {
                         ForEach(selectedEmotions) { emotion in
                             SelectedEmotionChipView(
                                 emotion: emotion,
-                                namespace: chipNamespace,
                                 onReflect: { navigationPath.append(emotion) }
                             )
+                            .opacity(store.inFlightEmotions.contains(emotion.id) ? 0 : 1)
                             .transition(.asymmetric(
                                 insertion: .scale(scale: 0.5).combined(with: .opacity),
                                 removal: .scale(scale: 0.8).combined(with: .opacity)
@@ -40,6 +40,9 @@ struct CheckInView: View {
                     }
                     .padding(.horizontal)
                     .animation(.spring(duration: 0.4, bounce: 0.3), value: selectedEmotions.map(\.id))
+                    .onPreferenceChange(ChipDestinationPreferenceKey.self) { frames in
+                        destinationFrames = frames
+                    }
 
                     // Add emotion buttons
                     HStack(spacing: 12) {
@@ -88,14 +91,14 @@ struct CheckInView: View {
             EmotionPickerSheet(
                 title: "Negative",
                 emotions: Emotion.negative,
-                namespace: chipNamespace
+                destinationFrames: $destinationFrames
             )
         }
         .sheet(isPresented: $showingPositiveSheet) {
             EmotionPickerSheet(
                 title: "Positive",
                 emotions: Emotion.positive,
-                namespace: chipNamespace
+                destinationFrames: $destinationFrames
             )
         }
     }
@@ -105,7 +108,6 @@ struct CheckInView: View {
 
 private struct SelectedEmotionChipView: View {
     let emotion: Emotion
-    var namespace: Namespace.ID
     var onReflect: () -> Void
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
@@ -130,13 +132,7 @@ private struct SelectedEmotionChipView: View {
                 Text("\(count)")
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule()
-                            .fill(.white.opacity(0.3))
-                    )
+                    .foregroundStyle(.white.opacity(0.7))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -144,7 +140,6 @@ private struct SelectedEmotionChipView: View {
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(chipColor)
-                    .matchedGeometryEffect(id: emotion.id, in: namespace)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -154,6 +149,14 @@ private struct SelectedEmotionChipView: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
+        .overlay(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ChipDestinationPreferenceKey.self,
+                    value: [emotion.id: geo.frame(in: .global)]
+                )
+            }
+        )
         .contextMenu {
             Button {
                 onReflect()
@@ -210,12 +213,13 @@ private struct ReflectionPreview: View {
 private struct EmotionPickerSheet: View {
     let title: String
     let emotions: [Emotion]
-    var namespace: Namespace.ID
+    @Binding var destinationFrames: [String: CGRect]
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
     @State private var justSelected: Set<String> = []
+    @State private var chipFrames: [String: CGRect] = [:]
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -247,11 +251,21 @@ private struct EmotionPickerSheet: View {
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
                                     .fill(Color(.secondarySystemBackground))
-                                    .matchedGeometryEffect(id: emotion.id, in: namespace)
                             )
                             .foregroundStyle(.primary)
                         }
                         .buttonStyle(.plain)
+                        .overlay(
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onAppear {
+                                        chipFrames[emotion.id] = geo.frame(in: .global)
+                                    }
+                                    .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                        chipFrames[emotion.id] = newFrame
+                                    }
+                            }
+                        )
                         .transition(.asymmetric(
                             insertion: .opacity,
                             removal: .scale(scale: 0.5).combined(with: .opacity)
@@ -276,12 +290,66 @@ private struct EmotionPickerSheet: View {
     }
 
     private func selectEmotion(_ emotion: Emotion) {
+        let sourceFrame = chipFrames[emotion.id] ?? .zero
+
+        // Hide chip in the sheet
         withAnimation(.spring(duration: 0.35, bounce: 0.25)) {
-            justSelected.insert(emotion.id)
+            _ = justSelected.insert(emotion.id)
         }
-        // Small delay so the disappear animation plays before the chip appears on the main screen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            store.tap(emotion)
+
+        // Mark as in-flight and add to store so the main grid lays out the chip (invisible)
+        store.inFlightEmotions.insert(emotion.id)
+        store.tap(emotion)
+
+        // Wait one frame for the main grid to lay out the new chip and report its frame
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            let destFrame = destinationFrames[emotion.id] ?? .zero
+
+            // Build a snapshot view matching the sheet chip appearance
+            let chipSnapshot = FlightChipView(emotion: emotion, colorScheme: colorScheme)
+
+            if sourceFrame != .zero && destFrame != .zero {
+                ChipFlightAnimator.shared.fly(
+                    emotionId: emotion.id,
+                    chipView: chipSnapshot,
+                    from: sourceFrame,
+                    to: destFrame
+                ) {
+                    withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                        _ = store.inFlightEmotions.remove(emotion.id)
+                    }
+                }
+            } else {
+                // Fallback: just reveal the chip
+                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                    _ = store.inFlightEmotions.remove(emotion.id)
+                }
+            }
         }
+    }
+}
+
+// MARK: - Flight Chip Snapshot View
+
+/// A lightweight view rendered by ImageRenderer to create the flying chip snapshot.
+private struct FlightChipView: View {
+    let emotion: Emotion
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(emotion.emoji)
+                .font(.title3)
+            Text(emotion.name)
+                .font(.subheadline)
+                .fontWeight(.medium)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(emotion.chipColor(for: colorScheme))
+        )
+        .foregroundStyle(.white)
     }
 }
