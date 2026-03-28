@@ -37,6 +37,7 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Hatred", emoji: "💢", question: "What way of living is being destroyed by someone or something you want gone?", category: .negative, color: Color(red: 0.72, green: 0.15, blue: 0.22)),
         Emotion(name: "Helplessness", emoji: "🫠", question: "What way of living feels impossible to influence?", category: .negative, color: Color(red: 0.65, green: 0.58, blue: 0.48)),
         Emotion(name: "Humiliation", emoji: "🙈", question: "What way of living did you feel permanently incapable of?", category: .negative, color: Color(red: 0.78, green: 0.38, blue: 0.55)),
+        Emotion(name: "Hurt", emoji: "🤕", question: "What happened that caused you pain?", category: .negative, color: Color(red: 0.72, green: 0.42, blue: 0.35)),
         Emotion(name: "Inadequacy", emoji: "📉", question: "What way of living do you feel unequipped for?", category: .negative, color: Color(red: 0.55, green: 0.45, blue: 0.40)),
         Emotion(name: "Jealousy", emoji: "💚", question: "What way of living do you see others enjoying?", category: .negative, color: Color(red: 0.35, green: 0.62, blue: 0.45)),
         Emotion(name: "Loneliness", emoji: "🕸️", question: "What type of connection was unavailable?", category: .negative, color: Color(red: 0.30, green: 0.45, blue: 0.70)),
@@ -45,7 +46,6 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Overwhelm", emoji: "🌊", question: "What ways of living are all demanding attention at once?", category: .negative, color: Color(red: 0.38, green: 0.58, blue: 0.75)),
         Emotion(name: "Rage", emoji: "🤬", question: "What way of living has been so blocked that you want to destroy the obstacle?", category: .negative, color: Color(red: 0.82, green: 0.18, blue: 0.18)),
         Emotion(name: "Regret", emoji: "😔", question: "What way of living do you wish you had chosen?", category: .negative, color: Color(red: 0.55, green: 0.55, blue: 0.58)),
-        Emotion(name: "Resentment", emoji: "😒", question: "What way of living was taken from you by someone specific?", category: .negative, color: Color(red: 0.72, green: 0.42, blue: 0.35)),
         Emotion(name: "Sadness", emoji: "😢", question: "What way of living was lost?", category: .negative, color: Color(red: 0.35, green: 0.55, blue: 0.82)),
         Emotion(name: "Shame", emoji: "😳", question: "What way of living did you not live up to?", category: .negative, color: Color(red: 0.85, green: 0.42, blue: 0.42)),
     ]

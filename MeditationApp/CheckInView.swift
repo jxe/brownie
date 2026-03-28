@@ -33,7 +33,7 @@ struct CheckInView: View {
                             )
                             .opacity(store.inFlightEmotions.contains(emotion.id) ? 0 : 1)
                             .transition(.asymmetric(
-                                insertion: .scale(scale: 0.5).combined(with: .opacity),
+                                insertion: .identity,
                                 removal: .scale(scale: 0.8).combined(with: .opacity)
                             ))
                         }
@@ -305,8 +305,13 @@ private struct EmotionPickerSheet: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             let destFrame = destinationFrames[emotion.id] ?? .zero
 
-            // Build a snapshot view matching the sheet chip appearance
-            let chipSnapshot = FlightChipView(emotion: emotion, colorScheme: colorScheme)
+            // Build a snapshot view matching the destination chip appearance
+            let chipSnapshot = FlightChipView(
+                emotion: emotion,
+                count: store.count(for: emotion),
+                width: destFrame.width,
+                colorScheme: colorScheme
+            )
 
             if sourceFrame != .zero && destFrame != .zero {
                 ChipFlightAnimator.shared.fly(
@@ -338,6 +343,8 @@ private struct EmotionPickerSheet: View {
 /// A lightweight view rendered by ImageRenderer to create the flying chip snapshot.
 private struct FlightChipView: View {
     let emotion: Emotion
+    let count: Int
+    let width: CGFloat
     let colorScheme: ColorScheme
 
     var body: some View {
@@ -347,12 +354,23 @@ private struct FlightChipView: View {
             Text(emotion.name)
                 .font(.subheadline)
                 .fontWeight(.medium)
+            Spacer()
+            Text("\(count)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundStyle(.white.opacity(0.7))
         }
+        .frame(width: width - 24, alignment: .leading) // account for horizontal padding
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(emotion.chipColor(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.yellow.opacity(0.7), lineWidth: 0.75)
+                .opacity(emotion.category == .positive ? 1 : 0)
         )
         .foregroundStyle(.white)
     }

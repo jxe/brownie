@@ -36,6 +36,7 @@ class MeditationPlayer: NSObject, ObservableObject {
     private var renderTask: Task<Void, Never>?
     private var positionTimer: Timer?
     private var isPaused = false
+    private var userPaused = false
     private var currentTitle = ""
     private var playbackStarted = false
 
@@ -94,7 +95,7 @@ class MeditationPlayer: NSObject, ObservableObject {
         case .ended:
             if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-                if options.contains(.shouldResume) {
+                if options.contains(.shouldResume) && !userPaused {
                     resume()
                 }
             }
@@ -126,7 +127,10 @@ class MeditationPlayer: NSObject, ObservableObject {
             self?.pause()
             return .success
         }
-        center.togglePlayPauseCommand.isEnabled = false
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.togglePause()
+            return .success
+        }
     }
 
     // MARK: - Now Playing
@@ -158,6 +162,7 @@ class MeditationPlayer: NSObject, ObservableObject {
         currentSourceURL = sourceURL
         currentTitle = meditation.title
         isPaused = false
+        userPaused = false
 
         // Expand all countdowns eagerly into a flat step list
         var flatSteps: [MeditationStep] = []
@@ -248,8 +253,10 @@ class MeditationPlayer: NSObject, ObservableObject {
 
     func togglePause() {
         if isPaused {
+            userPaused = false
             resume()
         } else {
+            userPaused = true
             pause()
         }
     }
@@ -277,6 +284,7 @@ class MeditationPlayer: NSObject, ObservableObject {
         streamingPlayer = nil
 
         isPaused = false
+        userPaused = false
         isPlaying = false
         currentSourceURL = nil
         stepIndex = 0

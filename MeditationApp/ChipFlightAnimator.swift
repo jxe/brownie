@@ -100,11 +100,6 @@ final class ChipFlightAnimator: NSObject, CAAnimationDelegate {
         positionAnim.path = path.cgPath
         positionAnim.calculationMode = .paced
 
-        // Size animation from source to destination
-        let boundsAnim = CABasicAnimation(keyPath: "bounds.size")
-        boundsAnim.fromValue = NSValue(cgSize: sourceFrame.size)
-        boundsAnim.toValue = NSValue(cgSize: destFrame.size)
-
         // Slight scale bounce at the end via a subtle opacity pulse
         let opacityAnim = CAKeyframeAnimation(keyPath: "opacity")
         opacityAnim.values = [1.0, 1.0, 0.95, 1.0]
@@ -112,7 +107,7 @@ final class ChipFlightAnimator: NSObject, CAAnimationDelegate {
 
         // Group all animations
         let group = CAAnimationGroup()
-        group.animations = [positionAnim, boundsAnim, opacityAnim]
+        group.animations = [positionAnim, opacityAnim]
         group.duration = 0.5
         group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         group.fillMode = .forwards
@@ -122,7 +117,6 @@ final class ChipFlightAnimator: NSObject, CAAnimationDelegate {
 
         // Set final position before animating so it doesn't snap back
         flyingView.layer.position = destCenter
-        flyingView.layer.bounds.size = destFrame.size
 
         flyingView.layer.add(group, forKey: "flight_\(emotionId)")
     }
