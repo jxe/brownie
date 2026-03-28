@@ -315,13 +315,17 @@ private struct EmotionPickerSheet: View {
                     from: sourceFrame,
                     to: destFrame
                 ) {
-                    withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
                         _ = store.inFlightEmotions.remove(emotion.id)
                     }
                 }
             } else {
                 // Fallback: just reveal the chip
-                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
                     _ = store.inFlightEmotions.remove(emotion.id)
                 }
             }
