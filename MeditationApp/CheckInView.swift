@@ -14,6 +14,13 @@ struct CheckInView: View {
         GridItem(.flexible(), spacing: 10),
     ]
 
+    private var formattedSessionTime: String {
+        let total = Int(store.sessionTime)
+        let minutes = total / 60
+        let seconds = total % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
     private var selectedEmotions: [Emotion] {
         Emotion.all
             .filter { store.isSelected($0) }
@@ -83,6 +90,15 @@ struct CheckInView: View {
                 .padding(.vertical)
             }
             .navigationTitle("Feelings")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Text(formattedSessionTime)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
             .navigationDestination(for: Emotion.self) { emotion in
                 ReflectionView(emotion: emotion)
             }
@@ -143,7 +159,7 @@ private struct SelectedEmotionChipView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.0)
+                    .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.25)
                     .opacity(emotion.category == .positive ? 1 : 0)
             )
             .foregroundStyle(colorScheme == .dark ? .white : .black)

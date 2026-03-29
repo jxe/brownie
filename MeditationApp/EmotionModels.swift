@@ -16,7 +16,7 @@ struct Emotion: Identifiable, Hashable {
         if colorScheme == .dark {
             return color.mix(with: .black, by: 0.35)
         }
-        return color.mix(with: .white, by: 0.35)
+        return color.mix(with: .white, by: 0.45)
     }
 
     static let negative: [Emotion] = [

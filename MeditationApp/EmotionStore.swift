@@ -7,12 +7,27 @@ class EmotionStore {
     var inFlightEmotions: Set<String> = []
     private(set) var journalEntries: [JournalEntry] = []
 
+    /// Cumulative engagement time in seconds, grows with each tap.
+    var sessionTime: TimeInterval = 0
+    private var lastTapTime: Date?
+
     init() {
         load()
     }
 
     func tap(_ emotion: Emotion) {
         emotionCounts[emotion.name, default: 0] += 1
+        addSessionCredit()
+    }
+
+    private func addSessionCredit() {
+        let now = Date()
+        if let last = lastTapTime {
+            let elapsed = now.timeIntervalSince(last)
+            let credit = min(elapsed, 20)
+            sessionTime += credit
+        }
+        lastTapTime = now
     }
 
     func deselect(_ emotion: Emotion) {
