@@ -132,7 +132,7 @@ private struct SelectedEmotionChipView: View {
                 Text("\(count)")
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(colorScheme == .dark ? .white.opacity(0.7) : .black.opacity(0.5))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -143,10 +143,10 @@ private struct SelectedEmotionChipView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.yellow.opacity(0.7), lineWidth: 0.75)
+                    .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.0)
                     .opacity(emotion.category == .positive ? 1 : 0)
             )
-            .foregroundStyle(.white)
+            .foregroundStyle(colorScheme == .dark ? .white : .black)
         }
         .buttonStyle(.plain)
         .overlay(
@@ -334,6 +334,8 @@ private struct EmotionPickerSheet: View {
                     _ = store.inFlightEmotions.remove(emotion.id)
                 }
             }
+
+            dismiss()
         }
     }
 }
@@ -358,7 +360,7 @@ private struct FlightChipView: View {
             Text("\(count)")
                 .font(.caption)
                 .fontWeight(.bold)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(colorScheme == .dark ? .white.opacity(0.7) : .black.opacity(0.5))
         }
         .frame(width: width - 24, alignment: .leading) // account for horizontal padding
         .padding(.horizontal, 12)
@@ -369,9 +371,9 @@ private struct FlightChipView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.yellow.opacity(0.7), lineWidth: 0.75)
+                .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.5)
                 .opacity(emotion.category == .positive ? 1 : 0)
         )
-        .foregroundStyle(.white)
+        .foregroundStyle(colorScheme == .dark ? .white : .black)
     }
 }
