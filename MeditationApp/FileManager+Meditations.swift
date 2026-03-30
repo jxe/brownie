@@ -20,16 +20,12 @@ extension FileManager {
     }
 
     func meditationFiles() -> [URL] {
-        guard let files = try? contentsOfDirectory(at: meditationsDirectory, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else {
+        guard let files = try? contentsOfDirectory(at: meditationsDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
             return []
         }
         return files
             .filter { $0.pathExtension == "med" }
-            .sorted { a, b in
-                let dateA = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                let dateB = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                return dateA > dateB
-            }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }
     }
 
     func readMeditation(at url: URL) -> String? {

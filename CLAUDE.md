@@ -7,7 +7,7 @@ iOS app built with SwiftUI combining guided meditation playback with emotion tra
 - Open `MeditationApp.xcodeproj` in Xcode
 - Target: iOS (iPhone/iPad)
 - Requires: Xcode 15+, iOS 17+
-- Build: `xcodebuild -project MeditationApp.xcodeproj -scheme MeditationApp -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.6'`
+- Build: `xcodebuild -project MeditationApp.xcodeproj -scheme MeditationApp -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.4'`
 
 ## Adding New Swift Files
 New `.swift` files must be manually added to `MeditationApp.xcodeproj/project.pbxproj` in **four places**:

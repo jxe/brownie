@@ -3,14 +3,45 @@ import SwiftUI
 struct MeditationListView: View {
     @EnvironmentObject var player: MeditationPlayer
     @State private var files: [URL] = []
+    @State private var fileTags: [URL: [String]] = [:]
+    @State private var allTags: [String] = []
+    @State private var selectedTag: String? = nil
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
     @State private var isNewFile = false
+
+    private var filteredFiles: [URL] {
+        guard let tag = selectedTag else { return files }
+        return files.filter { fileTags[$0]?.contains(tag) == true }
+    }
     var body: some View {
             ZStack(alignment: .bottomTrailing) {
-                List {
-                    ForEach(files, id: \.self) { url in
+                VStack(spacing: 0) {
+                    if !allTags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(allTags, id: \.self) { tag in
+                                    Text(tag)
+                                        .font(.subheadline)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(selectedTag == tag ? Color.accentColor : Color(.systemGray5))
+                                        .foregroundStyle(selectedTag == tag ? .white : .primary)
+                                        .clipShape(Capsule())
+                                        .onTapGesture {
+                                            withAnimation(.easeInOut(duration: 0.2)) {
+                                                selectedTag = selectedTag == tag ? nil : tag
+                                            }
+                                        }
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    List {
+                        ForEach(filteredFiles, id: \.self) { url in
                         rowView(for: url)
                             .listRowBackground(
                                 player.currentSourceURL == url
@@ -21,6 +52,7 @@ struct MeditationListView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                }
 
                 Button {
                     newFile()
@@ -72,10 +104,17 @@ struct MeditationListView: View {
                     Text(formatTime(player.elapsedSeconds))
                         .font(.caption)
                         .foregroundStyle(Color.accentColor)
-                } else {
-                    Text(url.deletingPathExtension().lastPathComponent)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                } else if let tags = fileTags[url], !tags.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(tags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption2)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color(.systemGray5))
+                                .clipShape(Capsule())
+                        }
+                    }
                 }
             }
             .padding(.vertical, 4)
@@ -138,20 +177,53 @@ struct MeditationListView: View {
 
     private func refreshFiles() {
         files = FileManager.default.meditationFiles()
+        var tagMap: [URL: [String]] = [:]
+        var tagSet: Set<String> = []
+        for url in files {
+            let (_, tags) = parseTitleAndTags(url)
+            tagMap[url] = tags
+            tagSet.formUnion(tags)
+        }
+        fileTags = tagMap
+        allTags = tagSet.sorted()
+        if let sel = selectedTag, !tagSet.contains(sel) {
+            selectedTag = nil
+        }
     }
 
-    private func titleFor(_ url: URL) -> String {
+    private func parseTitleAndTags(_ url: URL) -> (title: String, tags: [String]) {
         guard let content = FileManager.default.readMeditation(at: url) else {
-            return url.deletingPathExtension().lastPathComponent
+            return (url.deletingPathExtension().lastPathComponent, [])
         }
         for line in content.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("#") {
-                let title = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                if !title.isEmpty { return title }
+                let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                if after.isEmpty { continue }
+                // Extract #tags from end of line
+                var tags: [String] = []
+                var titleParts: [String] = []
+                let words = after.components(separatedBy: .whitespaces)
+                var foundTags = false
+                for word in words.reversed() {
+                    if word.hasPrefix("#") && word.count > 1 {
+                        tags.insert(String(word.dropFirst()), at: 0)
+                        foundTags = true
+                    } else if foundTags {
+                        titleParts.insert(word, at: 0)
+                    } else {
+                        titleParts.insert(word, at: 0)
+                    }
+                }
+                let title = titleParts.joined(separator: " ")
+                return (title.isEmpty ? url.deletingPathExtension().lastPathComponent : title, tags)
             }
         }
-        return url.deletingPathExtension().lastPathComponent
+        return (url.deletingPathExtension().lastPathComponent, [])
+    }
+
+    private func titleFor(_ url: URL) -> String {
+        parseTitleAndTags(url).title
     }
 
     private func playFile(_ url: URL) {
