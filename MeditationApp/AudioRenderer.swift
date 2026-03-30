@@ -44,17 +44,7 @@ class AudioRenderer {
             return renderSilence(duration: 0.01)
         }
 
-        let converted = try concatenateAndConvert(buffers: buffers)
-
-        // Append a small silence pad to prevent clipping at speech boundaries.
-        // AVSpeechSynthesizer.write() can signal completion slightly before the
-        // final audio is fully rendered, causing the next step to clip the tail.
-        let padFrames = AVAudioFrameCount(0.05 * format.sampleRate)
-        let padded = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: converted.frameLength + padFrames)!
-        memcpy(padded.floatChannelData![0], converted.floatChannelData![0],
-               Int(converted.frameLength) * MemoryLayout<Float>.size)
-        padded.frameLength = converted.frameLength + padFrames
-        return padded
+        return try concatenateAndConvert(buffers: buffers)
     }
 
     // MARK: - Silence
@@ -167,7 +157,7 @@ class AudioRenderer {
         var consumed = false
         converter.convert(to: output, error: &error) { _, outStatus in
             if consumed {
-                outStatus.pointee = .noDataNow
+                outStatus.pointee = .endOfStream
                 return nil
             }
             consumed = true
