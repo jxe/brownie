@@ -44,7 +44,7 @@ struct MeditationListView: View {
                         ForEach(filteredFiles, id: \.self) { url in
                         rowView(for: url)
                             .listRowBackground(
-                                player.currentSourceURL == url
+                                player.currentSourceURL == url && player.isPlaying
                                     ? Color("HighlightColor")
                                     : Color("BackgroundColor")
                             )
