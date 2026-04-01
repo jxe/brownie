@@ -1,30 +1,9 @@
 import SwiftUI
 
-enum SidebarDestination: String, CaseIterable, Identifiable {
-    case meditations
+enum TabDestination: Int {
     case feelings
+    case meditations
     case journal
-    case settings
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .meditations: return "Meditations"
-        case .feelings: return "Feelings"
-        case .journal: return "Journal"
-        case .settings: return "Settings"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .meditations: return "list.bullet"
-        case .feelings: return "heart.text.square"
-        case .journal: return "book.closed"
-        case .settings: return "gear"
-        }
-    }
 }
 
 @main
@@ -48,25 +27,24 @@ struct MeditationApp: App {
 
 struct ContentView: View {
     @EnvironmentObject var player: MeditationPlayer
-    @State private var selectedDestination: SidebarDestination? = .meditations
+    @State private var selectedTab: TabDestination = .feelings
 
     var body: some View {
-        NavigationSplitView {
-            List(SidebarDestination.allCases, selection: $selectedDestination) { item in
-                Label(item.label, systemImage: item.icon)
-                    .tag(item)
+        TabView(selection: $selectedTab) {
+            Tab("Feelings", systemImage: "heart.text.square", value: .feelings) {
+                NavigationStack {
+                    CheckInView()
+                }
             }
-            .navigationTitle("Brownie")
-        } detail: {
-            switch selectedDestination {
-            case .meditations, .none:
-                MeditationListView()
-            case .feelings:
-                CheckInView()
-            case .journal:
-                JournalView()
-            case .settings:
-                SettingsView()
+            Tab("Meditations", systemImage: "list.bullet", value: .meditations) {
+                NavigationStack {
+                    MeditationListView()
+                }
+            }
+            Tab("Journal", systemImage: "book.closed", value: .journal) {
+                NavigationStack {
+                    JournalView()
+                }
             }
         }
     }

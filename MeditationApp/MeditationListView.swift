@@ -10,6 +10,7 @@ struct MeditationListView: View {
     @State private var editorContent = ""
     @State private var editorFilename = ""
     @State private var isNewFile = false
+    @State private var showingSettings = false
 
     private var filteredFiles: [URL] {
         guard let tag = selectedTag else { return files }
@@ -71,6 +72,27 @@ struct MeditationListView: View {
                 .ignoresSafeArea(.container, edges: .bottom)
             }
             .navigationTitle("Meditations")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gear")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingSettings) {
+                NavigationStack {
+                    SettingsView()
+                        .navigationTitle("Settings")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showingSettings = false }
+                            }
+                        }
+                }
+            }
             .sheet(isPresented: $showingEditor) {
                 MeditationEditorView(
                     content: $editorContent,
