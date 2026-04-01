@@ -57,6 +57,7 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Compassion", emoji: "💗", question: "What way of living opens your heart to others' experience?", category: .positive, color: Color(red: 0.75, green: 0.45, blue: 0.58)),
         Emotion(name: "Confidence", emoji: "💪", question: "What way of living do you feel ready for?", category: .positive, color: Color(red: 0.72, green: 0.55, blue: 0.30)),
         Emotion(name: "Curiosity", emoji: "🔍", question: "What way of living is pulling you to explore further?", category: .positive, color: Color(red: 0.82, green: 0.62, blue: 0.25)),
+        Emotion(name: "Determination", emoji: "🔥", question: "What way of living are you committed to pursuing?", category: .positive, color: Color(red: 0.80, green: 0.42, blue: 0.22)),
         Emotion(name: "Excitement", emoji: "🎉", question: "What way of living is about to begin?", category: .positive, color: Color(red: 0.88, green: 0.55, blue: 0.25)),
         Emotion(name: "Gratitude", emoji: "🙏", question: "What way of living are you thankful for?", category: .positive, color: Color(red: 0.45, green: 0.72, blue: 0.45)),
         Emotion(name: "Hope", emoji: "🌟", question: "What way of living do you look forward to?", category: .positive, color: Color(red: 0.40, green: 0.62, blue: 0.85)),
