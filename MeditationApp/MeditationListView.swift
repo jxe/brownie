@@ -3,6 +3,7 @@ import SwiftUI
 struct MeditationListView: View {
     @EnvironmentObject var player: MeditationPlayer
     @State private var files: [URL] = []
+    @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
     @State private var allTags: [String] = []
     @State private var selectedTag: String? = nil
@@ -199,13 +200,16 @@ struct MeditationListView: View {
 
     private func refreshFiles() {
         files = FileManager.default.meditationFiles()
+        var titleMap: [URL: String] = [:]
         var tagMap: [URL: [String]] = [:]
         var tagSet: Set<String> = []
         for url in files {
-            let (_, tags) = parseTitleAndTags(url)
+            let (title, tags) = parseTitleAndTags(url)
+            titleMap[url] = title
             tagMap[url] = tags
             tagSet.formUnion(tags)
         }
+        fileTitles = titleMap
         fileTags = tagMap
         allTags = tagSet.sorted()
         if let sel = selectedTag, !tagSet.contains(sel) {
@@ -245,7 +249,7 @@ struct MeditationListView: View {
     }
 
     private func titleFor(_ url: URL) -> String {
-        parseTitleAndTags(url).title
+        fileTitles[url] ?? parseTitleAndTags(url).title
     }
 
     private func playFile(_ url: URL) {
