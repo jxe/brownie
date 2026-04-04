@@ -51,7 +51,6 @@ class MeditationPlayer: NSObject, ObservableObject {
         let savedRate = UserDefaults.standard.float(forKey: "speakingRate")
         self.speakingRate = savedRate > 0 ? savedRate : 0.45
         super.init()
-        configureAudioSession()
         setupRemoteCommands()
         observeInterruptions()
     }
@@ -145,16 +144,19 @@ class MeditationPlayer: NSObject, ObservableObject {
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
     private func clearNowPlayingInfo() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
 
     // MARK: - Controls
 
     func play(_ meditation: Meditation, sourceURL: URL? = nil) {
         stop()
+        configureAudioSession()
         currentSourceURL = sourceURL
         currentTitle = meditation.title
         isPaused = false
@@ -286,6 +288,12 @@ class MeditationPlayer: NSObject, ObservableObject {
         playbackStarted = false
         elapsedSeconds = 0
         clearNowPlayingInfo()
+
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("Audio session deactivation error: \(error)")
+        }
     }
 
     // MARK: - Position Tracking
