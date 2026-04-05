@@ -174,7 +174,14 @@ class MeditationPlayer: NSObject, ObservableObject {
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        switch state {
+        case .playing:
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+        case .finished, .idle:
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
+        case .paused:
+            MPNowPlayingInfoCenter.default().playbackState = .paused
+        }
     }
 
     private func clearNowPlayingInfo() {
@@ -370,6 +377,7 @@ class MeditationPlayer: NSObject, ObservableObject {
         currentText = ""
         elapsedSeconds = 0
         stopPositionTracking()
+        streamingPlayer?.pause()
         updateNowPlayingInfo()
     }
 
