@@ -129,6 +129,8 @@ private struct SelectedEmotionChipView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var count: Int { store.count(for: emotion) }
+    @State private var floatingPlusOnes: [UUID] = []
+    @State private var chipScale: CGFloat = 1.0
 
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
@@ -137,6 +139,7 @@ private struct SelectedEmotionChipView: View {
     var body: some View {
         Button {
             store.tap(emotion)
+            triggerTapAnimation()
         } label: {
             HStack(spacing: 6) {
                 Text(emotion.emoji)
@@ -144,11 +147,6 @@ private struct SelectedEmotionChipView: View {
                 Text(emotion.name)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                Spacer()
-                Text("\(count)")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundStyle(colorScheme == .dark ? .white.opacity(0.7) : .black.opacity(0.5))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -165,6 +163,15 @@ private struct SelectedEmotionChipView: View {
             .foregroundStyle(colorScheme == .dark ? .white : .black)
         }
         .buttonStyle(.plain)
+        .scaleEffect(chipScale)
+        .overlay(alignment: .trailing) {
+            ZStack {
+                ForEach(floatingPlusOnes, id: \.self) { _ in
+                    FloatingPlusOneView()
+                }
+            }
+            .padding(.trailing, 12)
+        }
         .overlay(
             GeometryReader { geo in
                 Color.clear.preference(
@@ -187,6 +194,38 @@ private struct SelectedEmotionChipView: View {
         } preview: {
             ReflectionPreview(emotion: emotion)
         }
+    }
+
+    private func triggerTapAnimation() {
+        let id = UUID()
+        floatingPlusOnes.append(id)
+        withAnimation(.spring(duration: 0.25, bounce: 0.5)) {
+            chipScale = 1.08
+        }
+        withAnimation(.spring(duration: 0.25, bounce: 0.3).delay(0.1)) {
+            chipScale = 1.0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            floatingPlusOnes.removeAll { $0 == id }
+        }
+    }
+}
+
+private struct FloatingPlusOneView: View {
+    @State private var isVisible = false
+
+    var body: some View {
+        Text("+1")
+            .font(.caption)
+            .fontWeight(.bold)
+            .foregroundStyle(.primary.opacity(isVisible ? 0 : 0.8))
+            .offset(y: isVisible ? -30 : 0)
+            .scaleEffect(isVisible ? 1.2 : 0.8)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.7)) {
+                    isVisible = true
+                }
+            }
     }
 }
 
