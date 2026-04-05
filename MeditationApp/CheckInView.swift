@@ -50,44 +50,61 @@ struct CheckInView: View {
                     .onPreferenceChange(ChipDestinationPreferenceKey.self) { frames in
                         destinationFrames = frames
                     }
-
-                    // Add emotion buttons
-                    HStack(spacing: 12) {
-                        Button {
-                            showingNegativeSheet = true
-                        } label: {
-                            Label("Negative", systemImage: "minus.circle.fill")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color(.secondarySystemBackground))
-                                )
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            showingPositiveSheet = true
-                        } label: {
-                            Label("Positive", systemImage: "plus.circle.fill")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color(.secondarySystemBackground))
-                                )
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal)
                 }
                 .padding(.vertical)
+                // Extra bottom padding so content doesn't hide behind floating buttons
+                .padding(.bottom, 60)
+            }
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 0) {
+                    Button {
+                        showingNegativeSheet = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.body)
+                                .foregroundStyle(.tint)
+                            Text("Negative")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider()
+                        .frame(height: 24)
+
+                    Button {
+                        showingPositiveSheet = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.body)
+                                .foregroundStyle(.tint)
+                            Text("Positive")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .background(
+                    Capsule()
+                        .fill(Color(.secondarySystemFill))
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                .blur(radius: 2)
+                                .offset(y: 1)
+                                .clipShape(Capsule())
+                        )
+                )
+                .padding(.horizontal, 40)
+                .padding(.bottom, 8)
             }
             .navigationTitle("Feelings")
             .toolbar {
@@ -129,7 +146,7 @@ private struct SelectedEmotionChipView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var count: Int { store.count(for: emotion) }
-    @State private var floatingPlusOnes: [UUID] = []
+    @State private var floatingCounts: [(id: UUID, count: Int)] = []
     @State private var chipScale: CGFloat = 1.0
 
     private var chipColor: Color {
@@ -166,8 +183,8 @@ private struct SelectedEmotionChipView: View {
         .scaleEffect(chipScale)
         .overlay(alignment: .trailing) {
             ZStack {
-                ForEach(floatingPlusOnes, id: \.self) { _ in
-                    FloatingPlusOneView()
+                ForEach(floatingCounts, id: \.id) { entry in
+                    FloatingPlusOneView(count: entry.count)
                 }
             }
             .padding(.trailing, 12)
@@ -198,7 +215,7 @@ private struct SelectedEmotionChipView: View {
 
     private func triggerTapAnimation() {
         let id = UUID()
-        floatingPlusOnes.append(id)
+        floatingCounts.append((id: id, count: count))
         withAnimation(.spring(duration: 0.25, bounce: 0.5)) {
             chipScale = 1.08
         }
@@ -206,16 +223,17 @@ private struct SelectedEmotionChipView: View {
             chipScale = 1.0
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            floatingPlusOnes.removeAll { $0 == id }
+            floatingCounts.removeAll { $0.id == id }
         }
     }
 }
 
 private struct FloatingPlusOneView: View {
+    let count: Int
     @State private var isVisible = false
 
     var body: some View {
-        Text("+1")
+        Text("\(count)")
             .font(.caption)
             .fontWeight(.bold)
             .foregroundStyle(.primary.opacity(isVisible ? 0 : 0.8))
@@ -363,7 +381,6 @@ private struct EmotionPickerSheet: View {
             // Build a snapshot view matching the destination chip appearance
             let chipSnapshot = FlightChipView(
                 emotion: emotion,
-                count: store.count(for: emotion),
                 width: destFrame.width,
                 colorScheme: colorScheme
             )
@@ -400,7 +417,6 @@ private struct EmotionPickerSheet: View {
 /// A lightweight view rendered by ImageRenderer to create the flying chip snapshot.
 private struct FlightChipView: View {
     let emotion: Emotion
-    let count: Int
     let width: CGFloat
     let colorScheme: ColorScheme
 
@@ -411,11 +427,6 @@ private struct FlightChipView: View {
             Text(emotion.name)
                 .font(.subheadline)
                 .fontWeight(.medium)
-            Spacer()
-            Text("\(count)")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundStyle(colorScheme == .dark ? .white.opacity(0.7) : .black.opacity(0.5))
         }
         .frame(width: width - 24, alignment: .leading) // account for horizontal padding
         .padding(.horizontal, 12)
