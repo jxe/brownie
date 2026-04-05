@@ -18,60 +18,43 @@ struct MeditationListView: View {
         return files.filter { fileTags[$0]?.contains(tag) == true }
     }
     var body: some View {
-            ZStack(alignment: .bottomTrailing) {
-                VStack(spacing: 0) {
-                    if !allTags.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(allTags, id: \.self) { tag in
-                                    Text(tag)
-                                        .font(.subheadline)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(selectedTag == tag ? Color.accentColor : Color(.systemGray5))
-                                        .foregroundStyle(selectedTag == tag ? .white : .primary)
-                                        .clipShape(Capsule())
-                                        .onTapGesture {
-                                            withAnimation(.easeInOut(duration: 0.2)) {
-                                                selectedTag = selectedTag == tag ? nil : tag
-                                            }
+            List {
+                if !allTags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(allTags, id: \.self) { tag in
+                                Text(tag)
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(selectedTag == tag ? Color.accentColor : Color(.systemGray5))
+                                    .foregroundStyle(selectedTag == tag ? .white : .primary)
+                                    .clipShape(Capsule())
+                                    .onTapGesture {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            selectedTag = selectedTag == tag ? nil : tag
                                         }
-                                }
+                                    }
                             }
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
                         }
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
                     }
-                    List {
-                        ForEach(filteredFiles, id: \.self) { url in
-                        rowView(for: url)
-                            .listRowBackground(
-                                player.currentSourceURL == url && player.isPlaying
-                                    ? Color("HighlightColor")
-                                    : Color("BackgroundColor")
-                            )
-                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                ForEach(filteredFiles, id: \.self) { url in
+                    rowView(for: url)
+                        .listRowBackground(
+                            player.currentSourceURL == url && player.isPlaying
+                                ? Color("HighlightColor")
+                                : Color("BackgroundColor")
+                        )
                 }
-
-                Button {
-                    newFile()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
-                        .background(Color.accentColor)
-                        .clipShape(Circle())
-                        .shadow(radius: 4, y: 2)
-                }
-                .padding(.trailing, 20)
-                .padding(.bottom, 0)
-                .ignoresSafeArea(.container, edges: .bottom)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .navigationTitle("Meditations")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -79,6 +62,13 @@ struct MeditationListView: View {
                         showingSettings = true
                     } label: {
                         Image(systemName: "gear")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        newFile()
+                    } label: {
+                        Image(systemName: "plus")
                     }
                 }
             }
