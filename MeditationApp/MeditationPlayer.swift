@@ -3,7 +3,17 @@ import Combine
 import MediaPlayer
 
 class MeditationPlayer: NSObject, ObservableObject {
-    @Published var isPlaying = false
+    enum State {
+        case idle
+        case playing
+        case paused
+        case finished
+    }
+
+    @Published private(set) var state: State = .idle
+
+    var isPlaying: Bool { state == .playing }
+
     @Published var currentText = ""
     @Published var stepIndex = 0
     @Published var totalSteps = 0
@@ -35,7 +45,8 @@ class MeditationPlayer: NSObject, ObservableObject {
     private var streamingPlayer: StreamingPlayer?
     private var renderTask: Task<Void, Never>?
     private var positionTimer: Timer?
-    private var isPaused = false
+    private var stateBeforeInterruption: State?
+    private var currentMeditation: Meditation?
     private var currentTitle = ""
     private var playbackStarted = false
 
@@ -89,14 +100,17 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         switch type {
         case .began:
-            if isPlaying { pause() }
+            stateBeforeInterruption = state
+            if state == .playing { pause() }
         case .ended:
-            if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
+            if stateBeforeInterruption == .playing,
+               let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 if options.contains(.shouldResume) {
                     resume()
                 }
             }
+            stateBeforeInterruption = nil
         @unknown default:
             break
         }
@@ -109,7 +123,7 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         if reason == .oldDeviceUnavailable {
             // Headphones unplugged — pause
-            if isPlaying { pause() }
+            if state == .playing { pause() }
         }
     }
 
@@ -118,14 +132,28 @@ class MeditationPlayer: NSObject, ObservableObject {
     private func setupRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
-            self?.resume()
-            return .success
+            guard let self else { return .success }
+            switch self.state {
+            case .finished:
+                self.replay()
+                return .success
+            case .paused:
+                self.resume()
+                return .success
+            case .playing:
+                return .success
+            case .idle:
+                return .noActionableNowPlayingItem
+            }
         }
         center.pauseCommand.addTarget { [weak self] _ in
             self?.pause()
             return .success
         }
-        center.togglePlayPauseCommand.isEnabled = false
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.togglePause()
+            return .success
+        }
     }
 
     // MARK: - Now Playing
@@ -138,7 +166,9 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         if let player = streamingPlayer {
             info[MPMediaItemPropertyPlaybackDuration] = player.totalDuration
-            if let elapsed = player.currentTime() {
+            if state == .finished {
+                info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0
+            } else if let elapsed = player.currentTime() {
                 info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
             }
         }
@@ -158,8 +188,8 @@ class MeditationPlayer: NSObject, ObservableObject {
         stop()
         configureAudioSession()
         currentSourceURL = sourceURL
+        currentMeditation = meditation
         currentTitle = meditation.title
-        isPaused = false
 
         // Expand all countdowns eagerly into a flat step list
         var flatSteps: [MeditationStep] = []
@@ -173,7 +203,7 @@ class MeditationPlayer: NSObject, ObservableObject {
 
         totalSteps = flatSteps.count
         stepIndex = 0
-        isPlaying = true
+        state = .playing
         playbackStarted = false
 
         let player = StreamingPlayer(format: renderer.format)
@@ -249,23 +279,28 @@ class MeditationPlayer: NSObject, ObservableObject {
     }
 
     func togglePause() {
-        if isPaused {
+        switch state {
+        case .finished:
+            replay()
+        case .paused:
             resume()
-        } else {
+        case .playing:
             pause()
+        case .idle:
+            break
         }
     }
 
     func pause() {
-        isPaused = true
-        isPlaying = false
+        guard state == .playing else { return }
+        state = .paused
         streamingPlayer?.pause()
         updateNowPlayingInfo()
     }
 
     func resume() {
-        isPaused = false
-        isPlaying = true
+        guard state == .paused else { return }
+        state = .playing
         configureAudioSession()
         streamingPlayer?.resume()
         updateNowPlayingInfo()
@@ -278,9 +313,9 @@ class MeditationPlayer: NSObject, ObservableObject {
         streamingPlayer?.stop()
         streamingPlayer = nil
 
-        isPaused = false
-        isPlaying = false
+        state = .idle
         currentSourceURL = nil
+        currentMeditation = nil
         stepIndex = 0
         totalSteps = 0
         currentText = ""
@@ -331,10 +366,16 @@ class MeditationPlayer: NSObject, ObservableObject {
     // MARK: - Completion
 
     private func handlePlaybackFinished() {
-        isPlaying = false
+        state = .finished
         currentText = ""
         elapsedSeconds = 0
         stopPositionTracking()
-        clearNowPlayingInfo()
+        updateNowPlayingInfo()
+    }
+
+    private func replay() {
+        guard let meditation = currentMeditation else { return }
+        let url = currentSourceURL
+        play(meditation, sourceURL: url)
     }
 }
