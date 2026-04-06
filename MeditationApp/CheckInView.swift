@@ -147,7 +147,8 @@ private struct SelectedEmotionChipView: View {
 
     private var count: Int { store.count(for: emotion) }
     @State private var floatingCounts: [(id: UUID, count: Int)] = []
-    @State private var chipScale: CGFloat = 1.0
+    @State private var isPressed = false
+    @State private var showScaled = false
 
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
@@ -156,7 +157,7 @@ private struct SelectedEmotionChipView: View {
     var body: some View {
         Button {
             store.tap(emotion)
-            triggerTapAnimation()
+            triggerFloatingCount()
         } label: {
             HStack(spacing: 6) {
                 Text(emotion.emoji)
@@ -180,7 +181,22 @@ private struct SelectedEmotionChipView: View {
             .foregroundStyle(colorScheme == .dark ? .white : .black)
         }
         .buttonStyle(.plain)
-        .scaleEffect(chipScale)
+        .scaleEffect(showScaled ? 1.05 : 1.0)
+        .animation(showScaled ? .interpolatingSpring(stiffness: 1200, damping: 15) : .spring(duration: 0.25, bounce: 0.4), value: showScaled)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard !isPressed else { return }
+                    isPressed = true
+                    showScaled = true
+                }
+                .onEnded { _ in
+                    isPressed = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        if !isPressed { showScaled = false }
+                    }
+                }
+        )
         .overlay(alignment: .trailing) {
             ZStack {
                 ForEach(floatingCounts, id: \.id) { entry in
@@ -213,18 +229,20 @@ private struct SelectedEmotionChipView: View {
         }
     }
 
-    private func triggerTapAnimation() {
+    private func triggerFloatingCount() {
         let id = UUID()
         floatingCounts.append((id: id, count: count))
-        withAnimation(.spring(duration: 0.25, bounce: 0.5)) {
-            chipScale = 1.08
-        }
-        withAnimation(.spring(duration: 0.25, bounce: 0.3).delay(0.1)) {
-            chipScale = 1.0
-        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             floatingCounts.removeAll { $0.id == id }
         }
+    }
+}
+
+private struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 1.08 : 1.0)
+            .animation(configuration.isPressed ? .interpolatingSpring(stiffness: 1200, damping: 15) : .spring(duration: 0.25, bounce: 0.4), value: configuration.isPressed)
     }
 }
 

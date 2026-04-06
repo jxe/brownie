@@ -58,7 +58,6 @@ class EmotionStore {
             timestamp: Date()
         )
         journalEntries.insert(entry, at: 0)
-        deselect(emotion)
         save()
     }
 
