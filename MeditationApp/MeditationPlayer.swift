@@ -98,21 +98,23 @@ class MeditationPlayer: NSObject, ObservableObject {
               let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
 
-        switch type {
-        case .began:
-            stateBeforeInterruption = state
-            if state == .playing { pause() }
-        case .ended:
-            if stateBeforeInterruption == .playing,
-               let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
-                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-                if options.contains(.shouldResume) {
-                    resume()
+        DispatchQueue.main.async { [self] in
+            switch type {
+            case .began:
+                stateBeforeInterruption = state
+                if state == .playing { pause() }
+            case .ended:
+                if stateBeforeInterruption == .playing,
+                   let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
+                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                    if options.contains(.shouldResume) {
+                        resume()
+                    }
                 }
+                stateBeforeInterruption = nil
+            @unknown default:
+                break
             }
-            stateBeforeInterruption = nil
-        @unknown default:
-            break
         }
     }
 
@@ -122,8 +124,9 @@ class MeditationPlayer: NSObject, ObservableObject {
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
 
         if reason == .oldDeviceUnavailable {
-            // Headphones unplugged — pause
-            if state == .playing { pause() }
+            DispatchQueue.main.async { [self] in
+                if state == .playing { pause() }
+            }
         }
     }
 
@@ -133,25 +136,28 @@ class MeditationPlayer: NSObject, ObservableObject {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
             guard let self else { return .success }
-            switch self.state {
-            case .finished:
-                self.replay()
-                return .success
-            case .paused:
-                self.resume()
-                return .success
-            case .playing:
-                return .success
+            // Read state synchronously for return value; dispatch mutation to main
+            let currentState = self.state
+            switch currentState {
             case .idle:
                 return .noActionableNowPlayingItem
+            default:
+                DispatchQueue.main.async {
+                    switch self.state {
+                    case .finished: self.replay()
+                    case .paused: self.resume()
+                    default: break
+                    }
+                }
+                return .success
             }
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            self?.pause()
+            DispatchQueue.main.async { self?.pause() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.togglePause()
+            DispatchQueue.main.async { self?.togglePause() }
             return .success
         }
     }
@@ -308,9 +314,14 @@ class MeditationPlayer: NSObject, ObservableObject {
 
     func resume() {
         guard state == .paused else { return }
-        state = .playing
         configureAudioSession()
-        streamingPlayer?.resume()
+        do {
+            try streamingPlayer?.resume()
+        } catch {
+            print("Resume error: \(error)")
+            return
+        }
+        state = .playing
         startPositionTracking()
         updateNowPlayingInfo()
     }
@@ -379,8 +390,17 @@ class MeditationPlayer: NSObject, ObservableObject {
         currentText = ""
         elapsedSeconds = 0
         stopPositionTracking()
-        streamingPlayer?.pause()
+        renderTask?.cancel()
+        renderTask = nil
+        streamingPlayer?.stop()
+        streamingPlayer = nil
         updateNowPlayingInfo()
+
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("Audio session deactivation error: \(error)")
+        }
     }
 
     private func replay() {
