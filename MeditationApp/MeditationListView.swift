@@ -121,6 +121,7 @@ struct MeditationListView: View {
                     .font(.callout)
                     .foregroundStyle(Color(.tertiaryLabel))
                     .frame(width: 32, height: 32)
+                    .overlay(Circle().strokeBorder(Color(.separator), lineWidth: 1))
             }
 
             VStack(alignment: .leading, spacing: 4) {
