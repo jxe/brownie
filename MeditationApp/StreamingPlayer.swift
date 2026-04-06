@@ -67,6 +67,7 @@ class StreamingPlayer {
 
     func pause() {
         playerNode.pause()
+        engine.pause()
     }
 
     func resume() throws {

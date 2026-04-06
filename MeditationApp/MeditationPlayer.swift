@@ -136,12 +136,13 @@ class MeditationPlayer: NSObject, ObservableObject {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
             guard let self else { return .success }
-            // Read state synchronously for return value; dispatch mutation to main
             let currentState = self.state
             switch currentState {
             case .idle:
                 return .noActionableNowPlayingItem
             default:
+                // Update Now Playing synchronously so Control Center sees it before handler returns
+                self.setNowPlayingState(.playing)
                 DispatchQueue.main.async {
                     switch self.state {
                     case .finished: self.replay()
@@ -153,13 +154,39 @@ class MeditationPlayer: NSObject, ObservableObject {
             }
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async { self?.pause() }
+            guard let self else { return .success }
+            self.setNowPlayingState(.paused)
+            DispatchQueue.main.async {
+                // If already paused (system thought we were playing), just confirm state
+                if self.state == .playing {
+                    self.pause()
+                } else {
+                    self.updateNowPlayingInfo()
+                }
+            }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async { self?.togglePause() }
+            guard let self else { return .success }
+            let currentState = self.state
+            let newState: MPNowPlayingPlaybackState = currentState == .playing ? .paused : .playing
+            self.setNowPlayingState(newState)
+            DispatchQueue.main.async { self.togglePause() }
             return .success
         }
+    }
+
+    /// Thread-safe immediate update of Now Playing playback state.
+    /// Called from remote command handlers before returning, so Control Center
+    /// reflects the change without waiting for the main-queue dispatch.
+    private func setNowPlayingState(_ playbackState: MPNowPlayingPlaybackState) {
+        let center = MPNowPlayingInfoCenter.default()
+        // Set nowPlayingInfo first — assigning it can reset playbackState
+        if var info = center.nowPlayingInfo {
+            info[MPNowPlayingInfoPropertyPlaybackRate] = playbackState == .playing ? 1.0 : 0.0
+            center.nowPlayingInfo = info
+        }
+        center.playbackState = playbackState
     }
 
     // MARK: - Now Playing
