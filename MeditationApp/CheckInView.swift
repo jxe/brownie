@@ -3,6 +3,7 @@ import SwiftUI
 struct CheckInView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var showingNegativeSheet = false
     @State private var showingPositiveSheet = false
@@ -119,6 +120,10 @@ struct CheckInView: View {
             .navigationDestination(for: Emotion.self) { emotion in
                 ReflectionView(emotion: emotion)
             }
+        }
+        .onAppear { store.clearSessionIfStale() }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active { store.clearSessionIfStale() }
         }
         .sheet(isPresented: $showingNegativeSheet) {
             EmotionPickerSheet(

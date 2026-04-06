@@ -10,14 +10,24 @@ class EmotionStore {
     /// Cumulative engagement time in seconds, grows with each tap.
     var sessionTime: TimeInterval = 0
     private var lastTapTime: Date?
+    private var lastInteractionTime: Date?
+
+    private enum SessionKeys {
+        static let emotionCounts = "checkin_emotionCounts"
+        static let sessionTime = "checkin_sessionTime"
+        static let lastInteraction = "checkin_lastInteractionTime"
+    }
 
     init() {
         load()
+        loadSession()
     }
 
     func tap(_ emotion: Emotion) {
         emotionCounts[emotion.name, default: 0] += 1
         addSessionCredit()
+        lastInteractionTime = Date()
+        saveSession()
     }
 
     private func addSessionCredit() {
@@ -32,6 +42,8 @@ class EmotionStore {
 
     func deselect(_ emotion: Emotion) {
         emotionCounts.removeValue(forKey: emotion.name)
+        lastInteractionTime = Date()
+        saveSession()
     }
 
     func count(for emotion: Emotion) -> Int {
@@ -66,7 +78,42 @@ class EmotionStore {
         save()
     }
 
-    // MARK: - Persistence
+    // MARK: - Session Persistence
+
+    func clearSessionIfStale() {
+        guard let last = lastInteractionTime else { return }
+        if Date().timeIntervalSince(last) > 6 * 60 * 60 {
+            emotionCounts = [:]
+            sessionTime = 0
+            lastTapTime = nil
+            lastInteractionTime = nil
+            saveSession()
+        }
+    }
+
+    private func saveSession() {
+        let defaults = UserDefaults.standard
+        defaults.set(emotionCounts, forKey: SessionKeys.emotionCounts)
+        defaults.set(sessionTime, forKey: SessionKeys.sessionTime)
+        if let time = lastInteractionTime {
+            defaults.set(time.timeIntervalSince1970, forKey: SessionKeys.lastInteraction)
+        } else {
+            defaults.removeObject(forKey: SessionKeys.lastInteraction)
+        }
+    }
+
+    private func loadSession() {
+        let defaults = UserDefaults.standard
+        if let counts = defaults.dictionary(forKey: SessionKeys.emotionCounts) as? [String: Int] {
+            emotionCounts = counts
+        }
+        let time = defaults.double(forKey: SessionKeys.sessionTime)
+        if time > 0 { sessionTime = time }
+        let stamp = defaults.double(forKey: SessionKeys.lastInteraction)
+        if stamp > 0 { lastInteractionTime = Date(timeIntervalSince1970: stamp) }
+    }
+
+    // MARK: - Journal Persistence
 
     private var journalFileURL: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
