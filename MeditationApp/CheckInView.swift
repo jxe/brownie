@@ -1,4 +1,28 @@
 import SwiftUI
+import UIKit
+
+// MARK: - Disable ScrollView touch delay
+
+/// Finds the nearest parent UIScrollView and sets delaysContentTouches = false
+/// so that ButtonStyle.isPressed fires immediately on touch down.
+private struct DisableScrollTouchDelay: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            var current: UIView? = view.superview
+            while let parent = current {
+                if let scrollView = parent as? UIScrollView {
+                    scrollView.delaysContentTouches = false
+                    break
+                }
+                current = parent.superview
+            }
+        }
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
 
 struct CheckInView: View {
     @Environment(EmotionStore.self) private var store
@@ -32,6 +56,8 @@ struct CheckInView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ScrollView {
+                DisableScrollTouchDelay()
+                    .frame(width: 0, height: 0)
                 VStack(spacing: 20) {
                     // Selected emotion chips
                     LazyVGrid(columns: columns, spacing: 10) {
@@ -55,7 +81,7 @@ struct CheckInView: View {
                 }
                 .padding(.vertical)
                 // Extra bottom padding so content doesn't hide behind floating buttons
-                .padding(.bottom, 60)
+                .padding(.bottom, 10)
             }
             .safeAreaInset(edge: .bottom) {
                 GeometryReader { geo in
@@ -103,7 +129,7 @@ struct CheckInView: View {
                         .buttonStyle(.plain)
                     }
                     .padding(.bottom, 10) // compensate for tail height so labels center in body
-                    .glassEffect(.regular, in: SpeechBubbleShape(tailFraction: tailFraction))
+                    .glassEffect(.regular.interactive(), in: SpeechBubbleShape(tailFraction: tailFraction))
                     .padding(.horizontal, barHorizontalPadding)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
@@ -155,9 +181,6 @@ private struct SelectedEmotionChipView: View {
 
     private var count: Int { store.count(for: emotion) }
     @State private var floatingCounts: [(id: UUID, count: Int)] = []
-    @State private var isPressed = false
-    @State private var showScaled = false
-
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
     }
@@ -188,23 +211,7 @@ private struct SelectedEmotionChipView: View {
             )
             .foregroundStyle(colorScheme == .dark ? .white : .black)
         }
-        .buttonStyle(.plain)
-        .scaleEffect(showScaled ? 1.05 : 1.0)
-        .animation(showScaled ? .interpolatingSpring(stiffness: 1200, damping: 15) : .spring(duration: 0.25, bounce: 0.4), value: showScaled)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    guard !isPressed else { return }
-                    isPressed = true
-                    showScaled = true
-                }
-                .onEnded { _ in
-                    isPressed = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                        if !isPressed { showScaled = false }
-                    }
-                }
-        )
+        .buttonStyle(ScaleButtonStyle())
         .overlay(alignment: .trailing) {
             ZStack {
                 ForEach(floatingCounts, id: \.id) { entry in
@@ -248,9 +255,29 @@ private struct SelectedEmotionChipView: View {
 
 private struct ScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 1.08 : 1.0)
-            .animation(configuration.isPressed ? .interpolatingSpring(stiffness: 1200, damping: 15) : .spring(duration: 0.25, bounce: 0.4), value: configuration.isPressed)
+        ScaleButtonContent(isPressed: configuration.isPressed, label: configuration.label)
+    }
+}
+
+private struct ScaleButtonContent: View {
+    let isPressed: Bool
+    let label: ButtonStyleConfiguration.Label
+    @State private var showScaled = false
+
+    var body: some View {
+        label
+            .scaleEffect(showScaled ? 1.05 : 1.0)
+            .animation(showScaled ? .interpolatingSpring(stiffness: 1200, damping: 15) : .spring(duration: 0.25, bounce: 0.4), value: showScaled)
+            .onChange(of: isPressed) { _, pressed in
+                if pressed {
+                    showScaled = true
+                } else {
+                    // Keep scaled for at least 80ms after release
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        if !self.isPressed { showScaled = false }
+                    }
+                }
+            }
     }
 }
 
