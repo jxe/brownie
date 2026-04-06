@@ -82,20 +82,64 @@ I'm with {person}. · I appreciate them for their kindness.
 # If "Stephanie" is drawn: "I appreciate her for her kindness."
 ```
 
-## Sections
+## Repeats
+
+Use `×` (multiplication sign) to repeat lines or blocks.
+
+### Simple repeat: `×N text...`
+
+Repeats the line N times:
+
+```
+×4 I'm with {person}, not making progress. · Is it better {why}? 12″
+```
+
+This runs the line 4 times. Any trailing pause (the `12″`) naturally separates each repetition.
+
+### Stanza block: `×N𝄐REST`
+
+Repeats an indented body N times with REST seconds of silence between stanzas. The app automatically says "Rest." / "Again." between stanzas and "One last time." before the final one. `𝄐` is the fermata sign (U+1D110).
+
+```
+×5𝄐28″
+  I'm with someone, not making progress. · It's {why}. 12″
+```
+
+This runs the body 5 times with 28s rest between each.
+
+### Nested repeats
+
+Body lines inside a stanza block can themselves use `×N` for inner repetition:
+
+```
+×5𝄐28″
+  ×4 I'm with {person}, not making progress. · Is it better {why}? 12″
+```
+
+This means: 5 stanzas, each containing 4 repetitions of the line. The `12″` at the end of the line acts as the pause between inner cycles. 28s rest between stanzas.
+
+The inner repeat can also be written in block form:
+
+```
+×5𝄐28″
+  ×4
+    I'm with {person}, not making progress. · Is it better {why}? 12″
+```
+
+## Sections (deprecated)
+
+> **Note:** The `§` section notation is deprecated. Use the `×` repeat notation above instead.
 
 Sections define repeated stanza structures. Two forms:
 
 ### Simple: `§COUNT REST`
 
-Runs the indented body COUNT times, with REST seconds of silence between stanzas. The app automatically says "Rest." / "Again." between stanzas and "One last time." before the final one.
+Runs the indented body COUNT times, with REST seconds of silence between stanzas.
 
 ```
 §5 28″
   I'm with someone, not making progress. · It's {why}. 12″
 ```
-
-This runs the body 5 times with 28s rest between each.
 
 ### Nested: `§OUTER×INNER INNER_DELAY OUTER_REST`
 
@@ -105,8 +149,6 @@ Runs INNER cycles per stanza, with INNER_DELAY between cycles, repeated OUTER st
 §3×5 6″ 28″
   {fbs} ·· Feel 22″ Done.
 ```
-
-This means: 3 stanzas, each containing 5 cycles of the body. 6s pause between cycles within a stanza, 28s rest between stanzas.
 
 ## Complete Examples
 
@@ -124,7 +166,7 @@ Please Lord. · Grant me a long life, and a good one. ·
 Amen.
 ```
 
-### HPN (pool + nested section)
+### HPN (pool + nested repeat)
 
 ```
 # HPN
@@ -134,8 +176,8 @@ Amen.
   So tired of nonstop progress.
   If only I'd found the right people.
 
-§3×5 6″ 28″
-  {fbs} ·· Feel 22″ Done.
+×3𝄐28″
+  ×5 {fbs} ·· Feel 22″ Done.
 ```
 
 ### Yes to Life (countdown timers)
@@ -179,7 +221,8 @@ Done!
 | `⏳` | Hourglass (U+23F3) | Countdown timer |
 | `~` | Tilde | Pool definition |
 | `{ }` | Braces | Pool reference |
-| `§` | Section sign (U+00A7) | Section/stanza block |
-| `×` | Multiplication (U+00D7) | Nested section (outer×inner) |
+| `×` | Multiplication (U+00D7) | Repeat count (`×5 text` or `×5𝄐28″`) |
+| `𝄐` | Fermata (U+1D110) | Rest between stanzas (`×5𝄐28″`) |
+| `§` | Section sign (U+00A7) | Section block (deprecated, use `×` instead) |
 | `♀` | Female sign (U+2640) | Female gender on pool item |
 | `♂` | Male sign (U+2642) | Male gender on pool item |

@@ -45,7 +45,54 @@ struct MeditationParser {
                 continue
             }
 
-            // Section: §N rest or §N×M innerDelay outerRest
+            // Repeat block: ×N𝄐REST or ×N text... (new notation, preferred)
+            if trimmed.hasPrefix("\u{00D7}") { // ×
+                let parsed = parseRepeatLine(trimmed)
+                switch parsed {
+                case .stanzaBlock(let outerCount, let outerRest, let inlineBody):
+                    // ×N𝄐REST [inline body] — stanza block
+                    let bodyLines: [String]
+                    if let inlineBody = inlineBody {
+                        // One-liner: ×5𝄐28″ ×4 text... — inline body on same line
+                        bodyLines = [inlineBody]
+                        i += 1
+                    } else {
+                        // Block form: read indented body lines
+                        bodyLines = collectIndentedBody(lines: lines, index: &i)
+                    }
+                    // Expand inner ×N repeats within body lines
+                    let expandedBody = expandInnerRepeats(bodyLines)
+                    let sectionSteps = expandSection(
+                        bodyLines: expandedBody,
+                        outerCount: outerCount,
+                        innerCount: nil,
+                        innerDelay: nil,
+                        outerRest: outerRest,
+                        pools: pools
+                    )
+                    steps.append(contentsOf: sectionSteps)
+
+                case .inlineRepeat(let count, let text):
+                    // ×N text... — simple repeat
+                    for _ in 0..<count {
+                        steps.append(contentsOf: expandSpeakLine(text, pools: pools))
+                    }
+                    i += 1
+
+                case .blockRepeat(let count):
+                    // ×N (alone) — read indented body, repeat N times
+                    let bodyLines = collectIndentedBody(lines: lines, index: &i)
+                    for _ in 0..<count {
+                        for bodyLine in bodyLines {
+                            steps.append(contentsOf: expandSpeakLine(bodyLine, pools: pools))
+                        }
+                    }
+                }
+                continue
+            }
+
+            // DEPRECATED: Section notation (§N rest or §N×M innerDelay outerRest)
+            // Use × notation instead: ×N𝄐REST for stanza blocks, ×N text for repeats
             if trimmed.hasPrefix("§") {
                 let (outerCount, innerCount, innerDelay, outerRest) = parseSectionHeader(trimmed)
                 var bodyLines: [String] = []
@@ -129,6 +176,97 @@ struct MeditationParser {
             return (Double(cleaned) ?? 1) * 60
         }
         return Double(cleaned) ?? 0
+    }
+
+    // MARK: - Repeat Notation (× syntax)
+
+    private enum RepeatParsed {
+        case stanzaBlock(outerCount: Int, outerRest: TimeInterval, inlineBody: String?)  // ×5𝄐28″ [inline body]
+        case inlineRepeat(count: Int, text: String)                  // ×4 text...
+        case blockRepeat(count: Int)                                 // ×4 (alone, body follows indented)
+    }
+
+    /// Parses a line starting with × into one of the repeat forms.
+    private static func parseRepeatLine(_ line: String) -> RepeatParsed {
+        let after = String(line.dropFirst()) // drop ×
+
+        // Check for fermata 𝄐 — stanza block form: ×5𝄐28″ [optional inline body]
+        if after.contains("\u{1D110}") { // 𝄐
+            let parts = after.split(separator: "\u{1D110}", maxSplits: 1)
+            let count = Int(parts[0]) ?? 5
+            let afterFermata = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : ""
+            // afterFermata is like "28″" or "28″ ×4 text..."
+            // Extract the rest duration (leading number + unit), then any remaining inline body
+            var restStr = ""
+            var ri = afterFermata.startIndex
+            while ri < afterFermata.endIndex {
+                let ch = afterFermata[ri]
+                if ch.isNumber || ch == "." || ch == "\u{2033}" || ch == "\u{2032}" {
+                    restStr.append(ch)
+                    ri = afterFermata.index(after: ri)
+                } else {
+                    break
+                }
+            }
+            let rest = restStr.isEmpty ? 28.0 : parseSeconds(restStr)
+            let inlineBody = String(afterFermata[ri...]).trimmingCharacters(in: .whitespaces)
+            return .stanzaBlock(outerCount: count, outerRest: rest,
+                                inlineBody: inlineBody.isEmpty ? nil : inlineBody)
+        }
+
+        // Extract count (leading digits)
+        var numStr = ""
+        var idx = after.startIndex
+        while idx < after.endIndex && after[idx].isNumber {
+            numStr.append(after[idx])
+            idx = after.index(after: idx)
+        }
+        let count = Int(numStr) ?? 1
+
+        // Remaining text after count
+        let remaining = String(after[idx...]).trimmingCharacters(in: .whitespaces)
+        if remaining.isEmpty {
+            return .blockRepeat(count: count)
+        } else {
+            return .inlineRepeat(count: count, text: remaining)
+        }
+    }
+
+    /// Reads indented body lines (starting with 2+ spaces or tab), advancing index past them.
+    private static func collectIndentedBody(lines: [String], index: inout Int) -> [String] {
+        var body: [String] = []
+        index += 1
+        while index < lines.count {
+            let line = lines[index]
+            guard line.hasPrefix("  ") || line.hasPrefix("\t") else { break }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty && !trimmed.hasPrefix("#") {
+                body.append(trimmed)
+            }
+            index += 1
+        }
+        return body
+    }
+
+    /// Expands inner ×N inline repeats within body lines of a stanza block.
+    private static func expandInnerRepeats(_ bodyLines: [String]) -> [String] {
+        var expanded: [String] = []
+        for line in bodyLines {
+            if line.hasPrefix("\u{00D7}") { // ×
+                let parsed = parseRepeatLine(line)
+                switch parsed {
+                case .inlineRepeat(let count, let text):
+                    for _ in 0..<count {
+                        expanded.append(text)
+                    }
+                default:
+                    expanded.append(line)
+                }
+            } else {
+                expanded.append(line)
+            }
+        }
+        return expanded
     }
 
     // MARK: - Section Expansion

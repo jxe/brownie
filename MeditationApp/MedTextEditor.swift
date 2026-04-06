@@ -8,8 +8,8 @@ struct MedTextEditor: UIViewRepresentable {
         ("·", "·"),
         ("″", "\u{2033}"),
         ("′", "\u{2032}"),
-        ("§", "\u{00A7}"),
         ("×", "\u{00D7}"),
+        ("\u{1D110}", "\u{1D110}"),  // 𝄐 fermata (rest between stanzas)
         ("⏳", "\u{23F3}"),
         ("♀", "\u{2640}"),
         ("♂", "\u{2642}"),
@@ -112,10 +112,10 @@ struct MedTextEditor: UIViewRepresentable {
             let stripped = currentLine.drop(while: { $0 == " " || $0 == "\t" })
             let indent = String(currentLine.prefix(currentLine.count - stripped.count))
 
-            // Lines starting with ~ or § should increase indent
+            // Lines starting with ~, §, or × (with 𝄐 or alone) should increase indent
             let trimmed = currentLine.trimmingCharacters(in: .whitespacesAndNewlines)
             let newIndent: String
-            if trimmed.hasPrefix("~") || trimmed.hasPrefix("\u{00A7}") {
+            if trimmed.hasPrefix("~") || trimmed.hasPrefix("\u{00A7}") || trimmed.hasPrefix("\u{00D7}") {
                 newIndent = indent + "  "
             } else {
                 newIndent = indent
