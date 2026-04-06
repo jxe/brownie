@@ -50,7 +50,9 @@ struct ContentView: View {
         }
         .background(
             TabBarCenterXReader(tabIndex: 0) { centerX in
-                feelingsTabCenterX = centerX
+                if centerX != feelingsTabCenterX {
+                    feelingsTabCenterX = centerX
+                }
             }
         )
         .environment(\.feelingsTabCenterX, feelingsTabCenterX)

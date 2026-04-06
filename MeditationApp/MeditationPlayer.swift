@@ -302,6 +302,7 @@ class MeditationPlayer: NSObject, ObservableObject {
         guard state == .playing else { return }
         state = .paused
         streamingPlayer?.pause()
+        stopPositionTracking()
         updateNowPlayingInfo()
     }
 
@@ -310,6 +311,7 @@ class MeditationPlayer: NSObject, ObservableObject {
         state = .playing
         configureAudioSession()
         streamingPlayer?.resume()
+        startPositionTracking()
         updateNowPlayingInfo()
     }
 
