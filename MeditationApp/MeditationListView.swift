@@ -108,7 +108,21 @@ struct MeditationListView: View {
     @ViewBuilder
     private func rowView(for url: URL) -> some View {
         let isCurrent = player.currentSourceURL == url
-        HStack {
+        HStack(spacing: 12) {
+            if isCurrent && player.isPlaying {
+                Image(systemName: "pause.fill")
+                    .font(.callout)
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.accentColor)
+                    .clipShape(Circle())
+            } else {
+                Image(systemName: "play.fill")
+                    .font(.callout)
+                    .foregroundStyle(Color(.tertiaryLabel))
+                    .frame(width: 32, height: 32)
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(titleFor(url))
                     .font(.body)
@@ -133,14 +147,6 @@ struct MeditationListView: View {
             .padding(.vertical, 4)
 
             Spacer()
-
-            Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill")
-                .font(.callout)
-                .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(Color.accentColor)
-                .clipShape(Circle())
-                .padding(.trailing, 4)
         }
         .contentShape(Rectangle())
         .onTapGesture {

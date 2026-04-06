@@ -100,6 +100,31 @@ struct MedTextEditor: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.text
         }
+
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            guard text == "\n" else { return true }
+
+            let content = textView.text as NSString
+            let lineRange = content.lineRange(for: NSRange(location: range.location, length: 0))
+            let currentLine = content.substring(with: lineRange)
+
+            // Measure leading whitespace
+            let stripped = currentLine.drop(while: { $0 == " " || $0 == "\t" })
+            let indent = String(currentLine.prefix(currentLine.count - stripped.count))
+
+            // Lines starting with ~ or § should increase indent
+            let trimmed = currentLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let newIndent: String
+            if trimmed.hasPrefix("~") || trimmed.hasPrefix("\u{00A7}") {
+                newIndent = indent + "  "
+            } else {
+                newIndent = indent
+            }
+
+            // Insert newline + indent
+            textView.replace(textView.selectedTextRange!, withText: "\n" + newIndent)
+            return false
+        }
     }
 }
 
