@@ -76,7 +76,7 @@ struct CheckInView: View {
                                     .foregroundStyle(.tint)
                                 Text("Negative")
                                     .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.primary)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
@@ -95,7 +95,7 @@ struct CheckInView: View {
                                     .foregroundStyle(.tint)
                                 Text("Positive")
                                     .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.primary)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
@@ -103,17 +103,7 @@ struct CheckInView: View {
                         .buttonStyle(.plain)
                     }
                     .padding(.bottom, 10) // compensate for tail height so labels center in body
-                    .background(
-                        SpeechBubbleShape(tailFraction: tailFraction)
-                            .fill(Color(.secondarySystemFill))
-                            .overlay(
-                                SpeechBubbleShape(tailFraction: tailFraction)
-                                    .stroke(Color.black.opacity(0.1), lineWidth: 1)
-                                    .blur(radius: 2)
-                                    .offset(y: 1)
-                                    .clipShape(SpeechBubbleShape(tailFraction: tailFraction))
-                            )
-                    )
+                    .glassEffect(.regular, in: SpeechBubbleShape(tailFraction: tailFraction))
                     .padding(.horizontal, barHorizontalPadding)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
@@ -445,60 +435,6 @@ private struct EmotionPickerSheet: View {
 
             dismiss()
         }
-    }
-}
-
-// MARK: - Speech Bubble Shape
-
-private struct SpeechBubbleShape: InsettableShape {
-    var tailFraction: CGFloat = 1.0 / 6.0
-    var tailWidth: CGFloat = 20
-    var tailHeight: CGFloat = 10
-    var cornerRadius: CGFloat = 18
-    var insetAmount: CGFloat = 0
-
-    func inset(by amount: CGFloat) -> SpeechBubbleShape {
-        var copy = self
-        copy.insetAmount += amount
-        return copy
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let r = rect.insetBy(dx: insetAmount, dy: insetAmount)
-        let bodyBottom = r.maxY - tailHeight
-        let tailCenterX = r.minX + r.width * tailFraction
-        let halfTail = tailWidth / 2
-        let cr = min(cornerRadius, r.width / 2, (r.height - tailHeight) / 2)
-
-        var path = Path()
-
-        // Start at top-left after corner
-        path.move(to: CGPoint(x: r.minX + cr, y: r.minY))
-        // Top edge
-        path.addLine(to: CGPoint(x: r.maxX - cr, y: r.minY))
-        // Top-right corner
-        path.addArc(center: CGPoint(x: r.maxX - cr, y: r.minY + cr), radius: cr, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
-        // Right edge
-        path.addLine(to: CGPoint(x: r.maxX, y: bodyBottom - cr))
-        // Bottom-right corner
-        path.addArc(center: CGPoint(x: r.maxX - cr, y: bodyBottom - cr), radius: cr, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-        // Bottom edge to tail
-        path.addLine(to: CGPoint(x: tailCenterX + halfTail, y: bodyBottom))
-        // Tail
-        path.addLine(to: CGPoint(x: tailCenterX, y: r.maxY))
-        path.addLine(to: CGPoint(x: tailCenterX - halfTail, y: bodyBottom))
-        // Bottom edge to left
-        path.addLine(to: CGPoint(x: r.minX + cr, y: bodyBottom))
-        // Bottom-left corner
-        path.addArc(center: CGPoint(x: r.minX + cr, y: bodyBottom - cr), radius: cr, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
-        // Left edge
-        path.addLine(to: CGPoint(x: r.minX, y: r.minY + cr))
-        // Top-left corner
-        path.addArc(center: CGPoint(x: r.minX + cr, y: r.minY + cr), radius: cr, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
-
-        path.closeSubpath()
-
-        return path
     }
 }
 
