@@ -33,9 +33,7 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Feelings", systemImage: "heart.text.square", value: .feelings) {
-                NavigationStack {
-                    CheckInView()
-                }
+                CheckInView()
             }
             Tab("Meditations", systemImage: "list.bullet", value: .meditations) {
                 NavigationStack {
@@ -43,9 +41,7 @@ struct ContentView: View {
                 }
             }
             Tab("Journal", systemImage: "book.closed", value: .journal) {
-                NavigationStack {
-                    JournalView()
-                }
+                JournalView()
             }
         }
         .background(

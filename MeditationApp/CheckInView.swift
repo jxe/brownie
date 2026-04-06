@@ -76,12 +76,14 @@ struct CheckInView: View {
                     .padding(.horizontal)
                     .animation(.spring(duration: 0.4, bounce: 0.3), value: selectedEmotions.map(\.id))
                     .onPreferenceChange(ChipDestinationPreferenceKey.self) { frames in
-                        destinationFrames = frames
+                        if showingNegativeSheet || showingPositiveSheet {
+                            destinationFrames = frames
+                        }
                     }
                 }
-                .padding(.vertical)
+                // .padding(.vertical)
                 // Extra bottom padding so content doesn't hide behind floating buttons
-                .padding(.bottom, 10)
+                // .padding(.bottom, 10)
             }
             .safeAreaInset(edge: .bottom) {
                 GeometryReader { geo in
@@ -128,7 +130,7 @@ struct CheckInView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(.bottom, 10) // compensate for tail height so labels center in body
+                    .padding(.bottom, 10)
                     .glassEffect(.regular.interactive(), in: SpeechBubbleShape(tailFraction: tailFraction))
                     .padding(.horizontal, barHorizontalPadding)
                     .frame(maxHeight: .infinity, alignment: .bottom)
