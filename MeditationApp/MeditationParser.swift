@@ -336,9 +336,25 @@ struct MeditationParser {
             case .poolRef(let name):
                 if let pool = pools[name] {
                     let drawn = pool.draw()
-                    textBuffer += drawn
                     if let g = pool.lastGender {
                         currentGender = g
+                    }
+                    // Re-tokenize drawn text to resolve nested pool refs, pauses, etc.
+                    let innerTokens = tokenize(drawn)
+                    let hasNestedSpecials = innerTokens.contains(where: {
+                        if case .text = $0 { return false }; return true
+                    })
+                    if hasNestedSpecials {
+                        // Flush current text buffer before inserting nested content
+                        if !textBuffer.trimmingCharacters(in: .whitespaces).isEmpty {
+                            let resolved = PronounResolver.resolve(textBuffer.trimmingCharacters(in: .whitespaces), gender: currentGender)
+                            steps.append(.speak(resolved))
+                            textBuffer = ""
+                        }
+                        // Recursively expand the drawn text as its own speak line
+                        steps.append(contentsOf: expandSpeakLine(drawn, pools: pools))
+                    } else {
+                        textBuffer += drawn
                     }
                 } else {
                     textBuffer += "{\(name)}"
