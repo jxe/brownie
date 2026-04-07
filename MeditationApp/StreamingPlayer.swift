@@ -27,6 +27,11 @@ class StreamingPlayer {
     /// Called when the last buffer finishes playing.
     var onPlaybackFinished: (() -> Void)?
 
+    /// Called on the main queue ~10x/sec while playing with the current step marker and elapsed seconds.
+    var onPositionUpdate: ((_ stepIndex: Int, _ displayText: String, _ elapsedSeconds: Int) -> Void)?
+
+    private var positionTimer: Timer?
+
     init(format: AVAudioFormat) {
         self.format = format
     }
@@ -63,16 +68,19 @@ class StreamingPlayer {
 
     func play() {
         playerNode.play()
+        startPositionTracking()
     }
 
     func pause() {
         playerNode.pause()
         engine.pause()
+        stopPositionTracking()
     }
 
     func resume() throws {
         try ensureRunning()
         playerNode.play()
+        startPositionTracking()
     }
 
     /// Restart the audio engine if iOS stopped it (e.g. after interruption or long background pause).
@@ -87,6 +95,7 @@ class StreamingPlayer {
     }
 
     func stop() {
+        stopPositionTracking()
         playerNode.stop()
         engine.stop()
         engine.reset()
@@ -98,6 +107,28 @@ class StreamingPlayer {
         scheduledFrames = 0
         stepMarkers = []
         onPlaybackFinished = nil
+        onPositionUpdate = nil
+    }
+
+    // MARK: - Position Tracking Timer
+
+    private func startPositionTracking() {
+        guard positionTimer == nil else { return }
+        positionTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.tickPosition()
+        }
+    }
+
+    private func stopPositionTracking() {
+        positionTimer?.invalidate()
+        positionTimer = nil
+    }
+
+    private func tickPosition() {
+        guard let position = currentPlaybackPosition() else { return }
+        let elapsedSecs = Int(Double(position) / format.sampleRate)
+        guard let marker = stepMarker(at: position) else { return }
+        onPositionUpdate?(marker.stepIndex, marker.displayText, elapsedSecs)
     }
 
     // MARK: - Position Tracking

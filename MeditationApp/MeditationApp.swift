@@ -8,25 +8,27 @@ enum TabDestination: Int {
 
 @main
 struct MeditationApp: App {
-    @StateObject private var player = MeditationPlayer()
+    @State private var player = MeditationPlayer()
     @State private var emotionStore = EmotionStore()
+    private let icloudWatcher = iCloudMeditationWatcher()
 
     init() {
         SampleMeditations.installIfNeeded()
         FileManager.default.migrateToiCloud()
+        icloudWatcher.start()
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(player)
+                .environment(player)
                 .environment(emotionStore)
         }
     }
 }
 
 struct ContentView: View {
-    @EnvironmentObject var player: MeditationPlayer
+    @Environment(MeditationPlayer.self) var player
     @State private var selectedTab: TabDestination = .feelings
     @State private var feelingsTabCenterX: CGFloat?
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MeditationListView: View {
-    @EnvironmentObject var player: MeditationPlayer
+    @Environment(MeditationPlayer.self) var player
     @State private var files: [URL] = []
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
@@ -214,7 +214,7 @@ struct MeditationListView: View {
         var tagMap: [URL: [String]] = [:]
         var tagSet: Set<String> = []
         for url in files {
-            let (title, tags) = parseTitleAndTags(url)
+            let (title, tags) = metadataFor(url)
             titleMap[url] = title
             tagMap[url] = tags
             tagSet.formUnion(tags)
@@ -227,61 +227,15 @@ struct MeditationListView: View {
         }
     }
 
-    private func parseTitleAndTags(_ url: URL) -> (title: String, tags: [String]) {
-        guard let content = FileManager.default.readMeditation(at: url) else {
-            return (url.deletingPathExtension().lastPathComponent, [])
-        }
-        let lines = content.components(separatedBy: .newlines)
-        var title: String? = nil
-        var tags: [String] = []
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if !trimmed.hasPrefix("#") {
-                // Stop scanning at the first non-# line (after title)
-                if title != nil { break }
-                continue
-            }
-            let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-            if after.isEmpty { continue }
-
-            let words = after.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            // Is this a pure tag line? (every word is #tag)
-            let isPureTagLine = words.allSatisfy { $0.hasPrefix("#") && $0.count > 1 }
-
-            if title == nil {
-                // First non-empty # line is the title (with optional trailing #tags)
-                if isPureTagLine {
-                    // Edge case: file starts with a tag-only line; treat as tags but keep looking for title
-                    tags.append(contentsOf: words.map { String($0.dropFirst()) })
-                    continue
-                }
-                var titleWords: [String] = []
-                var trailingTags: [String] = []
-                var foundTrailingTag = false
-                for word in words.reversed() {
-                    if !foundTrailingTag && word.hasPrefix("#") && word.count > 1 {
-                        trailingTags.insert(String(word.dropFirst()), at: 0)
-                    } else {
-                        foundTrailingTag = true
-                        titleWords.insert(word, at: 0)
-                    }
-                }
-                title = titleWords.joined(separator: " ")
-                tags.append(contentsOf: trailingTags)
-            } else if isPureTagLine {
-                // Subsequent pure tag line — collect more tags
-                tags.append(contentsOf: words.map { String($0.dropFirst()) })
-            } else {
-                // Non-tag # line after title — treat as comment, stop scanning
-                break
-            }
-        }
-        let resolvedTitle = (title?.isEmpty == false ? title! : url.deletingPathExtension().lastPathComponent)
-        return (resolvedTitle, tags)
+    private func metadataFor(_ url: URL) -> (title: String, tags: [String]) {
+        let content = FileManager.default.readMeditation(at: url) ?? ""
+        let meta = MeditationParser.parseMetadata(content)
+        let title = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
+        return (title, meta.tags)
     }
 
     private func titleFor(_ url: URL) -> String {
-        fileTitles[url] ?? parseTitleAndTags(url).title
+        fileTitles[url] ?? metadataFor(url).title
     }
 
     private func playFile(_ url: URL) {

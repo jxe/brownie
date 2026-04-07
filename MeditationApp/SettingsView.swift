@@ -2,7 +2,7 @@ import SwiftUI
 import AVFoundation
 
 struct SettingsView: View {
-    @EnvironmentObject var player: MeditationPlayer
+    @Environment(MeditationPlayer.self) var player
     @State private var isRefreshing = false
     @State private var metadataQuery: NSMetadataQuery?
     @State private var showAllVoices = false
@@ -28,7 +28,8 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        List {
+        @Bindable var player = player
+        return List {
             Section("Speaking Rate") {
                 HStack {
                     Image(systemName: "tortoise")

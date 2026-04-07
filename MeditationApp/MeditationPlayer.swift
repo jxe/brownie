@@ -1,8 +1,8 @@
 import AVFoundation
-import Combine
 import MediaPlayer
 
-class MeditationPlayer: NSObject, ObservableObject {
+@Observable
+class MeditationPlayer: NSObject {
     enum State {
         case idle
         case playing
@@ -10,21 +10,21 @@ class MeditationPlayer: NSObject, ObservableObject {
         case finished
     }
 
-    @Published private(set) var state: State = .idle
+    private(set) var state: State = .idle
 
     var isPlaying: Bool { state == .playing }
 
-    @Published var currentText = ""
-    @Published var stepIndex = 0
-    @Published var totalSteps = 0
-    @Published var currentSourceURL: URL?
-    @Published var elapsedSeconds: Int = 0
+    var currentText = ""
+    var stepIndex = 0
+    var totalSteps = 0
+    var currentSourceURL: URL?
+    var elapsedSeconds: Int = 0
 
-    @Published var selectedVoiceID: String {
+    var selectedVoiceID: String {
         didSet { UserDefaults.standard.set(selectedVoiceID, forKey: "selectedVoiceID") }
     }
 
-    @Published var speakingRate: Float {
+    var speakingRate: Float {
         didSet { UserDefaults.standard.set(speakingRate, forKey: "speakingRate") }
     }
 
@@ -85,14 +85,13 @@ class MeditationPlayer: NSObject, ObservableObject {
             ?? voices.first
     }
 
-    private let renderer = AudioRenderer()
-    private var streamingPlayer: StreamingPlayer?
-    private var renderTask: Task<Void, Never>?
-    private var positionTimer: Timer?
-    private var stateBeforeInterruption: State?
-    private var currentMeditation: Meditation?
-    private var currentTitle = ""
-    private var playbackStarted = false
+    @ObservationIgnored private let renderer = AudioRenderer()
+    @ObservationIgnored private var streamingPlayer: StreamingPlayer?
+    @ObservationIgnored private var renderTask: Task<Void, Never>?
+    @ObservationIgnored private var stateBeforeInterruption: State?
+    @ObservationIgnored private var currentMeditation: Meditation?
+    @ObservationIgnored private var currentTitle = ""
+    @ObservationIgnored private var playbackStarted = false
 
     override init() {
         if let saved = UserDefaults.standard.string(forKey: "selectedVoiceID"),
@@ -295,6 +294,12 @@ class MeditationPlayer: NSObject, ObservableObject {
         player.onPlaybackFinished = { [weak self] in
             self?.handlePlaybackFinished()
         }
+        player.onPositionUpdate = { [weak self] step, text, elapsed in
+            guard let self else { return }
+            if self.stepIndex != step { self.stepIndex = step }
+            if self.currentText != text { self.currentText = text }
+            if self.elapsedSeconds != elapsed { self.elapsedSeconds = elapsed }
+        }
 
         do {
             try player.setup()
@@ -354,7 +359,6 @@ class MeditationPlayer: NSObject, ObservableObject {
                     if let self = self, !self.playbackStarted {
                         self.playbackStarted = true
                         player.play()
-                        self.startPositionTracking()
                     }
                 }
             }
@@ -378,7 +382,6 @@ class MeditationPlayer: NSObject, ObservableObject {
         guard state == .playing else { return }
         state = .paused
         streamingPlayer?.pause()
-        stopPositionTracking()
         updateNowPlayingInfo()
     }
 
@@ -392,14 +395,12 @@ class MeditationPlayer: NSObject, ObservableObject {
             return
         }
         state = .playing
-        startPositionTracking()
         updateNowPlayingInfo()
     }
 
     func stop() {
         renderTask?.cancel()
         renderTask = nil
-        stopPositionTracking()
         streamingPlayer?.stop()
         streamingPlayer = nil
 
@@ -421,45 +422,12 @@ class MeditationPlayer: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Position Tracking
-
-    private func startPositionTracking() {
-        positionTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.updatePosition()
-        }
-    }
-
-    private func stopPositionTracking() {
-        positionTimer?.invalidate()
-        positionTimer = nil
-    }
-
-    private func updatePosition() {
-        guard let player = streamingPlayer,
-              let position = player.currentPlaybackPosition() else { return }
-
-        if let elapsed = player.currentTime() {
-            let secs = Int(elapsed)
-            if elapsedSeconds != secs { elapsedSeconds = secs }
-        }
-
-        if let marker = player.stepMarker(at: position) {
-            if stepIndex != marker.stepIndex {
-                stepIndex = marker.stepIndex
-            }
-            if currentText != marker.displayText {
-                currentText = marker.displayText
-            }
-        }
-    }
-
     // MARK: - Completion
 
     private func handlePlaybackFinished() {
         state = .finished
         currentText = ""
         elapsedSeconds = 0
-        stopPositionTracking()
         renderTask?.cancel()
         renderTask = nil
         streamingPlayer?.stop()

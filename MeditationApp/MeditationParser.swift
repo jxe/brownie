@@ -100,6 +100,54 @@ struct MeditationParser {
         return Meditation(title: title, steps: steps)
     }
 
+    // MARK: - Lightweight Metadata
+
+    /// Extracts title and tags from a meditation source without full parsing.
+    /// Scans leading `#` comment lines; first non-tag `#` line is the title (with optional
+    /// trailing `#tag` words), followed by any number of pure `#tag …` lines.
+    static func parseMetadata(_ source: String) -> (title: String, tags: [String]) {
+        let lines = source.components(separatedBy: .newlines)
+        var title: String? = nil
+        var tags: [String] = []
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.hasPrefix("#") {
+                if title != nil { break }
+                continue
+            }
+            let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+            if after.isEmpty { continue }
+
+            let words = after.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            let isPureTagLine = words.allSatisfy { $0.hasPrefix("#") && $0.count > 1 }
+
+            if title == nil {
+                if isPureTagLine {
+                    tags.append(contentsOf: words.map { String($0.dropFirst()) })
+                    continue
+                }
+                var titleWords: [String] = []
+                var trailingTags: [String] = []
+                var foundTrailingTag = false
+                for word in words.reversed() {
+                    if !foundTrailingTag && word.hasPrefix("#") && word.count > 1 {
+                        trailingTags.insert(String(word.dropFirst()), at: 0)
+                    } else {
+                        foundTrailingTag = true
+                        titleWords.insert(word, at: 0)
+                    }
+                }
+                title = titleWords.joined(separator: " ")
+                tags.append(contentsOf: trailingTags)
+            } else if isPureTagLine {
+                tags.append(contentsOf: words.map { String($0.dropFirst()) })
+            } else {
+                break
+            }
+        }
+        return (title ?? "", tags)
+    }
+
     // MARK: - Pool Definition Header
 
     /// Returns true if the line is a pool definition header: `~ name` or `~name` with nothing else.
