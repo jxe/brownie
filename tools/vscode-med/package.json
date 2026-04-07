@@ -1,0 +1,38 @@
+{
+  "name": "vscode-med",
+  "displayName": "Brownie .med",
+  "description": "Syntax highlighting for Brownie meditation script (.med) files.",
+  "version": "0.0.1",
+  "publisher": "brownie",
+  "engines": { "vscode": "^1.80.0" },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jxe/brownie"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "med",
+        "aliases": ["Meditation", "med"],
+        "extensions": [".med"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "med",
+        "scopeName": "source.med",
+        "path": "./syntaxes/med.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[med]": {
+        "editor.unicodeHighlight.ambiguousCharacters": false,
+        "editor.unicodeHighlight.invisibleCharacters": false,
+        "editor.unicodeHighlight.nonBasicASCII": false
+      }
+    }
+  }
+}

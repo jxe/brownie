@@ -1,0 +1,112 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Meditation",
+  "scopeName": "source.med",
+  "patterns": [
+    { "include": "#title" },
+    { "include": "#tag-line" },
+    { "include": "#comment" },
+    { "include": "#pool-def" },
+    { "include": "#repeat" },
+    { "include": "#fermata" },
+    { "include": "#countdown" },
+    { "include": "#duration" },
+    { "include": "#dot-pause" },
+    { "include": "#pool-ref" },
+    { "include": "#pronoun" },
+    { "include": "#gender" }
+  ],
+  "repository": {
+    "title": {
+      "match": "\\A\\s*(#)[ \\t]*(.*?)(?:[ \\t]+((?:#\\S+[ \\t]*)+))?[ \\t]*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.heading.med" },
+        "2": { "name": "markup.heading.med" },
+        "3": {
+          "name": "meta.tags.med",
+          "patterns": [
+            {
+              "match": "#\\S+",
+              "name": "entity.name.tag.med"
+            }
+          ]
+        }
+      }
+    },
+    "tag-line": {
+      "match": "^[ \\t]*(#\\S+(?:[ \\t]+#\\S+)*)[ \\t]*$",
+      "captures": {
+        "1": {
+          "patterns": [
+            { "match": "#\\S+", "name": "entity.name.tag.med" }
+          ]
+        }
+      }
+    },
+    "comment": {
+      "match": "^\\s*#.*$",
+      "name": "comment.line.number-sign.med"
+    },
+    "pool-def": {
+      "match": "^[ \\t]*(~)[ \\t]*([A-Za-z0-9_]+)[ \\t]*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.pool.med" },
+        "2": { "name": "entity.name.type.pool.med" }
+      }
+    },
+    "pool-ref": {
+      "match": "(~)([A-Za-z_][A-Za-z0-9_]*)",
+      "name": "entity.name.function.pool-ref.med",
+      "captures": {
+        "1": { "name": "punctuation.definition.pool.med" },
+        "2": { "name": "entity.name.function.pool-ref.med" }
+      }
+    },
+    "repeat": {
+      "match": "(?:^|(?<=\\s))(?:×|x)\\d+",
+      "name": "constant.numeric.repeat.med"
+    },
+    "fermata": {
+      "match": "(𝄐|\\|)",
+      "name": "keyword.operator.fermata.med"
+    },
+    "countdown": {
+      "match": "(⏳)[ \\t]*(\\d+(?:\\.\\d+)?)?([″\"′'])?",
+      "captures": {
+        "1": { "name": "keyword.operator.countdown.med" },
+        "2": { "name": "constant.numeric.duration.med" },
+        "3": { "name": "keyword.operator.duration-unit.med" }
+      }
+    },
+    "duration": {
+      "patterns": [
+        {
+          "match": "\\b(\\d+(?:\\.\\d+)?)([″\"])",
+          "captures": {
+            "1": { "name": "constant.numeric.duration.seconds.med" },
+            "2": { "name": "keyword.operator.duration-unit.seconds.med" }
+          }
+        },
+        {
+          "match": "\\b(\\d+(?:\\.\\d+)?)([′'])",
+          "captures": {
+            "1": { "name": "constant.numeric.duration.minutes.med" },
+            "2": { "name": "keyword.operator.duration-unit.minutes.med" }
+          }
+        }
+      ]
+    },
+    "dot-pause": {
+      "match": "·+",
+      "name": "keyword.operator.pause.dot.med"
+    },
+    "pronoun": {
+      "match": "(?i)\\b(they|them|their|theirs|themselves)\\b",
+      "name": "variable.language.pronoun.med"
+    },
+    "gender": {
+      "match": "[♀♂]",
+      "name": "constant.character.gender.med"
+    }
+  }
+}
