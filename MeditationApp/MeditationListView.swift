@@ -12,6 +12,7 @@ struct MeditationListView: View {
     @State private var editorFilename = ""
     @State private var isNewFile = false
     @State private var showingSettings = false
+    @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
 
     private var filteredFiles: [URL] {
         guard let tag = selectedTag else { return files }
@@ -62,6 +63,14 @@ struct MeditationListView: View {
                         showingSettings = true
                     } label: {
                         Image(systemName: "gear")
+                            .overlay(alignment: .topTrailing) {
+                                if !hasGoodVoice {
+                                    Circle()
+                                        .fill(.red)
+                                        .frame(width: 8, height: 8)
+                                        .offset(x: 4, y: -2)
+                                }
+                            }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -71,6 +80,10 @@ struct MeditationListView: View {
                         Image(systemName: "plus")
                     }
                 }
+            }
+            .onAppear { hasGoodVoice = MeditationPlayer.hasGoodVoice }
+            .onChange(of: showingSettings) { _, _ in
+                hasGoodVoice = MeditationPlayer.hasGoodVoice
             }
             .sheet(isPresented: $showingSettings) {
                 NavigationStack {

@@ -5,6 +5,27 @@ struct SettingsView: View {
     @EnvironmentObject var player: MeditationPlayer
     @State private var isRefreshing = false
     @State private var metadataQuery: NSMetadataQuery?
+    @State private var showAllVoices = false
+
+    private var autoBinding: Binding<Bool> {
+        Binding(
+            get: { player.isAutoVoice },
+            set: { newValue in
+                if newValue {
+                    player.selectedVoiceID = MeditationPlayer.autoVoiceID
+                } else {
+                    player.selectedVoiceID = MeditationPlayer.bestAutoVoice()?.identifier
+                        ?? MeditationPlayer.availableVoices.first?.identifier
+                        ?? player.selectedVoiceID
+                    showAllVoices = true
+                }
+            }
+        )
+    }
+
+    private var autoResolvedID: String? {
+        MeditationPlayer.bestAutoVoice()?.identifier
+    }
 
     var body: some View {
         List {
@@ -22,25 +43,46 @@ struct SettingsView: View {
             }
 
             Section("Voice") {
-                ForEach(groupedVoices, id: \.0) { section, voices in
-                    DisclosureGroup(section) {
-                        ForEach(voices, id: \.identifier) { voice in
-                            Button {
-                                player.selectedVoiceID = voice.identifier
-                                preview(voice)
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(voice.name)
-                                            .foregroundStyle(.primary)
-                                        Text(voice.language)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if voice.identifier == player.selectedVoiceID {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(.blue)
+                HStack {
+                    Text("Current")
+                    Spacer()
+                    Text(player.resolvedVoiceDisplayName)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+
+                Toggle("Choose automatically", isOn: autoBinding)
+
+                if !MeditationPlayer.hasGoodVoice {
+                    VoiceQualityWarningView()
+                }
+
+                DisclosureGroup("Browse all voices", isExpanded: $showAllVoices) {
+                    ForEach(groupedVoices, id: \.0) { section, voices in
+                        Section(section) {
+                            ForEach(voices, id: \.identifier) { voice in
+                                Button {
+                                    player.selectedVoiceID = voice.identifier
+                                    preview(voice)
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(voice.name)
+                                                .foregroundStyle(.primary)
+                                            Text(voice.language)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if player.isAutoVoice && voice.identifier == autoResolvedID {
+                                            Text("Auto pick")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        if !player.isAutoVoice && voice.identifier == player.selectedVoiceID {
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(.blue)
+                                        }
                                     }
                                 }
                             }
@@ -165,6 +207,26 @@ struct SettingsView: View {
 
         metadataQuery = query
         query.start()
+    }
+}
+
+private struct VoiceQualityWarningView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("No high-quality voices installed")
+                    .font(.subheadline.weight(.semibold))
+            }
+            Text("Meditations will sound robotic until you install a Premium or Enhanced voice.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Open iOS **Settings → Accessibility → Spoken Content → Voices → English**, then tap a voice marked *Enhanced* or *Premium* to download it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 }
 

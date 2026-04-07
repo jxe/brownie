@@ -28,8 +28,25 @@ class MeditationPlayer: NSObject, ObservableObject {
         didSet { UserDefaults.standard.set(speakingRate, forKey: "speakingRate") }
     }
 
+    static let autoVoiceID = "__auto__"
+
+    var isAutoVoice: Bool { selectedVoiceID == Self.autoVoiceID }
+
     var voice: AVSpeechSynthesisVoice? {
-        AVSpeechSynthesisVoice(identifier: selectedVoiceID)
+        if isAutoVoice { return Self.bestAutoVoice() }
+        return AVSpeechSynthesisVoice(identifier: selectedVoiceID)
+    }
+
+    var resolvedVoiceDisplayName: String {
+        guard let v = voice else { return "Unavailable" }
+        let quality: String
+        switch v.quality {
+        case .premium: quality = "Premium"
+        case .enhanced: quality = "Enhanced"
+        default: quality = "Default"
+        }
+        let base = "\(v.name) – \(quality)"
+        return isAutoVoice ? "Auto (\(base))" : base
     }
 
     static var availableVoices: [AVSpeechSynthesisVoice] {
@@ -39,6 +56,33 @@ class MeditationPlayer: NSObject, ObservableObject {
                 if a.quality != b.quality { return a.quality.rawValue > b.quality.rawValue }
                 return a.name < b.name
             }
+    }
+
+    static var hasGoodVoice: Bool {
+        availableVoices.contains { $0.quality == .enhanced || $0.quality == .premium }
+    }
+
+    static func bestAutoVoice() -> AVSpeechSynthesisVoice? {
+        let voices = availableVoices
+        let currentLocale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
+        let langCode = Locale.current.language.languageCode?.identifier ?? "en"
+
+        func pick(quality: AVSpeechSynthesisVoiceQuality, matchingLocale: Bool) -> AVSpeechSynthesisVoice? {
+            voices.first { v in
+                guard v.quality == quality else { return false }
+                if matchingLocale {
+                    return v.language.caseInsensitiveCompare(currentLocale) == .orderedSame
+                        || v.language.hasPrefix(langCode)
+                }
+                return true
+            }
+        }
+
+        return pick(quality: .premium, matchingLocale: true)
+            ?? pick(quality: .premium, matchingLocale: false)
+            ?? pick(quality: .enhanced, matchingLocale: true)
+            ?? pick(quality: .enhanced, matchingLocale: false)
+            ?? voices.first
     }
 
     private let renderer = AudioRenderer()
@@ -52,11 +96,10 @@ class MeditationPlayer: NSObject, ObservableObject {
 
     override init() {
         if let saved = UserDefaults.standard.string(forKey: "selectedVoiceID"),
-           AVSpeechSynthesisVoice(identifier: saved) != nil {
+           saved == Self.autoVoiceID || AVSpeechSynthesisVoice(identifier: saved) != nil {
             self.selectedVoiceID = saved
         } else {
-            let best = MeditationPlayer.availableVoices.first
-            self.selectedVoiceID = best?.identifier ?? AVSpeechSynthesisVoice(language: "en-US")!.identifier
+            self.selectedVoiceID = Self.autoVoiceID
         }
 
         let savedRate = UserDefaults.standard.float(forKey: "speakingRate")
