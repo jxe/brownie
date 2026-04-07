@@ -6,7 +6,8 @@ struct MeditationParser {
 
     static func parse(_ source: String) -> Meditation {
         let lines = source.components(separatedBy: .newlines)
-        var title = "Untitled"
+        let meta = parseMetadata(source)
+        let title = meta.title.isEmpty ? "Untitled" : meta.title
         var pools: [String: Pool] = [:]
         var steps: [MeditationStep] = []
         var i = 0
@@ -18,12 +19,8 @@ struct MeditationParser {
             // Skip empty lines
             if trimmed.isEmpty { i += 1; continue }
 
-            // Comment / title
+            // Comments / title / tag lines — handled by parseMetadata, skip here
             if trimmed.hasPrefix("#") {
-                let comment = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                if title == "Untitled" && !comment.isEmpty {
-                    title = comment
-                }
                 i += 1; continue
             }
 
@@ -115,33 +112,44 @@ struct MeditationParser {
                 if title != nil { break }
                 continue
             }
-            let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-            if after.isEmpty { continue }
 
-            let words = after.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            let isPureTagLine = words.allSatisfy { $0.hasPrefix("#") && $0.count > 1 }
+            // Tokens on the raw trimmed line. A pure tag line is one where every
+            // token is either a bare `#` (comment marker, ignored) or `#word`.
+            // This supports both `# #tag1 #tag2` and `#tag1 #tag2`.
+            let rawWords = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            let isPureTagLine = rawWords.allSatisfy { $0 == "#" || ($0.hasPrefix("#") && $0.count > 1) }
 
-            if title == nil {
-                if isPureTagLine {
-                    tags.append(contentsOf: words.map { String($0.dropFirst()) })
-                    continue
+            if isPureTagLine {
+                let extracted = rawWords.filter { $0.count > 1 }.map { String($0.dropFirst()) }
+                if title == nil {
+                    // Edge case: tag-only line before title — collect tags, keep looking for title.
+                    tags.append(contentsOf: extracted)
+                } else {
+                    tags.append(contentsOf: extracted)
                 }
+                continue
+            }
+
+            // Not a pure tag line — if we don't have a title yet, this is it
+            // (possibly with trailing `#tag` words).
+            if title == nil {
+                let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                let words = after.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
                 var titleWords: [String] = []
                 var trailingTags: [String] = []
-                var foundTrailingTag = false
+                var foundTitleWord = false
                 for word in words.reversed() {
-                    if !foundTrailingTag && word.hasPrefix("#") && word.count > 1 {
+                    if !foundTitleWord && word.hasPrefix("#") && word.count > 1 {
                         trailingTags.insert(String(word.dropFirst()), at: 0)
                     } else {
-                        foundTrailingTag = true
+                        foundTitleWord = true
                         titleWords.insert(word, at: 0)
                     }
                 }
                 title = titleWords.joined(separator: " ")
                 tags.append(contentsOf: trailingTags)
-            } else if isPureTagLine {
-                tags.append(contentsOf: words.map { String($0.dropFirst()) })
             } else {
+                // Non-tag `#` line after the title — treat as comment, stop scanning.
                 break
             }
         }

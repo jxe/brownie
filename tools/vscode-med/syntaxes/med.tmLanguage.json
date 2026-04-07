@@ -34,9 +34,14 @@
       }
     },
     "tag-line": {
-      "match": "^[ \\t]*(#\\S+(?:[ \\t]+#\\S+)*)[ \\t]*$",
+      "match": "^[ \\t]*#[ \\t]*(#\\S+(?:[ \\t]+#\\S+)*)[ \\t]*$|^[ \\t]*(#\\S+(?:[ \\t]+#\\S+)*)[ \\t]*$",
       "captures": {
         "1": {
+          "patterns": [
+            { "match": "#\\S+", "name": "entity.name.tag.med" }
+          ]
+        },
+        "2": {
           "patterns": [
             { "match": "#\\S+", "name": "entity.name.tag.med" }
           ]
