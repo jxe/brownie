@@ -27,8 +27,10 @@ struct MeditationParser {
                 i += 1; continue
             }
 
-            // Pool definition: ~ name
-            if trimmed.hasPrefix("~") {
+            // Pool definition: "~ name" or "~name" at start of line (with nothing else on the line).
+            // Inline "~name" within text is a pool reference, handled by the tokenizer.
+            if trimmed.hasPrefix("~"),
+               isPoolDefinitionHeader(trimmed) {
                 let poolName = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
                 var items: [(String, Gender?)] = []
                 i += 1
@@ -45,8 +47,8 @@ struct MeditationParser {
                 continue
             }
 
-            // Repeat block: ×N𝄐REST or ×N text... (new notation, preferred)
-            if trimmed.hasPrefix("\u{00D7}") { // ×
+            // Repeat block: ×N𝄐REST or ×N text... (× and x are interchangeable)
+            if isRepeatLineStart(trimmed) {
                 let parsed = parseRepeatLine(trimmed)
                 switch parsed {
                 case .stanzaBlock(let outerCount, let outerRest, let inlineBody):
@@ -62,11 +64,9 @@ struct MeditationParser {
                     }
                     // Expand inner ×N repeats within body lines
                     let expandedBody = expandInnerRepeats(bodyLines)
-                    let sectionSteps = expandSection(
+                    let sectionSteps = expandStanzaBlock(
                         bodyLines: expandedBody,
                         outerCount: outerCount,
-                        innerCount: nil,
-                        innerDelay: nil,
                         outerRest: outerRest,
                         pools: pools
                     )
@@ -91,33 +91,6 @@ struct MeditationParser {
                 continue
             }
 
-            // DEPRECATED: Section notation (§N rest or §N×M innerDelay outerRest)
-            // Use × notation instead: ×N𝄐REST for stanza blocks, ×N text for repeats
-            if trimmed.hasPrefix("§") {
-                let (outerCount, innerCount, innerDelay, outerRest) = parseSectionHeader(trimmed)
-                var bodyLines: [String] = []
-                i += 1
-                while i < lines.count {
-                    let bodyLine = lines[i]
-                    guard bodyLine.hasPrefix("  ") || bodyLine.hasPrefix("\t") else { break }
-                    let bodyTrimmed = bodyLine.trimmingCharacters(in: .whitespaces)
-                    if !bodyTrimmed.isEmpty && !bodyTrimmed.hasPrefix("#") {
-                        bodyLines.append(bodyTrimmed)
-                    }
-                    i += 1
-                }
-                let sectionSteps = expandSection(
-                    bodyLines: bodyLines,
-                    outerCount: outerCount,
-                    innerCount: innerCount,
-                    innerDelay: innerDelay,
-                    outerRest: outerRest,
-                    pools: pools
-                )
-                steps.append(contentsOf: sectionSteps)
-                continue
-            }
-
             // Bare speak line
             let lineSteps = expandSpeakLine(trimmed, pools: pools)
             steps.append(contentsOf: lineSteps)
@@ -125,6 +98,16 @@ struct MeditationParser {
         }
 
         return Meditation(title: title, steps: steps)
+    }
+
+    // MARK: - Pool Definition Header
+
+    /// Returns true if the line is a pool definition header: `~ name` or `~name` with nothing else.
+    private static func isPoolDefinitionHeader(_ line: String) -> Bool {
+        guard line.hasPrefix("~") else { return false }
+        let after = line.dropFirst().trimmingCharacters(in: .whitespaces)
+        guard !after.isEmpty else { return false }
+        return after.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
     }
 
     // MARK: - Pool Item Parsing
@@ -141,41 +124,46 @@ struct MeditationParser {
         return (text, nil)
     }
 
-    // MARK: - Section Header Parsing
-
-    /// Parses: §5 28″  or  §3×5 6″ 28″
-    private static func parseSectionHeader(_ header: String) -> (outerCount: Int, innerCount: Int?, innerDelay: TimeInterval?, outerRest: TimeInterval) {
-        let body = String(header.dropFirst()) // drop §
-        let tokens = body.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-
-        guard let first = tokens.first else {
-            return (5, nil, nil, 28)
-        }
-
-        // Check for × (nested: §3×5 6″ 28″)
-        if first.contains("\u{00D7}") { // ×
-            let parts = first.split(separator: "\u{00D7}")
-            let outer = Int(parts[0]) ?? 3
-            let inner = parts.count > 1 ? Int(parts[1]) ?? 5 : 5
-            let innerDel = tokens.count > 1 ? parseSeconds(String(tokens[1])) : 12
-            let outerRest = tokens.count > 2 ? parseSeconds(String(tokens[2])) : 28
-            return (outer, inner, innerDel, outerRest)
-        }
-
-        // Simple: §5 28″
-        let count = Int(first) ?? 5
-        let rest = tokens.count > 1 ? parseSeconds(String(tokens[1])) : 28
-        return (count, nil, nil, rest)
-    }
-
-    /// Parses "28″" or "28" -> 28.0
+    /// Parses "28″", "28\"", "3′", "3'", or "28" -> 28.0 (or 180.0 for minutes)
     private static func parseSeconds(_ token: String) -> TimeInterval {
-        let cleaned = token.replacingOccurrences(of: "\u{2033}", with: "") // remove ″
-            .replacingOccurrences(of: "\u{2032}", with: "") // remove ′
-        if token.contains("\u{2032}") { // minutes
+        let cleaned = token.replacingOccurrences(of: "\u{2033}", with: "") // ″
+            .replacingOccurrences(of: "\u{2032}", with: "") // ′
+            .replacingOccurrences(of: "\"", with: "")
+            .replacingOccurrences(of: "'", with: "")
+        let isMinutes = token.contains("\u{2032}") || token.contains("'")
+        if isMinutes {
             return (Double(cleaned) ?? 1) * 60
         }
         return Double(cleaned) ?? 0
+    }
+
+    /// True if char is a duration unit marker (″, ′, ", or ').
+    private static func isDurationUnit(_ ch: Character) -> Bool {
+        return ch == "\u{2033}" || ch == "\u{2032}" || ch == "\"" || ch == "'"
+    }
+
+    /// True if char is the fermata symbol (𝄐 or its ASCII alternative |).
+    private static func isFermata(_ ch: Character) -> Bool {
+        return ch == "\u{1D110}" || ch == "|"
+    }
+
+    /// True if char is the multiplication sign (× or x).
+    private static func isMultSign(_ ch: Character) -> Bool {
+        return ch == "\u{00D7}" || ch == "x"
+    }
+
+    /// Returns true if line begins with a repeat marker: × or x followed by a digit.
+    private static func isRepeatLineStart(_ line: String) -> Bool {
+        guard let first = line.first else { return false }
+        if first == "\u{00D7}" {
+            // × is always a repeat marker
+            return line.count > 1 && line.dropFirst().first?.isNumber == true
+        }
+        if first == "x" {
+            // x is only a repeat marker if followed by a digit (avoids "xenophobia" etc.)
+            return line.count > 1 && line.dropFirst().first?.isNumber == true
+        }
+        return false
     }
 
     // MARK: - Repeat Notation (× syntax)
@@ -186,22 +174,22 @@ struct MeditationParser {
         case blockRepeat(count: Int)                                 // ×4 (alone, body follows indented)
     }
 
-    /// Parses a line starting with × into one of the repeat forms.
+    /// Parses a line starting with × or x into one of the repeat forms.
     private static func parseRepeatLine(_ line: String) -> RepeatParsed {
-        let after = String(line.dropFirst()) // drop ×
+        let after = String(line.dropFirst()) // drop × or x
 
-        // Check for fermata 𝄐 — stanza block form: ×5𝄐28″ [optional inline body]
-        if after.contains("\u{1D110}") { // 𝄐
-            let parts = after.split(separator: "\u{1D110}", maxSplits: 1)
-            let count = Int(parts[0]) ?? 5
-            let afterFermata = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : ""
-            // afterFermata is like "28″" or "28″ ×4 text..."
+        // Check for fermata (𝄐 or |) — stanza block form: ×5𝄐28″ [optional inline body]
+        if let fermataIdx = after.firstIndex(where: { isFermata($0) }) {
+            let countStr = String(after[..<fermataIdx])
+            let count = Int(countStr) ?? 5
+            let afterFermata = String(after[after.index(after: fermataIdx)...])
+                .trimmingCharacters(in: .whitespaces)
             // Extract the rest duration (leading number + unit), then any remaining inline body
             var restStr = ""
             var ri = afterFermata.startIndex
             while ri < afterFermata.endIndex {
                 let ch = afterFermata[ri]
-                if ch.isNumber || ch == "." || ch == "\u{2033}" || ch == "\u{2032}" {
+                if ch.isNumber || ch == "." || isDurationUnit(ch) {
                     restStr.append(ch)
                     ri = afterFermata.index(after: ri)
                 } else {
@@ -252,7 +240,7 @@ struct MeditationParser {
     private static func expandInnerRepeats(_ bodyLines: [String]) -> [String] {
         var expanded: [String] = []
         for line in bodyLines {
-            if line.hasPrefix("\u{00D7}") { // ×
+            if isRepeatLineStart(line) {
                 let parsed = parseRepeatLine(line)
                 switch parsed {
                 case .inlineRepeat(let count, let text):
@@ -269,34 +257,19 @@ struct MeditationParser {
         return expanded
     }
 
-    // MARK: - Section Expansion
+    // MARK: - Stanza Expansion
 
-    private static func expandSection(
+    private static func expandStanzaBlock(
         bodyLines: [String],
         outerCount: Int,
-        innerCount: Int?,
-        innerDelay: TimeInterval?,
         outerRest: TimeInterval,
         pools: [String: Pool]
     ) -> [MeditationStep] {
         var steps: [MeditationStep] = []
 
         for stanza in 0..<outerCount {
-            // If nested (hymn), run inner cycles
-            if let innerCount = innerCount, let innerDelay = innerDelay {
-                for cycle in 0..<innerCount {
-                    for line in bodyLines {
-                        steps.append(contentsOf: expandSpeakLine(line, pools: pools))
-                    }
-                    if cycle < innerCount - 1 {
-                        steps.append(.pause(innerDelay))
-                    }
-                }
-            } else {
-                // Simple stanza: just run the body lines
-                for line in bodyLines {
-                    steps.append(contentsOf: expandSpeakLine(line, pools: pools))
-                }
+            for line in bodyLines {
+                steps.append(contentsOf: expandSpeakLine(line, pools: pools))
             }
 
             // Rest between stanzas
@@ -357,7 +330,7 @@ struct MeditationParser {
                         textBuffer += drawn
                     }
                 } else {
-                    textBuffer += "{\(name)}"
+                    textBuffer += "~\(name)"
                 }
             case .dots(let count):
                 // Flush text buffer, then pause
@@ -435,7 +408,7 @@ struct MeditationParser {
                 }
                 i += 1
                 var numStr = ""
-                while i < chars.count && (chars[i].isNumber || chars[i] == "." || chars[i] == "\u{2033}" || chars[i] == "\u{2032}") {
+                while i < chars.count && (chars[i].isNumber || chars[i] == "." || isDurationUnit(chars[i])) {
                     numStr.append(chars[i])
                     i += 1
                 }
@@ -444,33 +417,31 @@ struct MeditationParser {
                 continue
             }
 
-            // Pool reference: {name}
-            if ch == "{" {
+            // Pool reference: ~name (must be followed by a letter or underscore)
+            if ch == "~" && i + 1 < chars.count && (chars[i+1].isLetter || chars[i+1] == "_") {
                 if !textBuf.isEmpty {
                     tokens.append(.text(textBuf))
                     textBuf = ""
                 }
-                i += 1
+                i += 1 // skip ~
                 var name = ""
-                while i < chars.count && chars[i] != "}" {
+                while i < chars.count && (chars[i].isLetter || chars[i].isNumber || chars[i] == "_") {
                     name.append(chars[i])
                     i += 1
                 }
-                if i < chars.count { i += 1 } // skip }
                 tokens.append(.poolRef(name))
                 continue
             }
 
-            // Inline seconds: digits followed by ″ or ′
+            // Inline seconds: digits followed by a duration unit (″ ′ " ')
             if ch.isNumber {
-                // Look ahead for ″ or ′
                 var numStr = String(ch)
                 var j = i + 1
                 while j < chars.count && (chars[j].isNumber || chars[j] == ".") {
                     numStr.append(chars[j])
                     j += 1
                 }
-                if j < chars.count && (chars[j] == "\u{2033}" || chars[j] == "\u{2032}") {
+                if j < chars.count && isDurationUnit(chars[j]) {
                     // It's a duration
                     if !textBuf.isEmpty {
                         tokens.append(.text(textBuf))

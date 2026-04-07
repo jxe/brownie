@@ -14,8 +14,6 @@ struct MedTextEditor: UIViewRepresentable {
         ("♀", "\u{2640}"),
         ("♂", "\u{2642}"),
         ("~", "~"),
-        ("{", "{"),
-        ("}", "}"),
         ("#", "#"),
     ]
 
@@ -112,10 +110,22 @@ struct MedTextEditor: UIViewRepresentable {
             let stripped = currentLine.drop(while: { $0 == " " || $0 == "\t" })
             let indent = String(currentLine.prefix(currentLine.count - stripped.count))
 
-            // Lines starting with ~, §, or × (with 𝄐 or alone) should increase indent
+            // Pool definition (~name or ~ name) and × / x repeats should increase indent
             let trimmed = currentLine.trimmingCharacters(in: .whitespacesAndNewlines)
             let newIndent: String
-            if trimmed.hasPrefix("~") || trimmed.hasPrefix("\u{00A7}") || trimmed.hasPrefix("\u{00D7}") {
+            let isPoolDef: Bool = {
+                guard trimmed.hasPrefix("~") else { return false }
+                let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                return !after.isEmpty && after.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+            }()
+            let isRepeat: Bool = {
+                guard let first = trimmed.first else { return false }
+                if first == "\u{00D7}" || first == "x" {
+                    return trimmed.count > 1 && trimmed.dropFirst().first?.isNumber == true
+                }
+                return false
+            }()
+            if isPoolDef || isRepeat {
                 newIndent = indent + "  "
             } else {
                 newIndent = indent

@@ -12,6 +12,23 @@ The first `#` line becomes the meditation title.
 
 Additional `#` lines are treated as comments and ignored.
 
+## Tags
+
+Tags can appear on the title line itself:
+
+```
+# Morning Prayer #prayer #morning
+```
+
+Or on a separate `#` line immediately after the title (the line must contain only `#tag` words):
+
+```
+# Morning Prayer
+#prayer #morning
+```
+
+Tags are used by the meditation list to filter and group meditations.
+
 ## Spoken Text
 
 Any line that isn't a special construct is spoken aloud by the TTS engine.
@@ -54,7 +71,7 @@ Stand ···· ⏳40″ ··
 
 A pool is a named list of items. Each time the pool is referenced, a random item is drawn (shuffled, no repeats until exhausted).
 
-Define with `~` followed by indented items:
+**Define** with `~ name` or `~name` at the start of a line, followed by indented items:
 
 ```
 ~ fbs
@@ -63,11 +80,13 @@ Define with `~` followed by indented items:
   If only I'd found the right people.
 ```
 
-Reference with `{name}`:
+**Reference** with `~name` (no space):
 
 ```
-{fbs} ·· Feel 22″ Done.
+~fbs ·· Feel 22″ Done.
 ```
+
+Pool items themselves can reference other pools — references are resolved recursively when the item is drawn.
 
 ### Gendered Pools
 
@@ -78,7 +97,7 @@ Pool items can have a gender marker (`♀` or `♂`). When a gendered item is dr
   Stephanie ♀
   Ryan ♂
 
-I'm with {person}. · I appreciate them for their kindness.
+I'm with ~person. · I appreciate them for their kindness.
 # If "Stephanie" is drawn: "I appreciate her for her kindness."
 ```
 
@@ -91,7 +110,7 @@ Use `×` (multiplication sign) to repeat lines or blocks.
 Repeats the line N times:
 
 ```
-×4 I'm with {person}, not making progress. · Is it better {why}? 12″
+×4 I'm with ~person, not making progress. · Is it better ~why? 12″
 ```
 
 This runs the line 4 times. Any trailing pause (the `12″`) naturally separates each repetition.
@@ -102,7 +121,7 @@ Repeats an indented body N times with REST seconds of silence between stanzas. T
 
 ```
 ×5𝄐28″
-  I'm with someone, not making progress. · It's {why}. 12″
+  I'm with someone, not making progress. · It's ~why. 12″
 ```
 
 This runs the body 5 times with 28s rest between each.
@@ -113,41 +132,25 @@ Body lines inside a stanza block can themselves use `×N` for inner repetition:
 
 ```
 ×5𝄐28″
-  ×4 I'm with {person}, not making progress. · Is it better {why}? 12″
+  ×4 I'm with ~person, not making progress. · Is it better ~why? 12″
 ```
 
 This means: 5 stanzas, each containing 4 repetitions of the line. The `12″` at the end of the line acts as the pause between inner cycles. 28s rest between stanzas.
+
+### One-liner
+
+The whole structure can be on a single line:
+
+```
+×5𝄐28″ ×4 I'm with ~person, not making progress. · Is it better ~why? 12″
+```
 
 The inner repeat can also be written in block form:
 
 ```
 ×5𝄐28″
   ×4
-    I'm with {person}, not making progress. · Is it better {why}? 12″
-```
-
-## Sections (deprecated)
-
-> **Note:** The `§` section notation is deprecated. Use the `×` repeat notation above instead.
-
-Sections define repeated stanza structures. Two forms:
-
-### Simple: `§COUNT REST`
-
-Runs the indented body COUNT times, with REST seconds of silence between stanzas.
-
-```
-§5 28″
-  I'm with someone, not making progress. · It's {why}. 12″
-```
-
-### Nested: `§OUTER×INNER INNER_DELAY OUTER_REST`
-
-Runs INNER cycles per stanza, with INNER_DELAY between cycles, repeated OUTER stanzas with OUTER_REST between them.
-
-```
-§3×5 6″ 28″
-  {fbs} ·· Feel 22″ Done.
+    I'm with ~person, not making progress. · Is it better ~why? 12″
 ```
 
 ## Complete Examples
@@ -176,8 +179,7 @@ Amen.
   So tired of nonstop progress.
   If only I'd found the right people.
 
-×3𝄐28″
-  ×5 {fbs} ·· Feel 22″ Done.
+×3𝄐28″ ×5 ~fbs ·· Feel 22″ Done. 6″
 ```
 
 ### Yes to Life (countdown timers)
@@ -212,17 +214,22 @@ Done!
 
 ## Special Characters Quick Reference
 
-| Character | Name | Meaning |
-|-----------|------|---------|
-| `#` | Hash | Title (first) or comment |
-| `·` | Middle dot (U+00B7) | 1-second pause (stack for more) |
-| `″` | Double prime (U+2033) | Seconds unit (e.g. `22″`) |
-| `′` | Prime (U+2032) | Minutes unit (e.g. `3′`) |
-| `⏳` | Hourglass (U+23F3) | Countdown timer |
-| `~` | Tilde | Pool definition |
-| `{ }` | Braces | Pool reference |
-| `×` | Multiplication (U+00D7) | Repeat count (`×5 text` or `×5𝄐28″`) |
-| `𝄐` | Fermata (U+1D110) | Rest between stanzas (`×5𝄐28″`) |
-| `§` | Section sign (U+00A7) | Section block (deprecated, use `×` instead) |
-| `♀` | Female sign (U+2640) | Female gender on pool item |
-| `♂` | Male sign (U+2642) | Male gender on pool item |
+| Character | Name | Meaning | ASCII alternative |
+|-----------|------|---------|-------------------|
+| `#` | Hash | Title (first) or comment | — |
+| `·` | Middle dot (U+00B7) | 1-second pause (stack for more) | — |
+| `″` | Double prime (U+2033) | Seconds unit (e.g. `22″`) | `"` (e.g. `22"`) |
+| `′` | Prime (U+2032) | Minutes unit (e.g. `3′`) | `'` (e.g. `3'`) |
+| `⏳` | Hourglass (U+23F3) | Countdown timer | — |
+| `~name` (line start) | Tilde + name | Pool definition (followed by indented items). Space after `~` optional. | — |
+| `~name` (inline) | Tilde + name | Pool reference | — |
+| `×` | Multiplication (U+00D7) | Repeat count (`×5 text` or `×5𝄐28″`) | `x` (e.g. `x5`) |
+| `𝄐` | Fermata (U+1D110) | Rest between stanzas (`×5𝄐28″`) | `\|` (e.g. `x5\|28"`) |
+| `♀` | Female sign (U+2640) | Female gender on pool item | — |
+| `♂` | Male sign (U+2642) | Male gender on pool item | — |
+
+All-ASCII example equivalent to `×5𝄐28″ ×4 ~x ~y 11″`:
+
+```
+x5|28" x4 ~x ~y 11"
+```

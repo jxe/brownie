@@ -23,8 +23,7 @@ struct SampleMeditations {
           because I'm a stationary thing they can account for
           because it adds peace to the world
 
-        \u{00D7}5\u{1D110}28\u{2033}
-          \u{00D7}5 I'm with {person}, not making progress. \u{00B7} Is it better {why}? 12\u{2033}
+        \u{00D7}5\u{1D110}28\u{2033} \u{00D7}5 I'm with ~person, not making progress. \u{00B7} Is it better ~why? 12\u{2033}
         """
 
         _ = FileManager.default.saveMeditation(sample, filename: "sample-useless.med")

@@ -218,31 +218,53 @@ struct MeditationListView: View {
         guard let content = FileManager.default.readMeditation(at: url) else {
             return (url.deletingPathExtension().lastPathComponent, [])
         }
-        for line in content.components(separatedBy: .newlines) {
+        let lines = content.components(separatedBy: .newlines)
+        var title: String? = nil
+        var tags: [String] = []
+        for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("#") {
-                let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                if after.isEmpty { continue }
-                // Extract #tags from end of line
-                var tags: [String] = []
-                var titleParts: [String] = []
-                let words = after.components(separatedBy: .whitespaces)
-                var foundTags = false
+            if !trimmed.hasPrefix("#") {
+                // Stop scanning at the first non-# line (after title)
+                if title != nil { break }
+                continue
+            }
+            let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+            if after.isEmpty { continue }
+
+            let words = after.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            // Is this a pure tag line? (every word is #tag)
+            let isPureTagLine = words.allSatisfy { $0.hasPrefix("#") && $0.count > 1 }
+
+            if title == nil {
+                // First non-empty # line is the title (with optional trailing #tags)
+                if isPureTagLine {
+                    // Edge case: file starts with a tag-only line; treat as tags but keep looking for title
+                    tags.append(contentsOf: words.map { String($0.dropFirst()) })
+                    continue
+                }
+                var titleWords: [String] = []
+                var trailingTags: [String] = []
+                var foundTrailingTag = false
                 for word in words.reversed() {
-                    if word.hasPrefix("#") && word.count > 1 {
-                        tags.insert(String(word.dropFirst()), at: 0)
-                        foundTags = true
-                    } else if foundTags {
-                        titleParts.insert(word, at: 0)
+                    if !foundTrailingTag && word.hasPrefix("#") && word.count > 1 {
+                        trailingTags.insert(String(word.dropFirst()), at: 0)
                     } else {
-                        titleParts.insert(word, at: 0)
+                        foundTrailingTag = true
+                        titleWords.insert(word, at: 0)
                     }
                 }
-                let title = titleParts.joined(separator: " ")
-                return (title.isEmpty ? url.deletingPathExtension().lastPathComponent : title, tags)
+                title = titleWords.joined(separator: " ")
+                tags.append(contentsOf: trailingTags)
+            } else if isPureTagLine {
+                // Subsequent pure tag line — collect more tags
+                tags.append(contentsOf: words.map { String($0.dropFirst()) })
+            } else {
+                // Non-tag # line after title — treat as comment, stop scanning
+                break
             }
         }
-        return (url.deletingPathExtension().lastPathComponent, [])
+        let resolvedTitle = (title?.isEmpty == false ? title! : url.deletingPathExtension().lastPathComponent)
+        return (resolvedTitle, tags)
     }
 
     private func titleFor(_ url: URL) -> String {
