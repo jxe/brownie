@@ -11,6 +11,7 @@ struct MedTextEditor: UIViewRepresentable {
         ("×", "\u{00D7}"),
         ("\u{1D110}", "\u{1D110}"),  // 𝄐 fermata (rest between stanzas)
         ("⏳", "\u{23F3}"),
+        ("🔔", "\u{1F514}"),
         ("♀", "\u{2640}"),
         ("♂", "\u{2642}"),
         ("~", "~"),

@@ -334,6 +334,9 @@ class MeditationPlayer: NSObject {
                 case .pause(let duration):
                     text = ""
                     buffer = renderer.renderSilence(duration: duration)
+                case .bell:
+                    text = ""
+                    buffer = renderer.renderBell()
                 case .countdown:
                     // Should never reach here — countdowns were expanded above
                     continue

@@ -47,6 +47,38 @@ class AudioRenderer {
         return try concatenateAndConvert(buffers: buffers)
     }
 
+    // MARK: - Bell
+
+    /// Synthesizes a meditation bell tone as a PCM buffer.
+    func renderBell() -> AVAudioPCMBuffer {
+        let sampleRate = format.sampleRate
+        let duration: Double = 3.0
+        let frameCount = AVAudioFrameCount(duration * sampleRate)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        buffer.frameLength = frameCount
+        let data = buffer.floatChannelData![0]
+
+        let partials: [(freq: Double, amp: Double, decay: Double)] = [
+            (528.0,  0.6, 1.5),
+            (1056.0, 0.25, 0.8),
+            (1584.0, 0.10, 0.5),
+            (2112.0, 0.05, 0.3),
+        ]
+        let attackTime: Double = 0.005
+
+        for i in 0..<Int(frameCount) {
+            let t = Double(i) / sampleRate
+            var sample: Double = 0
+            for p in partials {
+                sample += p.amp * exp(-t / p.decay) * sin(2.0 * .pi * p.freq * t)
+            }
+            sample *= min(t / attackTime, 1.0)
+            data[i] = Float(sample)
+        }
+
+        return buffer
+    }
+
     // MARK: - Silence
 
     /// Creates a silent buffer of exact duration in the standard format.
@@ -94,7 +126,7 @@ class AudioRenderer {
         steps.append(.pause(5))
         steps.append(.speak("5"))
         steps.append(.pause(5))
-        steps.append(.speak("Done."))
+        steps.append(.bell)
 
         return steps
     }
