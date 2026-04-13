@@ -28,7 +28,7 @@ struct MeditationListView: View {
                                     .font(.subheadline)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
-                                    .background(selectedTag == tag ? Color.accentColor : Color(.systemGray5))
+                                    .background(selectedTag == tag ? Color.accentColor : Color.accentColor.opacity(0.18))
                                     .foregroundStyle(selectedTag == tag ? .white : .primary)
                                     .clipShape(Capsule())
                                     .onTapGesture {
@@ -47,11 +47,9 @@ struct MeditationListView: View {
                 }
                 ForEach(filteredFiles, id: \.self) { url in
                     rowView(for: url)
-                        .listRowBackground(
-                            player.currentSourceURL == url && player.isPlaying
-                                ? Color("HighlightColor")
-                                : Color("BackgroundColor")
-                        )
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 }
             }
             .listStyle(.plain)
@@ -121,55 +119,62 @@ struct MeditationListView: View {
     @ViewBuilder
     private func rowView(for url: URL) -> some View {
         let isCurrent = player.currentSourceURL == url
-        HStack(spacing: 12) {
-            if isCurrent && player.isPlaying {
-                Image(systemName: "pause.fill")
-                    .font(.callout)
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Color.accentColor)
-                    .clipShape(Circle())
-            } else {
-                Image(systemName: "play.fill")
-                    .font(.callout)
-                    .foregroundStyle(Color(.tertiaryLabel))
-                    .frame(width: 32, height: 32)
-                    .overlay(Circle().strokeBorder(Color(.separator), lineWidth: 1))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(titleFor(url))
-                    .font(.body)
-                    .fontWeight(.medium)
-                if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
-                    Text(formatTime(player.elapsedSeconds))
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
-                } else if let tags = fileTags[url], !tags.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(tags, id: \.self) { tag in
-                            Text(tag)
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .background(Color(.systemGray5))
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-
-            Spacer()
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
+        let isActive = isCurrent && player.isPlaying
+        Button {
             if isCurrent {
                 player.togglePause()
             } else {
                 playFile(url)
             }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(titleFor(url))
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.6))
+                        if isActive {
+                            PlayingPulseDot()
+                        }
+                    }
+                    if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
+                        Text(formatTime(player.elapsedSeconds))
+                            .font(.caption)
+                            .foregroundStyle(Color.accentColor)
+                    } else if let tags = fileTags[url], !tags.isEmpty {
+                        HStack(spacing: 4) {
+                            ForEach(tags, id: \.self) { tag in
+                                Text(tag)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentColor.opacity(0.18))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color("HighlightColor").opacity(isActive ? 1.0 : 0.3))
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color("BackgroundColor"))
+                    )
+                    .animation(.easeInOut(duration: 0.2), value: isActive)
+            )
+            .shadow(color: .black.opacity(isActive ? 0.08 : 0.0), radius: isActive ? 6 : 0, y: isActive ? 3 : 0)
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
+        .buttonStyle(MeditationRowPressStyle())
+        .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) { deleteFile(url) } label: {
                 Label("Delete", systemImage: "trash")
@@ -309,5 +314,64 @@ struct MeditationListView: View {
     private func deleteFile(_ url: URL) {
         FileManager.default.deleteMeditation(at: url)
         refreshFiles()
+    }
+}
+
+private struct DisableScrollTouchDelay: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            var current: UIView? = view.superview
+            while let parent = current {
+                if let scrollView = parent as? UIScrollView {
+                    scrollView.delaysContentTouches = false
+                    break
+                }
+                current = parent.superview
+            }
+        }
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+private struct MeditationRowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        MeditationRowPressContent(isPressed: configuration.isPressed, label: configuration.label)
+    }
+}
+
+private struct MeditationRowPressContent: View {
+    let isPressed: Bool
+    let label: ButtonStyleConfiguration.Label
+    @State private var showPressed = false
+
+    var body: some View {
+        label
+            .scaleEffect(showPressed ? 0.97 : 1.0)
+            .animation(showPressed ? .easeOut(duration: 0.1) : .spring(duration: 0.25, bounce: 0.4), value: showPressed)
+            .onChange(of: isPressed) { _, pressed in
+                if pressed {
+                    showPressed = true
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        if !self.isPressed { showPressed = false }
+                    }
+                }
+            }
+    }
+}
+
+private struct PlayingPulseDot: View {
+    @State private var pulse = false
+    var body: some View {
+        Circle()
+            .fill(Color.accentColor)
+            .frame(width: 8, height: 8)
+            .scaleEffect(pulse ? 1.3 : 0.9)
+            .opacity(pulse ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulse)
+            .onAppear { pulse = true }
     }
 }

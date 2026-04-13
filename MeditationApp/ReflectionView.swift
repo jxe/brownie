@@ -23,22 +23,24 @@ struct ReflectionView: View {
                 Text(emotion.question)
                     .font(.body)
                     .foregroundStyle(.secondary)
+                    .lineSpacing(6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(.secondarySystemBackground))
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color("HighlightColor"))
                     )
 
                 // Text editor
                 TextEditor(text: $answer)
                     .focused($isTextEditorFocused)
+                    .lineSpacing(6)
                     .frame(minHeight: 200)
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(.secondarySystemBackground))
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color("HighlightColor"))
                     )
 
                 // Save button
@@ -56,6 +58,8 @@ struct ReflectionView: View {
             }
             .padding()
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("BackgroundColor"))
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Reflect")
         .navigationBarTitleDisplayMode(.inline)

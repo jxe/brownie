@@ -70,6 +70,8 @@ struct JournalView: View {
                     )
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color("BackgroundColor"))
             .navigationTitle("Journal")
             .navigationDestination(for: Emotion.self) { emotion in
                 ReflectionView(emotion: emotion)
