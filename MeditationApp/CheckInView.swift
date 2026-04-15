@@ -109,7 +109,7 @@ struct CheckInView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(GlassPressStyle())
 
                         Divider()
                             .frame(height: 24)
@@ -128,10 +128,11 @@ struct CheckInView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(GlassPressStyle())
                     }
                     .padding(.bottom, 10)
-                    .glassEffect(.regular.interactive(), in: SpeechBubbleShape(tailFraction: tailFraction))
+                    .clipShape(SpeechBubbleShape(tailFraction: tailFraction))
+                    .glassEffect(.regular, in: SpeechBubbleShape(tailFraction: tailFraction))
                     .padding(.horizontal, barHorizontalPadding)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
@@ -252,6 +253,17 @@ private struct SelectedEmotionChipView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             floatingCounts.removeAll { $0.id == id }
         }
+    }
+}
+
+private struct GlassPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Color.white.opacity(configuration.isPressed ? 0.2 : 0)
+                    .blendMode(.plusLighter)
+            )
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 

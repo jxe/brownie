@@ -6,6 +6,7 @@ class AudioRenderer {
     let format: AVAudioFormat
 
     private let synthesizer = AVSpeechSynthesizer()
+    private var cachedBellBuffer: AVAudioPCMBuffer?
 
     init() {
         self.format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
@@ -49,34 +50,54 @@ class AudioRenderer {
 
     // MARK: - Bell
 
-    /// Synthesizes a meditation bell tone as a PCM buffer.
+    /// Loads the meditation bell recording from the app bundle and caches it
+    /// in the renderer's standard format (16 kHz mono float32).
     func renderBell() -> AVAudioPCMBuffer {
-        let sampleRate = format.sampleRate
-        let duration: Double = 3.0
-        let frameCount = AVAudioFrameCount(duration * sampleRate)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        buffer.frameLength = frameCount
-        let data = buffer.floatChannelData![0]
-
-        let partials: [(freq: Double, amp: Double, decay: Double)] = [
-            (528.0,  0.6, 1.5),
-            (1056.0, 0.25, 0.8),
-            (1584.0, 0.10, 0.5),
-            (2112.0, 0.05, 0.3),
-        ]
-        let attackTime: Double = 0.005
-
-        for i in 0..<Int(frameCount) {
-            let t = Double(i) / sampleRate
-            var sample: Double = 0
-            for p in partials {
-                sample += p.amp * exp(-t / p.decay) * sin(2.0 * .pi * p.freq * t)
-            }
-            sample *= min(t / attackTime, 1.0)
-            data[i] = Float(sample)
+        if let cached = cachedBellBuffer {
+            return cached
+        }
+        guard let url = Bundle.main.url(forResource: "brownie-bell", withExtension: "mp3"),
+              let file = try? AVAudioFile(forReading: url) else {
+            return renderSilence(duration: 3.0)
         }
 
-        return buffer
+        let sourceFormat = file.processingFormat
+        guard let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat,
+                                                   frameCapacity: AVAudioFrameCount(file.length)) else {
+            return renderSilence(duration: 3.0)
+        }
+        do {
+            try file.read(into: sourceBuffer)
+        } catch {
+            return renderSilence(duration: 3.0)
+        }
+
+        guard let converter = AVAudioConverter(from: sourceFormat, to: format) else {
+            return renderSilence(duration: 3.0)
+        }
+        let ratio = format.sampleRate / sourceFormat.sampleRate
+        let outCapacity = AVAudioFrameCount(Double(sourceBuffer.frameLength) * ratio) + 100
+        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: outCapacity) else {
+            return renderSilence(duration: 3.0)
+        }
+
+        var error: NSError?
+        var consumed = false
+        converter.convert(to: output, error: &error) { _, status in
+            if consumed {
+                status.pointee = .endOfStream
+                return nil
+            }
+            consumed = true
+            status.pointee = .haveData
+            return sourceBuffer
+        }
+        if error != nil {
+            return renderSilence(duration: 3.0)
+        }
+
+        cachedBellBuffer = output
+        return output
     }
 
     // MARK: - Silence

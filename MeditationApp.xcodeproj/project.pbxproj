@@ -17,6 +17,7 @@
 		A10000090000000000000009 /* SampleMeditations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000090000000000000009 /* SampleMeditations.swift */; };
 		A100000A000000000000000A /* MedTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B000000000000000B /* MedTextEditor.swift */; };
 		A100000C000000000000000C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A200000E000000000000000E /* Assets.xcassets */; };
+		A100001A000000000000001A /* brownie-bell.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A200001A000000000000001A /* brownie-bell.mp3 */; };
 		A100000F000000000000000F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000F000000000000000F /* SettingsView.swift */; };
 		A10000100000000000000010 /* AudioRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000100000000000000010 /* AudioRenderer.swift */; };
 		A10000110000000000000011 /* StreamingPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000110000000000000011 /* StreamingPlayer.swift */; };
@@ -43,6 +44,7 @@
 		A200000B000000000000000B /* MedTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedTextEditor.swift; sourceTree = "<group>"; };
 		A200000D000000000000000D /* MeditationApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MeditationApp.entitlements; sourceTree = "<group>"; };
 		A200000E000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A200001A000000000000001A /* brownie-bell.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "brownie-bell.mp3"; sourceTree = "<group>"; };
 		A200000F000000000000000F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000100000000000000010 /* AudioRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRenderer.swift; sourceTree = "<group>"; };
 		A20000110000000000000011 /* StreamingPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlayer.swift; sourceTree = "<group>"; };
@@ -102,6 +104,7 @@
 				A200000A000000000000000A /* Info.plist */,
 				A200000D000000000000000D /* MeditationApp.entitlements */,
 				A200000E000000000000000E /* Assets.xcassets */,
+				A200001A000000000000001A /* brownie-bell.mp3 */,
 			);
 			path = MeditationApp;
 			sourceTree = "<group>";
@@ -168,6 +171,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A100000C000000000000000C /* Assets.xcassets in Resources */,
+				A100001A000000000000001A /* brownie-bell.mp3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
