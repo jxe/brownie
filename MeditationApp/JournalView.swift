@@ -6,19 +6,43 @@ struct JournalView: View {
     private var markdownExport: String {
         store.journalEntries.map { entry in
             let dateStr = entry.timestamp.formatted(date: .long, time: .shortened)
-            return """
-            # \(entry.emoji) \(entry.emotionName) — \(dateStr)
+            switch entry.content {
+            case .reflection(let r):
+                return """
+                # \(r.emoji) \(r.emotionName) — \(dateStr)
 
-            **Question:** \(entry.question)
+                **Question:** \(r.question)
 
-            **Reflection:** \(entry.answer)
-            """
+                **Reflection:** \(r.answer)
+                """
+            case .meditation(let m):
+                return """
+                # 🧘 \(m.title) — \(dateStr)
+
+                **Meditation:** Helped
+                """
+            }
         }.joined(separator: "\n\n---\n\n")
     }
 
     var body: some View {
         NavigationStack {
             List {
+                // Streak banner
+                let streak = store.currentMeditationStreak
+                if streak >= 2 {
+                    Section {
+                        HStack {
+                            Text("🔥")
+                            Text("\(streak)-day meditation streak")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
                 // Reflect section
                 if !store.selectedEmotionsSorted().isEmpty {
                     Section("Reflect") {
@@ -49,9 +73,14 @@ struct JournalView: View {
 
                 // Past entries section
                 if !store.journalEntries.isEmpty {
-                    Section("Past Reflections") {
+                    Section("Past Entries") {
                         ForEach(store.journalEntries) { entry in
-                            JournalEntryRow(entry: entry)
+                            switch entry.content {
+                            case .reflection(let r):
+                                ReflectionEntryRow(entry: entry, reflection: r)
+                            case .meditation(let m):
+                                MeditationLogRow(entry: entry, meditation: m)
+                            }
                         }
                         .onDelete { indexSet in
                             for index in indexSet {
@@ -64,9 +93,9 @@ struct JournalView: View {
                 // Empty state
                 if store.selectedEmotionsSorted().isEmpty && store.journalEntries.isEmpty {
                     ContentUnavailableView(
-                        "No Reflections Yet",
+                        "No Entries Yet",
                         systemImage: "book.closed",
-                        description: Text("Start a check-in to identify what you're feeling, then come here to reflect.")
+                        description: Text("Start a check-in to identify what you're feeling, or mark a meditation as helpful after listening.")
                     )
                 }
             }
@@ -89,15 +118,16 @@ struct JournalView: View {
     }
 }
 
-private struct JournalEntryRow: View {
+private struct ReflectionEntryRow: View {
     let entry: JournalEntry
+    let reflection: JournalEntry.Content.Reflection
     @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(entry.emoji)
-                Text(entry.emotionName)
+                Text(reflection.emoji)
+                Text(reflection.emotionName)
                     .font(.body)
                     .fontWeight(.medium)
                 Spacer()
@@ -106,16 +136,16 @@ private struct JournalEntryRow: View {
                     .foregroundStyle(.tertiary)
             }
 
-            Text(entry.question)
+            Text(reflection.question)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text(entry.answer)
+            Text(reflection.answer)
                 .font(.subheadline)
                 .lineLimit(isExpanded ? nil : 3)
                 .foregroundStyle(.primary)
 
-            if !isExpanded && entry.answer.count > 120 {
+            if !isExpanded && reflection.answer.count > 120 {
                 Button("Show more") {
                     withAnimation { isExpanded = true }
                 }
@@ -126,6 +156,31 @@ private struct JournalEntryRow: View {
                 }
                 .font(.caption)
             }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct MeditationLogRow: View {
+    let entry: JournalEntry
+    let meditation: JournalEntry.Content.Meditation
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meditation.title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                Text("Meditation helped")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(entry.timestamp, style: .date)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
     }

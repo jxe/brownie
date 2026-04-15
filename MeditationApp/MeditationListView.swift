@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MeditationListView: View {
     @Environment(MeditationPlayer.self) var player
+    @Environment(EmotionStore.self) var store
     @State private var files: [URL] = []
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
@@ -118,8 +119,13 @@ struct MeditationListView: View {
 
     @ViewBuilder
     private func rowView(for url: URL) -> some View {
+        let filename = url.deletingPathExtension().lastPathComponent
         let isCurrent = player.currentSourceURL == url
         let isActive = isCurrent && player.isPlaying
+        let hasLogToday = store.hasMeditationLogToday(filename: filename)
+        let showHelpfulToggle = isCurrent
+            || hasLogToday
+            || store.wasRecentlyPlayed(filename: filename)
         Button {
             if isCurrent {
                 player.togglePause()
@@ -174,6 +180,22 @@ struct MeditationListView: View {
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(MeditationRowPressStyle())
+        .overlay(alignment: .trailing) {
+            if showHelpfulToggle {
+                Button {
+                    store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                } label: {
+                    Image(systemName: hasLogToday ? "checkmark.circle.fill" : "checkmark.circle")
+                        .font(.title3)
+                        .foregroundStyle(hasLogToday ? Color.accentColor : Color.secondary)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(hasLogToday ? "Remove helpful mark for today" : "Mark meditation as helpful today")
+            }
+        }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) { deleteFile(url) } label: {
@@ -246,6 +268,7 @@ struct MeditationListView: View {
     private func playFile(_ url: URL) {
         guard let content = FileManager.default.readMeditation(at: url) else { return }
         let meditation = MeditationParser.parse(content)
+        store.markMeditationPlayed(filename: url.deletingPathExtension().lastPathComponent)
         player.play(meditation, sourceURL: url)
     }
 

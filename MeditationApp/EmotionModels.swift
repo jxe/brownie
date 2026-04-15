@@ -81,9 +81,28 @@ struct Emotion: Identifiable, Hashable {
 
 struct JournalEntry: Identifiable, Codable {
     let id: UUID
-    let emotionName: String
-    let emoji: String
-    let question: String
-    let answer: String
     let timestamp: Date
+    let content: Content
+
+    enum Content: Codable {
+        case reflection(Reflection)
+        case meditation(Meditation)
+
+        struct Reflection: Codable {
+            let emotionName: String
+            let emoji: String
+            let question: String
+            let answer: String
+        }
+
+        struct Meditation: Codable {
+            let title: String
+            /// Basename of the .med file (no path, no extension). Acts as a stable
+            /// per-meditation identifier across days. Nil for ad-hoc/sample playback.
+            let filename: String?
+            /// Always `true` in v1 — we only persist positive outcomes. Kept as a
+            /// field so negative logging can be added later without a migration.
+            let worked: Bool
+        }
+    }
 }

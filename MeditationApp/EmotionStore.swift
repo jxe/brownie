@@ -16,11 +16,17 @@ class EmotionStore {
         static let emotionCounts = "checkin_emotionCounts"
         static let sessionTime = "checkin_sessionTime"
         static let lastInteraction = "checkin_lastInteractionTime"
+        static let recentMeditationPlays = "recentMeditationPlays"
     }
+
+    /// Map of meditation filename → last-played timestamp. Persisted in
+    /// UserDefaults so "recently played" survives app restarts and iOS kills.
+    private var recentPlays: [String: Date] = [:]
 
     init() {
         load()
         loadSession()
+        loadRecentPlays()
     }
 
     func tap(_ emotion: Emotion) {
@@ -63,11 +69,13 @@ class EmotionStore {
     func submit(emotion: Emotion, answer: String) {
         let entry = JournalEntry(
             id: UUID(),
-            emotionName: emotion.name,
-            emoji: emotion.emoji,
-            question: emotion.question,
-            answer: answer,
-            timestamp: Date()
+            timestamp: Date(),
+            content: .reflection(.init(
+                emotionName: emotion.name,
+                emoji: emotion.emoji,
+                question: emotion.question,
+                answer: answer
+            ))
         )
         journalEntries.insert(entry, at: 0)
         save()
@@ -76,6 +84,99 @@ class EmotionStore {
     func deleteEntry(_ entry: JournalEntry) {
         journalEntries.removeAll { $0.id == entry.id }
         save()
+    }
+
+    // MARK: - Meditation Logs
+
+    /// Insert a positive meditation log entry dated `Date()`.
+    func logMeditation(title: String, sourceURL: URL?) {
+        let entry = JournalEntry(
+            id: UUID(),
+            timestamp: Date(),
+            content: .meditation(.init(
+                title: title,
+                filename: sourceURL?.deletingPathExtension().lastPathComponent,
+                worked: true
+            ))
+        )
+        journalEntries.insert(entry, at: 0)
+        save()
+    }
+
+    /// If a meditation log for `sourceURL`'s filename exists for today, remove it;
+    /// otherwise create one. Used by the row-level toggle button.
+    func toggleMeditationLogForToday(title: String, sourceURL: URL?) {
+        let filename = sourceURL?.deletingPathExtension().lastPathComponent
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        if let existing = journalEntries.first(where: { entry in
+            guard case .meditation(let m) = entry.content else { return false }
+            return m.filename == filename && cal.isDate(entry.timestamp, inSameDayAs: today)
+        }) {
+            journalEntries.removeAll { $0.id == existing.id }
+            save()
+        } else {
+            logMeditation(title: title, sourceURL: sourceURL)
+        }
+    }
+
+    func hasMeditationLogToday(filename: String?) -> Bool {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return journalEntries.contains { entry in
+            guard case .meditation(let m) = entry.content else { return false }
+            return m.filename == filename && cal.isDate(entry.timestamp, inSameDayAs: today)
+        }
+    }
+
+    /// Consecutive calendar days (ending today, or yesterday if today has no
+    /// log yet) with at least one positive meditation log. Returns 0 if neither
+    /// today nor yesterday has a log.
+    var currentMeditationStreak: Int {
+        let cal = Calendar.current
+        let days: Set<Date> = Set(journalEntries.compactMap { entry in
+            guard case .meditation(let m) = entry.content, m.worked else { return nil }
+            return cal.startOfDay(for: entry.timestamp)
+        })
+        guard !days.isEmpty else { return 0 }
+
+        let today = cal.startOfDay(for: Date())
+        var cursor = days.contains(today)
+            ? today
+            : (cal.date(byAdding: .day, value: -1, to: today) ?? today)
+        guard days.contains(cursor) else { return 0 }
+
+        var count = 0
+        while days.contains(cursor) {
+            count += 1
+            guard let prev = cal.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = prev
+        }
+        return count
+    }
+
+    // MARK: - Recent Plays
+
+    func markMeditationPlayed(filename: String?) {
+        guard let filename else { return }
+        recentPlays[filename] = Date()
+        saveRecentPlays()
+    }
+
+    func wasRecentlyPlayed(filename: String?, within hours: Double = 24) -> Bool {
+        guard let filename, let last = recentPlays[filename] else { return false }
+        return Date().timeIntervalSince(last) < hours * 3600
+    }
+
+    private func saveRecentPlays() {
+        // UserDefaults can persist [String: Date] directly via property-list encoding.
+        UserDefaults.standard.set(recentPlays, forKey: SessionKeys.recentMeditationPlays)
+    }
+
+    private func loadRecentPlays() {
+        if let dict = UserDefaults.standard.dictionary(forKey: SessionKeys.recentMeditationPlays) as? [String: Date] {
+            recentPlays = dict
+        }
     }
 
     // MARK: - Session Persistence
@@ -131,11 +232,50 @@ class EmotionStore {
 
     private func load() {
         guard FileManager.default.fileExists(atPath: journalFileURL.path) else { return }
+        let data: Data
         do {
-            let data = try Data(contentsOf: journalFileURL)
-            journalEntries = try JSONDecoder().decode([JournalEntry].self, from: data)
+            data = try Data(contentsOf: journalFileURL)
         } catch {
             print("EmotionStore load error: \(error)")
+            return
         }
+
+        let decoder = JSONDecoder()
+
+        // New format.
+        if let entries = try? decoder.decode([JournalEntry].self, from: data) {
+            journalEntries = entries
+            return
+        }
+
+        // Legacy format: [{ id, emotionName, emoji, question, answer, timestamp }].
+        // Migrate in place and rewrite the file in the new format.
+        if let legacy = try? decoder.decode([LegacyJournalEntry].self, from: data) {
+            journalEntries = legacy.map { old in
+                JournalEntry(
+                    id: old.id,
+                    timestamp: old.timestamp,
+                    content: .reflection(.init(
+                        emotionName: old.emotionName,
+                        emoji: old.emoji,
+                        question: old.question,
+                        answer: old.answer
+                    ))
+                )
+            }
+            save()
+            return
+        }
+
+        print("EmotionStore: failed to decode journal in either format")
+    }
+
+    private struct LegacyJournalEntry: Codable {
+        let id: UUID
+        let emotionName: String
+        let emoji: String
+        let question: String
+        let answer: String
+        let timestamp: Date
     }
 }
