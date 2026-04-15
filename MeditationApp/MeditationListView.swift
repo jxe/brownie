@@ -14,6 +14,7 @@ struct MeditationListView: View {
     @State private var isNewFile = false
     @State private var showingSettings = false
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
+    @State private var helpfulConfirmURL: URL? = nil
 
     private var filteredFiles: [URL] {
         guard let tag = selectedTag else { return files }
@@ -55,6 +56,33 @@ struct MeditationListView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .confirmationDialog(
+                helpfulConfirmURL.map(titleFor) ?? "",
+                isPresented: Binding(
+                    get: { helpfulConfirmURL != nil },
+                    set: { if !$0 { helpfulConfirmURL = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: helpfulConfirmURL
+            ) { url in
+                let filename = url.deletingPathExtension().lastPathComponent
+                if store.hasMeditationLogToday(filename: filename) {
+                    Button("Remove helpful mark", role: .destructive) {
+                        store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                    }
+                } else {
+                    Button("Yes, it helped") {
+                        store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                    }
+                }
+            } message: { url in
+                let filename = url.deletingPathExtension().lastPathComponent
+                if store.hasMeditationLogToday(filename: filename) {
+                    Text("Remove today's helpful mark from your journal?")
+                } else {
+                    Text("Add a note in today's journal that this meditation helped you?")
+                }
+            }
             .navigationTitle("Meditations")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -183,7 +211,7 @@ struct MeditationListView: View {
         .overlay(alignment: .trailing) {
             if showHelpfulToggle {
                 Button {
-                    store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                    helpfulConfirmURL = url
                 } label: {
                     Image(systemName: hasLogToday ? "checkmark.circle.fill" : "checkmark.circle")
                         .font(.title3)

@@ -232,50 +232,11 @@ class EmotionStore {
 
     private func load() {
         guard FileManager.default.fileExists(atPath: journalFileURL.path) else { return }
-        let data: Data
         do {
-            data = try Data(contentsOf: journalFileURL)
+            let data = try Data(contentsOf: journalFileURL)
+            journalEntries = try JSONDecoder().decode([JournalEntry].self, from: data)
         } catch {
             print("EmotionStore load error: \(error)")
-            return
         }
-
-        let decoder = JSONDecoder()
-
-        // New format.
-        if let entries = try? decoder.decode([JournalEntry].self, from: data) {
-            journalEntries = entries
-            return
-        }
-
-        // Legacy format: [{ id, emotionName, emoji, question, answer, timestamp }].
-        // Migrate in place and rewrite the file in the new format.
-        if let legacy = try? decoder.decode([LegacyJournalEntry].self, from: data) {
-            journalEntries = legacy.map { old in
-                JournalEntry(
-                    id: old.id,
-                    timestamp: old.timestamp,
-                    content: .reflection(.init(
-                        emotionName: old.emotionName,
-                        emoji: old.emoji,
-                        question: old.question,
-                        answer: old.answer
-                    ))
-                )
-            }
-            save()
-            return
-        }
-
-        print("EmotionStore: failed to decode journal in either format")
-    }
-
-    private struct LegacyJournalEntry: Codable {
-        let id: UUID
-        let emotionName: String
-        let emoji: String
-        let question: String
-        let answer: String
-        let timestamp: Date
     }
 }
