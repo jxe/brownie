@@ -56,33 +56,6 @@ struct MeditationListView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .confirmationDialog(
-                helpfulConfirmURL.map(titleFor) ?? "",
-                isPresented: Binding(
-                    get: { helpfulConfirmURL != nil },
-                    set: { if !$0 { helpfulConfirmURL = nil } }
-                ),
-                titleVisibility: .visible,
-                presenting: helpfulConfirmURL
-            ) { url in
-                let filename = url.deletingPathExtension().lastPathComponent
-                if store.hasMeditationLogToday(filename: filename) {
-                    Button("Remove helpful mark", role: .destructive) {
-                        store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
-                    }
-                } else {
-                    Button("Yes, it helped") {
-                        store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
-                    }
-                }
-            } message: { url in
-                let filename = url.deletingPathExtension().lastPathComponent
-                if store.hasMeditationLogToday(filename: filename) {
-                    Text("Remove today's helpful mark from your journal?")
-                } else {
-                    Text("Add a note in today's journal that this meditation helped you?")
-                }
-            }
             .navigationTitle("Meditations")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -213,7 +186,7 @@ struct MeditationListView: View {
                 Button {
                     helpfulConfirmURL = url
                 } label: {
-                    Image(systemName: hasLogToday ? "checkmark.circle.fill" : "checkmark.circle")
+                    Image(systemName: hasLogToday ? "face.smiling.fill" : "questionmark.circle")
                         .font(.title3)
                         .foregroundStyle(hasLogToday ? Color.accentColor : Color.secondary)
                         .padding(.horizontal, 18)
@@ -221,7 +194,31 @@ struct MeditationListView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(hasLogToday ? "Remove helpful mark for today" : "Mark meditation as helpful today")
+                .accessibilityLabel(hasLogToday ? "Marked as helpful today" : "Rate this meditation")
+                .confirmationDialog(
+                    titleFor(url),
+                    isPresented: Binding(
+                        get: { helpfulConfirmURL == url },
+                        set: { if !$0 { helpfulConfirmURL = nil } }
+                    ),
+                    titleVisibility: .visible
+                ) {
+                    if hasLogToday {
+                        Button("Remove helpful mark", role: .destructive) {
+                            store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                        }
+                    } else {
+                        Button("Yes, it helped") {
+                            store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                        }
+                    }
+                } message: {
+                    if hasLogToday {
+                        Text("Remove today's helpful mark from your journal?")
+                    } else {
+                        Text("Add a note in today's journal that this meditation helped you?")
+                    }
+                }
             }
         }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
