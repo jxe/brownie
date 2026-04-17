@@ -62,7 +62,7 @@ enum MeditationStep {
     case speak(String)
     case pause(TimeInterval)
     case countdown(TimeInterval) // spoken countdown
-    case bell
+    case bell(String)            // bell id from BellRegistry
 }
 
 // MARK: - Parsed Meditation

@@ -316,27 +316,33 @@ class MeditationPlayer: NSObject {
         let rate = self.speakingRate
 
         renderTask = Task { [weak self, renderer] in
+            struct ActiveTail { let buffer: AVAudioPCMBuffer; var frame: Int }
+            var activeTails: [ActiveTail] = []
+
             for (i, step) in flatSteps.enumerated() {
                 guard !Task.isCancelled else { return }
 
-                let buffer: AVAudioPCMBuffer
+                let base: AVAudioPCMBuffer
                 let text: String
 
                 switch step {
                 case .speak(let speakText):
                     text = speakText
                     do {
-                        buffer = try await renderer.renderSpeech(text: speakText, voice: voice, rate: rate)
+                        base = try await renderer.renderSpeech(text: speakText, voice: voice, rate: rate)
                     } catch {
                         print("Render error for step \(i): \(error)")
                         continue
                     }
                 case .pause(let duration):
                     text = ""
-                    buffer = renderer.renderSilence(duration: duration)
-                case .bell:
+                    base = renderer.renderSilence(duration: duration)
+                case .bell(let id):
                     text = ""
-                    buffer = renderer.renderBell()
+                    let def = BellRegistry.def(for: id)
+                    base = renderer.renderSilence(duration: def.occupiedDuration)
+                    let bellBuffer = renderer.renderBell(id: id)
+                    activeTails.append(ActiveTail(buffer: bellBuffer, frame: 0))
                 case .countdown:
                     // Should never reach here — countdowns were expanded above
                     continue
@@ -344,24 +350,77 @@ class MeditationPlayer: NSObject {
 
                 guard !Task.isCancelled else { return }
 
+                // Mix any active tails into the base buffer (including the bell
+                // tail we may have just pushed, so its body plays during the
+                // occupied window).
+                for j in activeTails.indices {
+                    let remaining = Int(activeTails[j].buffer.frameLength) - activeTails[j].frame
+                    let mixLen = min(remaining, Int(base.frameLength))
+                    if mixLen > 0 {
+                        renderer.mixIn(
+                            destination: base,
+                            source: activeTails[j].buffer,
+                            srcStart: activeTails[j].frame,
+                            dstStart: 0,
+                            count: mixLen
+                        )
+                        activeTails[j].frame += mixLen
+                    }
+                }
+                activeTails.removeAll { $0.frame >= Int($0.buffer.frameLength) }
+
                 let marker = StepMarker(
                     sampleOffset: player.scheduledFrames,
                     stepIndex: i,
                     displayText: text
                 )
 
-                let isFinal = (i == flatSteps.count - 1)
+                let isLastStep = (i == flatSteps.count - 1)
+                let needsDrain = isLastStep && !activeTails.isEmpty
+
                 await MainActor.run {
-                    if isFinal {
-                        player.scheduleFinalBuffer(buffer, marker: marker)
+                    if isLastStep && !needsDrain {
+                        player.scheduleFinalBuffer(base, marker: marker)
                     } else {
-                        player.scheduleBuffer(buffer, marker: marker)
+                        player.scheduleBuffer(base, marker: marker)
                     }
 
                     // Start playback after first buffer is scheduled
                     if let self = self, !self.playbackStarted {
                         self.playbackStarted = true
                         player.play()
+                    }
+                }
+            }
+
+            // Drain any remaining tails past the end of the last step.
+            guard !Task.isCancelled else { return }
+            if !activeTails.isEmpty {
+                let drainFrames = activeTails.map { Int($0.buffer.frameLength) - $0.frame }.max() ?? 0
+                if drainFrames > 0 {
+                    let drain = renderer.renderSilence(
+                        duration: Double(drainFrames) / renderer.format.sampleRate
+                    )
+                    for j in activeTails.indices {
+                        let remaining = Int(activeTails[j].buffer.frameLength) - activeTails[j].frame
+                        let mixLen = min(remaining, Int(drain.frameLength))
+                        if mixLen > 0 {
+                            renderer.mixIn(
+                                destination: drain,
+                                source: activeTails[j].buffer,
+                                srcStart: activeTails[j].frame,
+                                dstStart: 0,
+                                count: mixLen
+                            )
+                        }
+                    }
+                    let drainMarker = StepMarker(
+                        sampleOffset: player.scheduledFrames,
+                        stepIndex: max(flatSteps.count - 1, 0),
+                        displayText: ""
+                    )
+                    await MainActor.run {
+                        player.scheduleFinalBuffer(drain, marker: drainMarker)
                     }
                 }
             }

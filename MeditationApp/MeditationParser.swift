@@ -410,13 +410,13 @@ struct MeditationParser {
                     textBuffer = ""
                 }
                 steps.append(.countdown(secs))
-            case .bell:
+            case .bell(let id):
                 if !textBuffer.trimmingCharacters(in: .whitespaces).isEmpty {
                     let resolved = PronounResolver.resolve(textBuffer.trimmingCharacters(in: .whitespaces), gender: currentGender)
                     steps.append(.speak(resolved))
                     textBuffer = ""
                 }
-                steps.append(.bell)
+                steps.append(.bell(id))
             }
         }
 
@@ -437,7 +437,7 @@ struct MeditationParser {
         case dots(Int)
         case seconds(TimeInterval)
         case countdown(TimeInterval)
-        case bell
+        case bell(String)
     }
 
     private static func tokenize(_ line: String) -> [Token] {
@@ -481,14 +481,14 @@ struct MeditationParser {
                 continue
             }
 
-            // Bell: 🔔
-            if ch == "\u{1F514}" {
+            // Bell / chime / gong emoji → bell token with id
+            if let bellID = BellRegistry.id(for: ch) {
                 if !textBuf.isEmpty {
                     tokens.append(.text(textBuf))
                     textBuf = ""
                 }
                 i += 1
-                tokens.append(.bell)
+                tokens.append(.bell(bellID))
                 continue
             }
 

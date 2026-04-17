@@ -1,12 +1,42 @@
 import AVFoundation
 
+// MARK: - Bell Registry
+
+struct BellDef {
+    let id: String
+    let filename: String          // bundle resource name, no extension
+    let occupiedDuration: TimeInterval
+}
+
+enum BellRegistry {
+    static let defaultID = "bell"
+
+    static let bells: [String: BellDef] = [
+        "bell":  BellDef(id: "bell",  filename: "brownie-bell",  occupiedDuration:  7.0),
+        "chime": BellDef(id: "chime", filename: "brownie-chime", occupiedDuration:  3.0),
+        "gong":  BellDef(id: "gong",  filename: "brownie-gong",  occupiedDuration: 10.0),
+    ]
+
+    // Both variation-selector and bare emoji map to the same id.
+    static let emojiToID: [Character: String] = [
+        "\u{1F514}":          "bell",   // 🔔
+        "\u{1F6CE}\u{FE0F}":  "chime",  // 🛎️
+        "\u{1F6CE}":          "chime",  // 🛎
+        "\u{1F6E2}\u{FE0F}":  "gong",   // 🛢️
+        "\u{1F6E2}":          "gong",   // 🛢
+    ]
+
+    static func id(for ch: Character) -> String? { emojiToID[ch] }
+    static func def(for id: String) -> BellDef   { bells[id] ?? bells[defaultID]! }
+}
+
 /// Renders meditation steps into AVAudioPCMBuffers for streaming playback.
 class AudioRenderer {
     /// Standard output format: 16kHz mono float32
     let format: AVAudioFormat
 
     private let synthesizer = AVSpeechSynthesizer()
-    private var cachedBellBuffer: AVAudioPCMBuffer?
+    private var cachedBells: [String: AVAudioPCMBuffer] = [:]
 
     init() {
         self.format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
@@ -50,35 +80,44 @@ class AudioRenderer {
 
     // MARK: - Bell
 
-    /// Loads the meditation bell recording from the app bundle and caches it
-    /// in the renderer's standard format (16 kHz mono float32).
-    func renderBell() -> AVAudioPCMBuffer {
-        if let cached = cachedBellBuffer {
+    /// Loads a named bell recording from the app bundle, converts it to the
+    /// renderer's standard format (16 kHz mono float32), and caches it by id.
+    /// Returns a silent buffer (matching the bell's occupied duration) if the
+    /// audio file is missing or fails to load.
+    func renderBell(id: String) -> AVAudioPCMBuffer {
+        let def = BellRegistry.def(for: id)
+        if let cached = cachedBells[def.id] {
             return cached
         }
-        guard let url = Bundle.main.url(forResource: "brownie-bell", withExtension: "mp3"),
+        let fallback: () -> AVAudioPCMBuffer = { [format] in
+            let frames = AVAudioFrameCount(def.occupiedDuration * format.sampleRate)
+            let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: max(frames, 1))!
+            buf.frameLength = max(frames, 1)
+            return buf
+        }
+        guard let url = Bundle.main.url(forResource: def.filename, withExtension: "mp3"),
               let file = try? AVAudioFile(forReading: url) else {
-            return renderSilence(duration: 3.0)
+            return fallback()
         }
 
         let sourceFormat = file.processingFormat
         guard let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat,
                                                    frameCapacity: AVAudioFrameCount(file.length)) else {
-            return renderSilence(duration: 3.0)
+            return fallback()
         }
         do {
             try file.read(into: sourceBuffer)
         } catch {
-            return renderSilence(duration: 3.0)
+            return fallback()
         }
 
         guard let converter = AVAudioConverter(from: sourceFormat, to: format) else {
-            return renderSilence(duration: 3.0)
+            return fallback()
         }
         let ratio = format.sampleRate / sourceFormat.sampleRate
         let outCapacity = AVAudioFrameCount(Double(sourceBuffer.frameLength) * ratio) + 100
         guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: outCapacity) else {
-            return renderSilence(duration: 3.0)
+            return fallback()
         }
 
         var error: NSError?
@@ -93,11 +132,33 @@ class AudioRenderer {
             return sourceBuffer
         }
         if error != nil {
-            return renderSilence(duration: 3.0)
+            return fallback()
         }
 
-        cachedBellBuffer = output
+        cachedBells[def.id] = output
         return output
+    }
+
+    // MARK: - Mixing
+
+    /// Adds `count` float32 samples from `source` (starting at `srcStart`) into
+    /// `destination` (starting at `dstStart`). Only valid within existing
+    /// `frameLength` on both buffers. Destination must not be a cached bell.
+    func mixIn(destination: AVAudioPCMBuffer,
+               source: AVAudioPCMBuffer,
+               srcStart: Int,
+               dstStart: Int,
+               count: Int) {
+        guard count > 0,
+              let dst = destination.floatChannelData,
+              let src = source.floatChannelData else { return }
+        assert(srcStart + count <= Int(source.frameLength), "source read out of bounds")
+        assert(dstStart + count <= Int(destination.frameLength), "destination write out of bounds")
+        let dstPtr = dst[0].advanced(by: dstStart)
+        let srcPtr = src[0].advanced(by: srcStart)
+        for i in 0..<count {
+            dstPtr[i] += srcPtr[i]
+        }
     }
 
     // MARK: - Silence
@@ -147,7 +208,7 @@ class AudioRenderer {
         steps.append(.pause(5))
         steps.append(.speak("5"))
         steps.append(.pause(5))
-        steps.append(.bell)
+        steps.append(.bell(BellRegistry.defaultID))
 
         return steps
     }
