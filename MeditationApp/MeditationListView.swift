@@ -15,6 +15,7 @@ struct MeditationListView: View {
     @State private var showingSettings = false
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
     @State private var helpfulConfirmURL: URL? = nil
+    @State private var tagEditTarget: TagEditTarget? = nil
 
     private var filteredFiles: [URL] {
         guard let tag = selectedTag else { return files }
@@ -109,6 +110,15 @@ struct MeditationListView: View {
                     if let savedURL, player.currentSourceURL == savedURL {
                         player.stop()
                     }
+                }
+            }
+            .sheet(item: $tagEditTarget) { target in
+                TagEditorView(
+                    title: target.title,
+                    initialTags: target.tags,
+                    suggestions: allTags.filter { !target.tags.contains($0) }
+                ) { newTags in
+                    saveTags(newTags, for: target.url)
                 }
             }
             .background(Color("BackgroundColor"))
@@ -223,21 +233,21 @@ struct MeditationListView: View {
         }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
-            Button(role: .destructive) { deleteFile(url) } label: {
-                Label("Delete", systemImage: "trash")
+            Button { archiveFile(url) } label: {
+                Label("Archive", systemImage: "archivebox")
             }
+            .tint(.orange)
         }
         .swipeActions(edge: .leading) {
-            Button { editFile(url) } label: {
-                Label("Edit", systemImage: "pencil")
+            Button { editTags(url) } label: {
+                Label("Tags", systemImage: "tag")
             }
             .tint(.accentColor)
-            Button { editCopy(url) } label: {
-                Label("Edit a Copy", systemImage: "doc.badge.plus")
-            }
-            .tint(.indigo)
         }
         .contextMenu {
+            Button { editTags(url) } label: {
+                Label("Edit Tags", systemImage: "tag")
+            }
             Button { editFile(url) } label: {
                 Label("Edit", systemImage: "pencil")
             }
@@ -248,8 +258,8 @@ struct MeditationListView: View {
                 Label("Play", systemImage: "play")
             }
             Divider()
-            Button(role: .destructive) { deleteFile(url) } label: {
-                Label("Delete", systemImage: "trash")
+            Button { archiveFile(url) } label: {
+                Label("Archive", systemImage: "archivebox")
             }
         }
     }
@@ -363,6 +373,38 @@ struct MeditationListView: View {
         FileManager.default.deleteMeditation(at: url)
         refreshFiles()
     }
+
+    private func archiveFile(_ url: URL) {
+        if player.currentSourceURL == url {
+            player.stop()
+        }
+        _ = FileManager.default.archiveMeditation(at: url)
+        refreshFiles()
+    }
+
+    private func editTags(_ url: URL) {
+        let (title, tags) = metadataFor(url)
+        tagEditTarget = TagEditTarget(url: url, title: title, tags: tags)
+    }
+
+    private func saveTags(_ newTags: [String], for url: URL) {
+        guard let content = FileManager.default.readMeditation(at: url) else { return }
+        let (title, _) = metadataFor(url)
+        let updated = MeditationMetadataWriter.rewrite(source: content, title: title, tags: newTags)
+        let basename = url.deletingPathExtension().lastPathComponent
+        let savedURL = FileManager.default.saveMeditation(updated, filename: basename)
+        refreshFiles()
+        if let savedURL, player.currentSourceURL == savedURL {
+            player.stop()
+        }
+    }
+}
+
+private struct TagEditTarget: Identifiable {
+    let id = UUID()
+    let url: URL
+    let title: String
+    let tags: [String]
 }
 
 private struct DisableScrollTouchDelay: UIViewRepresentable {

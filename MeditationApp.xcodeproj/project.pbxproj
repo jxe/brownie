@@ -29,6 +29,9 @@
 		A10000170000000000000017 /* ChipFlightAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000170000000000000017 /* ChipFlightAnimator.swift */; };
 		A10000180000000000000018 /* SpeechBubbleShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000180000000000000018 /* SpeechBubbleShape.swift */; };
 		A10000190000000000000019 /* iCloudMeditationWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000190000000000000019 /* iCloudMeditationWatcher.swift */; };
+		A100001B000000000000001B /* ArchivedMeditationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200001B000000000000001B /* ArchivedMeditationsView.swift */; };
+		A100001C000000000000001C /* MeditationMetadataWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200001C000000000000001C /* MeditationMetadataWriter.swift */; };
+		A100001D000000000000001D /* TagEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200001D000000000000001D /* TagEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +59,9 @@
 		A20000170000000000000017 /* ChipFlightAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipFlightAnimator.swift; sourceTree = "<group>"; };
 		A20000180000000000000018 /* SpeechBubbleShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBubbleShape.swift; sourceTree = "<group>"; };
 		A20000190000000000000019 /* iCloudMeditationWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudMeditationWatcher.swift; sourceTree = "<group>"; };
+		A200001B000000000000001B /* ArchivedMeditationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedMeditationsView.swift; sourceTree = "<group>"; };
+		A200001C000000000000001C /* MeditationMetadataWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationMetadataWriter.swift; sourceTree = "<group>"; };
+		A200001D000000000000001D /* TagEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorView.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* MeditationApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeditationApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -101,6 +107,9 @@
 				A20000170000000000000017 /* ChipFlightAnimator.swift */,
 				A20000180000000000000018 /* SpeechBubbleShape.swift */,
 				A20000190000000000000019 /* iCloudMeditationWatcher.swift */,
+				A200001B000000000000001B /* ArchivedMeditationsView.swift */,
+				A200001C000000000000001C /* MeditationMetadataWriter.swift */,
+				A200001D000000000000001D /* TagEditorView.swift */,
 				A200000A000000000000000A /* Info.plist */,
 				A200000D000000000000000D /* MeditationApp.entitlements */,
 				A200000E000000000000000E /* Assets.xcassets */,
@@ -202,6 +211,9 @@
 				A10000170000000000000017 /* ChipFlightAnimator.swift in Sources */,
 				A10000180000000000000018 /* SpeechBubbleShape.swift in Sources */,
 				A10000190000000000000019 /* iCloudMeditationWatcher.swift in Sources */,
+				A100001B000000000000001B /* ArchivedMeditationsView.swift in Sources */,
+				A100001C000000000000001C /* MeditationMetadataWriter.swift in Sources */,
+				A100001D000000000000001D /* TagEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

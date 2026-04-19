@@ -19,8 +19,25 @@ extension FileManager {
         return dir
     }
 
+    var archiveDirectory: URL {
+        let dir = meditationsDirectory.appendingPathComponent("Archive")
+        if !fileExists(atPath: dir.path) {
+            try? createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
     func meditationFiles() -> [URL] {
         guard let files = try? contentsOfDirectory(at: meditationsDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return []
+        }
+        return files
+            .filter { $0.pathExtension == "med" }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }
+    }
+
+    func archivedMeditationFiles() -> [URL] {
+        guard let files = try? contentsOfDirectory(at: archiveDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
             return []
         }
         return files
@@ -46,6 +63,38 @@ extension FileManager {
 
     func deleteMeditation(at url: URL) {
         try? removeItem(at: url)
+    }
+
+    @discardableResult
+    func archiveMeditation(at url: URL) -> URL? {
+        moveMeditation(at: url, to: archiveDirectory)
+    }
+
+    @discardableResult
+    func unarchiveMeditation(at url: URL) -> URL? {
+        moveMeditation(at: url, to: meditationsDirectory)
+    }
+
+    private func moveMeditation(at url: URL, to destinationDirectory: URL) -> URL? {
+        if !fileExists(atPath: destinationDirectory.path) {
+            try? createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        }
+        let originalName = url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension
+        var candidate = destinationDirectory.appendingPathComponent(url.lastPathComponent)
+        var suffix = 1
+        while fileExists(atPath: candidate.path) {
+            let newName = "\(originalName)-\(suffix).\(ext)"
+            candidate = destinationDirectory.appendingPathComponent(newName)
+            suffix += 1
+        }
+        do {
+            try moveItem(at: url, to: candidate)
+            return candidate
+        } catch {
+            print("Move error: \(error)")
+            return nil
+        }
     }
 
     /// Moves any .med files from local Documents/Meditations to iCloud container

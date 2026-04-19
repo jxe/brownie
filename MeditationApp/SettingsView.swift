@@ -93,6 +93,14 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    ArchivedMeditationsView()
+                } label: {
+                    Label("Archived Meditations", systemImage: "archivebox")
+                }
+            }
+
+            Section {
                 Button {
                     refreshFromiCloud()
                 } label: {
