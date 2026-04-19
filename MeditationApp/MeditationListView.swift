@@ -196,9 +196,9 @@ struct MeditationListView: View {
                 Button {
                     helpfulConfirmURL = url
                 } label: {
-                    Image(systemName: hasLogToday ? "face.smiling.fill" : "questionmark.circle")
+                    Image(systemName: hasLogToday ? "heart.fill" : "questionmark.circle")
                         .font(.title3)
-                        .foregroundStyle(hasLogToday ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(hasLogToday ? Color("HeartColor") : Color.secondary)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 12)
                         .contentShape(Rectangle())
