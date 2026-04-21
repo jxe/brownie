@@ -24,20 +24,23 @@ struct MedTextEditor: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
-        textView.font = .monospacedSystemFont(ofSize: 16, weight: .regular)
+        textView.font = medMonoFont
         textView.autocorrectionType = .no
         textView.autocapitalizationType = .none
         textView.smartQuotesType = .no
         textView.smartDashesType = .no
         textView.delegate = context.coordinator
         textView.text = text
+        textView.typingAttributes = [.font: medMonoFont, .foregroundColor: UIColor.label]
         textView.inputAccessoryView = makeToolbar(textView: textView)
+        applyMedHighlights(to: textView)
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
         if textView.text != text {
             textView.text = text
+            applyMedHighlights(to: textView)
         }
     }
 
@@ -98,6 +101,7 @@ struct MedTextEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.text
+            applyMedHighlights(to: textView)
         }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
@@ -158,4 +162,85 @@ private class SymbolButton: UIButton {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+}
+
+// MARK: - Syntax highlighting
+//
+// Patterns ported from the VSCode TextMate grammar at
+// tools/vscode-med/syntaxes/med.tmLanguage.json — keep the two in sync if the
+// .med language evolves.
+
+private let medMonoFont = UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+
+private struct MedSyntaxRule {
+    let regex: NSRegularExpression
+    /// group index → color. 0 = whole match.
+    let groupColors: [Int: UIColor]
+}
+
+private let medSyntaxRules: [MedSyntaxRule] = {
+    func rx(_ pattern: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+    }
+    let secondary = UIColor.secondaryLabel
+    let pool = UIColor.systemPurple
+    let count = UIColor.systemBlue
+    let pause = UIColor.systemOrange
+    let gender = UIColor.systemPink
+    return [
+        MedSyntaxRule(regex: rx(#"\A\s*(#)[ \t]*(.*?)(?:[ \t]+((?:#\S+[ \t]*)+))?[ \t]*$"#),
+                      groupColors: [0: secondary]),
+        MedSyntaxRule(regex: rx(#"^[ \t]*#[ \t]*(#\S+(?:[ \t]+#\S+)*)[ \t]*$|^[ \t]*(#\S+(?:[ \t]+#\S+)*)[ \t]*$"#),
+                      groupColors: [0: secondary]),
+        MedSyntaxRule(regex: rx(#"^\s*#.*$"#),
+                      groupColors: [0: secondary]),
+        MedSyntaxRule(regex: rx(#"^[ \t]*(~)[ \t]*([A-Za-z0-9_]+)[ \t]*$"#),
+                      groupColors: [1: pool, 2: pool]),
+        MedSyntaxRule(regex: rx(#"(?:^|(?<=\s))(?:×|x)\d+"#),
+                      groupColors: [0: count]),
+        MedSyntaxRule(regex: rx(#"(𝄐|\|)"#),
+                      groupColors: [0: count]),
+        MedSyntaxRule(regex: rx(#"(⏳)[ \t]*(\d+(?:\.\d+)?)?([″"′'])?"#),
+                      groupColors: [1: pause, 2: count, 3: count]),
+        MedSyntaxRule(regex: rx(#"\b(\d+(?:\.\d+)?)([″"])"#),
+                      groupColors: [1: count, 2: count]),
+        MedSyntaxRule(regex: rx(#"\b(\d+(?:\.\d+)?)([′'])"#),
+                      groupColors: [1: count, 2: count]),
+        MedSyntaxRule(regex: rx(#"·+"#),
+                      groupColors: [0: pause]),
+        MedSyntaxRule(regex: rx(#"(~)([A-Za-z_][A-Za-z0-9_]*)"#),
+                      groupColors: [1: pool, 2: pool]),
+        MedSyntaxRule(regex: rx(#"[♀♂]"#),
+                      groupColors: [0: gender]),
+    ]
+}()
+
+private func applyMedHighlights(to textView: UITextView) {
+    let storage = textView.textStorage
+    let full = NSRange(location: 0, length: storage.length)
+    guard full.length > 0 else {
+        textView.typingAttributes = [.font: medMonoFont, .foregroundColor: UIColor.label]
+        return
+    }
+    let savedSelection = textView.selectedRange
+    let text = textView.text ?? ""
+    storage.beginEditing()
+    storage.setAttributes([
+        .font: medMonoFont,
+        .foregroundColor: UIColor.label,
+    ], range: full)
+    for rule in medSyntaxRules {
+        rule.regex.enumerateMatches(in: text, options: [], range: full) { match, _, _ in
+            guard let match = match else { return }
+            for (group, color) in rule.groupColors {
+                guard group < match.numberOfRanges else { continue }
+                let r = match.range(at: group)
+                guard r.location != NSNotFound, r.length > 0 else { continue }
+                storage.addAttribute(.foregroundColor, value: color, range: r)
+            }
+        }
+    }
+    storage.endEditing()
+    textView.selectedRange = savedSelection
+    textView.typingAttributes = [.font: medMonoFont, .foregroundColor: UIColor.label]
 }
