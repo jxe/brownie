@@ -29,7 +29,7 @@ struct MeditationApp: App {
 
 struct ContentView: View {
     @Environment(MeditationPlayer.self) var player
-    @State private var selectedTab: TabDestination = .feelings
+    @AppStorage("selectedTab") private var selectedTab: TabDestination = .feelings
     @State private var feelingsTabCenterX: CGFloat?
 
     var body: some View {
