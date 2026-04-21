@@ -30,8 +30,10 @@ struct MedTextEditor: UIViewRepresentable {
         textView.smartQuotesType = .no
         textView.smartDashesType = .no
         textView.delegate = context.coordinator
+        textView.textContainerInset = UIEdgeInsets(top: 12, left: 16, bottom: 16, right: 16)
+        textView.textContainer.lineFragmentPadding = 0
         textView.text = text
-        textView.typingAttributes = [.font: medMonoFont, .foregroundColor: UIColor.label]
+        textView.typingAttributes = medBaseAttributes
         textView.inputAccessoryView = makeToolbar(textView: textView)
         applyMedHighlights(to: textView)
         return textView
@@ -170,7 +172,22 @@ private class SymbolButton: UIButton {
 // tools/vscode-med/syntaxes/med.tmLanguage.json — keep the two in sync if the
 // .med language evolves.
 
-private let medMonoFont = UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+private let medMonoFont: UIFont = UIFont(name: "Menlo", size: 14)
+    ?? .monospacedSystemFont(ofSize: 14, weight: .regular)
+
+private let medParagraphStyle: NSParagraphStyle = {
+    let p = NSMutableParagraphStyle()
+    p.headIndent = 24        // wrapped continuations indent by 24pt
+    p.firstLineHeadIndent = 0
+    p.paragraphSpacing = 6
+    return p
+}()
+
+private let medBaseAttributes: [NSAttributedString.Key: Any] = [
+    .font: medMonoFont,
+    .foregroundColor: UIColor.label,
+    .paragraphStyle: medParagraphStyle,
+]
 
 private struct MedSyntaxRule {
     let regex: NSRegularExpression
@@ -219,16 +236,13 @@ private func applyMedHighlights(to textView: UITextView) {
     let storage = textView.textStorage
     let full = NSRange(location: 0, length: storage.length)
     guard full.length > 0 else {
-        textView.typingAttributes = [.font: medMonoFont, .foregroundColor: UIColor.label]
+        textView.typingAttributes = medBaseAttributes
         return
     }
     let savedSelection = textView.selectedRange
     let text = textView.text ?? ""
     storage.beginEditing()
-    storage.setAttributes([
-        .font: medMonoFont,
-        .foregroundColor: UIColor.label,
-    ], range: full)
+    storage.setAttributes(medBaseAttributes, range: full)
     for rule in medSyntaxRules {
         rule.regex.enumerateMatches(in: text, options: [], range: full) { match, _, _ in
             guard let match = match else { return }
@@ -242,5 +256,5 @@ private func applyMedHighlights(to textView: UITextView) {
     }
     storage.endEditing()
     textView.selectedRange = savedSelection
-    textView.typingAttributes = [.font: medMonoFont, .foregroundColor: UIColor.label]
+    textView.typingAttributes = medBaseAttributes
 }
