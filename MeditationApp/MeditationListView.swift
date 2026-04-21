@@ -246,17 +246,18 @@ struct MeditationListView: View {
             .tint(.accentColor)
         }
         .contextMenu {
-            Button { editTags(url) } label: {
-                Label("Edit Tags", systemImage: "tag")
+            Button { playFile(url) } label: {
+                Label("Play", systemImage: "play")
             }
+            Divider()
             Button { editFile(url) } label: {
                 Label("Edit", systemImage: "pencil")
             }
             Button { editCopy(url) } label: {
                 Label("Edit a Copy", systemImage: "doc.badge.plus")
             }
-            Button { playFile(url) } label: {
-                Label("Play", systemImage: "play")
+            Button { editTags(url) } label: {
+                Label("Edit Tags", systemImage: "tag")
             }
             Divider()
             Button { archiveFile(url) } label: {

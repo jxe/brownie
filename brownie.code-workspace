@@ -7,5 +7,7 @@
 			"path": "../../Library/Mobile Documents/iCloud~com~joeedelman~meditations/Documents"
 		}
 	],
-  "settings": {}
+  "settings": {
+    "explorer.sortOrder": "modified"
+  }
 }
