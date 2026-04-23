@@ -212,7 +212,7 @@ struct MeditationListView: View {
                         get: { helpfulConfirmURL == url },
                         set: { if !$0 { helpfulConfirmURL = nil } }
                     ),
-                    titleVisibility: .visible
+                    titleVisibility: .hidden
                 ) {
                     if hasLogToday {
                         Button("Remove helpful mark", role: .destructive) {
@@ -225,9 +225,9 @@ struct MeditationListView: View {
                     }
                 } message: {
                     if hasLogToday {
-                        Text("Remove today's helpful mark from your journal?")
+                        Text("Remove today's helpful mark?")
                     } else {
-                        Text("Add a note in today's journal that this meditation helped you?")
+                        Text("Did this meditation help you?")
                     }
                 }
             }

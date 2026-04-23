@@ -18,8 +18,8 @@
 		A100000A000000000000000A /* MedTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B000000000000000B /* MedTextEditor.swift */; };
 		A100000C000000000000000C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A200000E000000000000000E /* Assets.xcassets */; };
 		A100001A000000000000001A /* brownie-bell.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A200001A000000000000001A /* brownie-bell.mp3 */; };
-		A100001B000000000000001B /* brownie-chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A200001B000000000000001B /* brownie-chime.mp3 */; };
-		A100001C000000000000001C /* brownie-gong.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A200001C000000000000001C /* brownie-gong.mp3 */; };
+		A100001E000000000000001E /* brownie-chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A200001E000000000000001E /* brownie-chime.mp3 */; };
+		A100001F000000000000001F /* brownie-gong.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A200001F000000000000001F /* brownie-gong.mp3 */; };
 		A100000F000000000000000F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000F000000000000000F /* SettingsView.swift */; };
 		A10000100000000000000010 /* AudioRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000100000000000000010 /* AudioRenderer.swift */; };
 		A10000110000000000000011 /* StreamingPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000110000000000000011 /* StreamingPlayer.swift */; };
@@ -50,8 +50,8 @@
 		A200000D000000000000000D /* MeditationApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MeditationApp.entitlements; sourceTree = "<group>"; };
 		A200000E000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A200001A000000000000001A /* brownie-bell.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "brownie-bell.mp3"; sourceTree = "<group>"; };
-		A200001B000000000000001B /* brownie-chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "brownie-chime.mp3"; sourceTree = "<group>"; };
-		A200001C000000000000001C /* brownie-gong.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "brownie-gong.mp3"; sourceTree = "<group>"; };
+		A200001E000000000000001E /* brownie-chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "brownie-chime.mp3"; sourceTree = "<group>"; };
+		A200001F000000000000001F /* brownie-gong.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "brownie-gong.mp3"; sourceTree = "<group>"; };
 		A200000F000000000000000F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000100000000000000010 /* AudioRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRenderer.swift; sourceTree = "<group>"; };
 		A20000110000000000000011 /* StreamingPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlayer.swift; sourceTree = "<group>"; };
@@ -118,8 +118,8 @@
 				A200000D000000000000000D /* MeditationApp.entitlements */,
 				A200000E000000000000000E /* Assets.xcassets */,
 				A200001A000000000000001A /* brownie-bell.mp3 */,
-				A200001B000000000000001B /* brownie-chime.mp3 */,
-				A200001C000000000000001C /* brownie-gong.mp3 */,
+				A200001E000000000000001E /* brownie-chime.mp3 */,
+				A200001F000000000000001F /* brownie-gong.mp3 */,
 			);
 			path = MeditationApp;
 			sourceTree = "<group>";
@@ -187,8 +187,8 @@
 			files = (
 				A100000C000000000000000C /* Assets.xcassets in Resources */,
 				A100001A000000000000001A /* brownie-bell.mp3 in Resources */,
-				A100001B000000000000001B /* brownie-chime.mp3 in Resources */,
-				A100001C000000000000001C /* brownie-gong.mp3 in Resources */,
+				A100001E000000000000001E /* brownie-chime.mp3 in Resources */,
+				A100001F000000000000001F /* brownie-gong.mp3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
