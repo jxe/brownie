@@ -107,7 +107,7 @@ struct CheckInView: View {
                                     .foregroundStyle(.primary)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, 28)
                         }
                         .buttonStyle(GlassPressStyle())
 
@@ -126,17 +126,18 @@ struct CheckInView: View {
                                     .foregroundStyle(.primary)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, 28)
                         }
                         .buttonStyle(GlassPressStyle())
                     }
                     .padding(.bottom, 10)
                     .clipShape(SpeechBubbleShape(tailFraction: tailFraction))
+                    .contentShape(Rectangle())
                     .glassEffect(.regular, in: SpeechBubbleShape(tailFraction: tailFraction))
                     .padding(.horizontal, barHorizontalPadding)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
-                .frame(height: 80)
+                .frame(height: 104)
                 .padding(.bottom, 4)
             }
             .navigationTitle("Feelings")
@@ -301,8 +302,7 @@ private struct FloatingPlusOneView: View {
 
     var body: some View {
         Text("\(count)")
-            .font(.caption)
-            .fontWeight(.bold)
+            .font(.title3)
             .foregroundStyle(.primary.opacity(isVisible ? 0 : 0.8))
             .offset(y: isVisible ? -30 : 0)
             .scaleEffect(isVisible ? 1.2 : 0.8)
