@@ -299,12 +299,15 @@ private struct ScaleButtonContent: View {
 private struct FloatingPlusOneView: View {
     let count: Int
     @State private var isVisible = false
+    private let tilt: Double = .random(in: -18...18)
+    private var drift: CGFloat { CGFloat(tilt) * 0.6 }
 
     var body: some View {
         Text("\(count)")
             .font(.title3)
             .foregroundStyle(.primary.opacity(isVisible ? 0 : 0.8))
-            .offset(y: isVisible ? -30 : 0)
+            .rotationEffect(.degrees(isVisible ? tilt : 0))
+            .offset(x: isVisible ? drift : 0, y: isVisible ? -30 : 0)
             .scaleEffect(isVisible ? 1.2 : 0.8)
             .onAppear {
                 withAnimation(.easeOut(duration: 0.7)) {

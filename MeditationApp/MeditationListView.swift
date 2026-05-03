@@ -104,12 +104,8 @@ struct MeditationListView: View {
                     filename: $editorFilename,
                     isNew: $isNewFile
                 ) { savedFilename, savedContent in
-                    let savedURL = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
+                    _ = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
                     refreshFiles()
-                    // If we just edited the currently-playing meditation, stop so next tap re-parses
-                    if let savedURL, player.currentSourceURL == savedURL {
-                        player.stop()
-                    }
                 }
             }
             .sheet(item: $tagEditTarget) { target in
@@ -123,7 +119,12 @@ struct MeditationListView: View {
             }
             .background(Color("BackgroundColor"))
             .onAppear { refreshFiles() }
-            .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { note in
+                if let changed = note.object as? [URL],
+                   let playing = player.currentSourceURL,
+                   changed.contains(playing) {
+                    player.stop()
+                }
                 refreshFiles()
             }
     }
@@ -310,6 +311,9 @@ struct MeditationListView: View {
     }
 
     private func editFile(_ url: URL) {
+        if player.currentSourceURL == url {
+            player.stop()
+        }
         editorContent = FileManager.default.readMeditation(at: url) ?? ""
         editorFilename = url.deletingPathExtension().lastPathComponent
         isNewFile = false

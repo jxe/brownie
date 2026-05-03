@@ -208,7 +208,7 @@ class AudioRenderer {
         steps.append(.pause(5))
         steps.append(.speak("5"))
         steps.append(.pause(5))
-        steps.append(.bell(BellRegistry.defaultID))
+        steps.append(.bell("chime"))
 
         return steps
     }
