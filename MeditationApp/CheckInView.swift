@@ -251,7 +251,7 @@ private struct SelectedEmotionChipView: View {
     private func triggerFloatingCount() {
         let id = UUID()
         floatingCounts.append((id: id, count: count))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
             floatingCounts.removeAll { $0.id == id }
         }
     }
@@ -299,18 +299,18 @@ private struct ScaleButtonContent: View {
 private struct FloatingPlusOneView: View {
     let count: Int
     @State private var isVisible = false
-    private let tilt: Double = .random(in: -18...18)
-    private var drift: CGFloat { CGFloat(tilt) * 0.6 }
+    private let tilt: Double = .random(in: -10...10)
+    private var drift: CGFloat { CGFloat(tilt) * 0.5 }
 
     var body: some View {
         Text("\(count)")
             .font(.title3)
             .foregroundStyle(.primary.opacity(isVisible ? 0 : 0.8))
             .rotationEffect(.degrees(isVisible ? tilt : 0))
-            .offset(x: isVisible ? drift : 0, y: isVisible ? -30 : 0)
-            .scaleEffect(isVisible ? 1.2 : 0.8)
+            .offset(x: isVisible ? drift : 0, y: isVisible ? -34 : 0)
+            .scaleEffect(isVisible ? 1.25 : 0.8)
             .onAppear {
-                withAnimation(.easeOut(duration: 0.7)) {
+                withAnimation(.easeOut(duration: 1.0)) {
                     isVisible = true
                 }
             }
