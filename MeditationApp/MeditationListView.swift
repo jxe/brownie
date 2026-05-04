@@ -16,6 +16,7 @@ struct MeditationListView: View {
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
     @State private var helpfulConfirmURL: URL? = nil
     @State private var tagEditTarget: TagEditTarget? = nil
+    @State private var recentLocalSaves: [URL: Date] = [:]
 
     private var filteredFiles: [URL] {
         guard let tag = selectedTag else { return files }
@@ -104,7 +105,9 @@ struct MeditationListView: View {
                     filename: $editorFilename,
                     isNew: $isNewFile
                 ) { savedFilename, savedContent in
-                    _ = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
+                    if let savedURL = FileManager.default.saveMeditation(savedContent, filename: savedFilename) {
+                        markRecentLocalSave(savedURL)
+                    }
                     refreshFiles()
                 }
             }
@@ -122,7 +125,8 @@ struct MeditationListView: View {
             .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { note in
                 if let changed = note.object as? [URL],
                    let playing = player.currentSourceURL,
-                   changed.contains(playing) {
+                   changed.contains(playing),
+                   !isRecentLocalSave(playing) {
                     player.stop()
                 }
                 refreshFiles()
@@ -399,10 +403,22 @@ struct MeditationListView: View {
         let updated = MeditationMetadataWriter.rewrite(source: content, title: title, tags: newTags)
         let basename = url.deletingPathExtension().lastPathComponent
         let savedURL = FileManager.default.saveMeditation(updated, filename: basename)
+        if let savedURL { markRecentLocalSave(savedURL) }
         refreshFiles()
         if let savedURL, player.currentSourceURL == savedURL {
             player.stop()
         }
+    }
+
+    private func markRecentLocalSave(_ url: URL) {
+        recentLocalSaves[url] = Date()
+        let cutoff = Date().addingTimeInterval(-60)
+        recentLocalSaves = recentLocalSaves.filter { $0.value > cutoff }
+    }
+
+    private func isRecentLocalSave(_ url: URL) -> Bool {
+        guard let savedAt = recentLocalSaves[url] else { return false }
+        return Date().timeIntervalSince(savedAt) < 5
     }
 }
 
