@@ -126,7 +126,8 @@ struct MeditationListView: View {
                 if let changed = note.object as? [URL],
                    let playing = player.currentSourceURL,
                    changed.contains(playing),
-                   !isRecentLocalSave(playing) {
+                   !isRecentLocalSave(playing),
+                   playingSourceContentChanged() {
                     player.stop()
                 }
                 refreshFiles()
@@ -419,6 +420,14 @@ struct MeditationListView: View {
     private func isRecentLocalSave(_ url: URL) -> Bool {
         guard let savedAt = recentLocalSaves[url] else { return false }
         return Date().timeIntervalSince(savedAt) < 5
+    }
+
+    private func playingSourceContentChanged() -> Bool {
+        guard let url = player.currentSourceURL else { return false }
+        guard let baseline = player.currentSourceModifiedAt else { return true }
+        let current = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        guard let current else { return false }
+        return current.timeIntervalSince(baseline) > 1
     }
 }
 
