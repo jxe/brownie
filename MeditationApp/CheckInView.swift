@@ -147,6 +147,15 @@ struct CheckInView: View {
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .contextMenu {
+                            if !store.emotionCounts.isEmpty {
+                                Button {
+                                    store.logAndClearSession()
+                                } label: {
+                                    Label("Log & clear session", systemImage: "checkmark.circle")
+                                }
+                            }
+                        }
                 }
                 .sharedBackgroundVisibility(.hidden)
             }

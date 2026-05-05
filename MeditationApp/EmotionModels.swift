@@ -87,6 +87,7 @@ struct JournalEntry: Identifiable, Codable {
     enum Content: Codable {
         case reflection(Reflection)
         case meditation(Meditation)
+        case checkInSession(CheckInSession)
 
         struct Reflection: Codable {
             let emotionName: String
@@ -103,6 +104,20 @@ struct JournalEntry: Identifiable, Codable {
             /// Always `true` in v1 — we only persist positive outcomes. Kept as a
             /// field so negative logging can be added later without a migration.
             let worked: Bool
+        }
+
+        struct CheckInSession: Codable {
+            struct EmotionTally: Codable {
+                let name: String
+                let emoji: String
+                let count: Int
+            }
+            /// First tap of the session. The entry's `timestamp` is the session end.
+            let startedAt: Date
+            /// Cumulative engagement time at clear (mirrors `EmotionStore.sessionTime`).
+            let engagementSeconds: Double
+            /// Tallies sorted by count desc.
+            let emotions: [EmotionTally]
         }
     }
 }

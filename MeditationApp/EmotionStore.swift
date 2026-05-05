@@ -11,11 +11,15 @@ class EmotionStore {
     var sessionTime: TimeInterval = 0
     private var lastTapTime: Date?
     private var lastInteractionTime: Date?
+    /// Wall-clock timestamp of the first tap in the current session. Cleared
+    /// alongside `emotionCounts`; used to compute the session span when logging.
+    private(set) var sessionStartTime: Date?
 
     private enum SessionKeys {
         static let emotionCounts = "checkin_emotionCounts"
         static let sessionTime = "checkin_sessionTime"
         static let lastInteraction = "checkin_lastInteractionTime"
+        static let sessionStart = "checkin_sessionStartTime"
         static let recentMeditationPlays = "recentMeditationPlays"
     }
 
@@ -30,6 +34,9 @@ class EmotionStore {
     }
 
     func tap(_ emotion: Emotion) {
+        if sessionStartTime == nil {
+            sessionStartTime = Date()
+        }
         emotionCounts[emotion.name, default: 0] += 1
         addSessionCredit()
         lastInteractionTime = Date()
@@ -182,14 +189,47 @@ class EmotionStore {
     // MARK: - Session Persistence
 
     func clearSessionIfStale() {
-        guard let last = lastInteractionTime else { return }
-        if Date().timeIntervalSince(last) > 6 * 60 * 60 {
-            emotionCounts = [:]
-            sessionTime = 0
-            lastTapTime = nil
-            lastInteractionTime = nil
-            saveSession()
+        guard let last = lastInteractionTime,
+              Date().timeIntervalSince(last) > 6 * 60 * 60 else { return }
+        logAndClearSession()
+    }
+
+    /// Write a `.checkInSession` journal entry for the current counts (if any) and
+    /// reset session state. Called by the manual long-press clear and by the
+    /// auto-stale path.
+    func logAndClearSession() {
+        guard !emotionCounts.isEmpty else {
+            clearSessionState()
+            return
         }
+        let tallies: [JournalEntry.Content.CheckInSession.EmotionTally] =
+            Emotion.all.compactMap { e in
+                let n = emotionCounts[e.name, default: 0]
+                guard n > 0 else { return nil }
+                return .init(name: e.name, emoji: e.emoji, count: n)
+            }
+            .sorted { $0.count > $1.count }
+        let entry = JournalEntry(
+            id: UUID(),
+            timestamp: Date(),
+            content: .checkInSession(.init(
+                startedAt: sessionStartTime ?? lastInteractionTime ?? Date(),
+                engagementSeconds: sessionTime,
+                emotions: tallies
+            ))
+        )
+        journalEntries.insert(entry, at: 0)
+        save()
+        clearSessionState()
+    }
+
+    private func clearSessionState() {
+        emotionCounts = [:]
+        sessionTime = 0
+        lastTapTime = nil
+        lastInteractionTime = nil
+        sessionStartTime = nil
+        saveSession()
     }
 
     private func saveSession() {
@@ -200,6 +240,11 @@ class EmotionStore {
             defaults.set(time.timeIntervalSince1970, forKey: SessionKeys.lastInteraction)
         } else {
             defaults.removeObject(forKey: SessionKeys.lastInteraction)
+        }
+        if let start = sessionStartTime {
+            defaults.set(start.timeIntervalSince1970, forKey: SessionKeys.sessionStart)
+        } else {
+            defaults.removeObject(forKey: SessionKeys.sessionStart)
         }
     }
 
@@ -212,6 +257,12 @@ class EmotionStore {
         if time > 0 { sessionTime = time }
         let stamp = defaults.double(forKey: SessionKeys.lastInteraction)
         if stamp > 0 { lastInteractionTime = Date(timeIntervalSince1970: stamp) }
+        let startStamp = defaults.double(forKey: SessionKeys.sessionStart)
+        if startStamp > 0 { sessionStartTime = Date(timeIntervalSince1970: startStamp) }
+        // Backfill: in-flight session from before this field existed.
+        if !emotionCounts.isEmpty && sessionStartTime == nil {
+            sessionStartTime = lastInteractionTime ?? Date()
+        }
     }
 
     // MARK: - Journal Persistence

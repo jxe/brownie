@@ -21,6 +21,22 @@ struct JournalView: View {
 
                 **Meditation:** Helped
                 """
+            case .checkInSession(let s):
+                let startStr = s.startedAt.formatted(date: .omitted, time: .shortened)
+                let endStr = entry.timestamp.formatted(date: .omitted, time: .shortened)
+                let spanMin = max(1, Int((entry.timestamp.timeIntervalSince(s.startedAt) / 60).rounded()))
+                let engagedMin = Int(s.engagementSeconds) / 60
+                let engagedSec = Int(s.engagementSeconds) % 60
+                let engagedStr = String(format: "%d:%02d", engagedMin, engagedSec)
+                let lines = s.emotions.map { "- \($0.emoji) \($0.name) ×\($0.count)" }.joined(separator: "\n")
+                return """
+                # 🪷 Check-in — \(dateStr)
+
+                **Span:** \(startStr)–\(endStr) (\(spanMin) min)
+                **Engaged:** \(engagedStr)
+
+                \(lines)
+                """
             }
         }.joined(separator: "\n\n---\n\n")
     }
@@ -80,6 +96,8 @@ struct JournalView: View {
                                 ReflectionEntryRow(entry: entry, reflection: r)
                             case .meditation(let m):
                                 MeditationLogRow(entry: entry, meditation: m)
+                            case .checkInSession(let s):
+                                CheckInSessionRow(entry: entry, session: s)
                             }
                         }
                         .onDelete { indexSet in
@@ -181,6 +199,64 @@ private struct MeditationLogRow: View {
             Text(entry.timestamp, style: .date)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct CheckInSessionRow: View {
+    let entry: JournalEntry
+    let session: JournalEntry.Content.CheckInSession
+
+    private var topEmotions: ArraySlice<JournalEntry.Content.CheckInSession.EmotionTally> {
+        session.emotions.prefix(5)
+    }
+
+    private var moreCount: Int {
+        max(0, session.emotions.count - 5)
+    }
+
+    private var engagedString: String {
+        let total = Int(session.engagementSeconds)
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private var spanMinutes: Int {
+        max(1, Int((entry.timestamp.timeIntervalSince(session.startedAt) / 60).rounded()))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("Check-in")
+                    .font(.body)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(entry.timestamp, style: .date)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            HStack(spacing: 10) {
+                ForEach(Array(topEmotions), id: \.name) { tally in
+                    HStack(spacing: 3) {
+                        Text(tally.emoji)
+                        Text("\(tally.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                if moreCount > 0 {
+                    Text("+\(moreCount) more")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Text("\(engagedString) engaged · \(spanMinutes) min span")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
