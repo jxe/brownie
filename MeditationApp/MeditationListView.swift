@@ -3,6 +3,7 @@ import SwiftUI
 struct MeditationListView: View {
     @Environment(MeditationPlayer.self) var player
     @Environment(EmotionStore.self) var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var files: [URL] = []
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
@@ -16,7 +17,6 @@ struct MeditationListView: View {
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
     @State private var helpfulConfirmURL: URL? = nil
     @State private var tagEditTarget: TagEditTarget? = nil
-    @State private var recentLocalSaves: [URL: Date] = [:]
 
     private var filteredFiles: [URL] {
         guard let tag = selectedTag else { return files }
@@ -105,9 +105,7 @@ struct MeditationListView: View {
                     filename: $editorFilename,
                     isNew: $isNewFile
                 ) { savedFilename, savedContent in
-                    if let savedURL = FileManager.default.saveMeditation(savedContent, filename: savedFilename) {
-                        markRecentLocalSave(savedURL)
-                    }
+                    _ = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
                     refreshFiles()
                 }
             }
@@ -122,14 +120,15 @@ struct MeditationListView: View {
             }
             .background(Color("BackgroundColor"))
             .onAppear { refreshFiles() }
-            .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { note in
-                if let changed = note.object as? [URL],
-                   let playing = player.currentSourceURL,
-                   changed.contains(playing),
-                   !isRecentLocalSave(playing),
-                   playingSourceContentChanged() {
-                    player.stop()
-                }
+            .onChange(of: scenePhase) { _, newPhase in
+                // Defensive refresh on returning to foreground in case the watcher missed
+                // events while the app was suspended.
+                if newPhase == .active { refreshFiles() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { _ in
+                // Watcher only drives list refresh. The player is intentionally not invalidated
+                // here — sync churn must never tear down in-flight playback. User-initiated edit,
+                // archive, and tag-save paths call player.stop() explicitly.
                 refreshFiles()
             }
     }
@@ -404,30 +403,10 @@ struct MeditationListView: View {
         let updated = MeditationMetadataWriter.rewrite(source: content, title: title, tags: newTags)
         let basename = url.deletingPathExtension().lastPathComponent
         let savedURL = FileManager.default.saveMeditation(updated, filename: basename)
-        if let savedURL { markRecentLocalSave(savedURL) }
         refreshFiles()
         if let savedURL, player.currentSourceURL == savedURL {
             player.stop()
         }
-    }
-
-    private func markRecentLocalSave(_ url: URL) {
-        recentLocalSaves[url] = Date()
-        let cutoff = Date().addingTimeInterval(-60)
-        recentLocalSaves = recentLocalSaves.filter { $0.value > cutoff }
-    }
-
-    private func isRecentLocalSave(_ url: URL) -> Bool {
-        guard let savedAt = recentLocalSaves[url] else { return false }
-        return Date().timeIntervalSince(savedAt) < 5
-    }
-
-    private func playingSourceContentChanged() -> Bool {
-        guard let url = player.currentSourceURL else { return false }
-        guard let baseline = player.currentSourceModifiedAt else { return true }
-        let current = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-        guard let current else { return false }
-        return current.timeIntervalSince(baseline) > 1
     }
 }
 
@@ -467,17 +446,25 @@ private struct MeditationRowPressContent: View {
     let isPressed: Bool
     let label: ButtonStyleConfiguration.Label
     @State private var showPressed = false
+    @State private var releaseTask: Task<Void, Never>?
 
     var body: some View {
         label
             .scaleEffect(showPressed ? 0.97 : 1.0)
-            .animation(showPressed ? .easeOut(duration: 0.1) : .spring(duration: 0.25, bounce: 0.4), value: showPressed)
+            .animation(showPressed ? .easeOut(duration: 0.1) : .spring(duration: 0.25, bounce: 0.15), value: showPressed)
             .onChange(of: isPressed) { _, pressed in
+                // Cancel any pending release so a rapid re-press doesn't fire the spring-back
+                // animation while the finger is still down. (The previous implementation tried to
+                // guard this with `self.isPressed` inside an asyncAfter closure, but `self` is
+                // captured by value for a struct view, so the guard always read the stale snapshot.)
+                releaseTask?.cancel()
                 if pressed {
                     showPressed = true
                 } else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                        if !self.isPressed { showPressed = false }
+                    releaseTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(80))
+                        guard !Task.isCancelled else { return }
+                        showPressed = false
                     }
                 }
             }

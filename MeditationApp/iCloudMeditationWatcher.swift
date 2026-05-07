@@ -22,28 +22,14 @@ final class iCloudMeditationWatcher {
             object: q,
             queue: .main
         ) { [weak self] _ in
-            self?.handleResults(changedURLs: nil)
+            self?.handleResults()
         }
         let updateObs = NotificationCenter.default.addObserver(
             forName: .NSMetadataQueryDidUpdate,
             object: q,
             queue: .main
-        ) { [weak self] note in
-            let keys = [
-                NSMetadataQueryUpdateChangedItemsKey,
-                NSMetadataQueryUpdateAddedItemsKey,
-                NSMetadataQueryUpdateRemovedItemsKey,
-            ]
-            var urls: [URL] = []
-            for key in keys {
-                guard let items = note.userInfo?[key] as? [NSMetadataItem] else { continue }
-                for item in items {
-                    if let url = item.value(forAttribute: NSMetadataItemURLKey) as? URL {
-                        urls.append(url)
-                    }
-                }
-            }
-            self?.handleResults(changedURLs: urls)
+        ) { [weak self] _ in
+            self?.handleResults()
         }
         observers = [gatherObs, updateObs]
 
@@ -61,7 +47,7 @@ final class iCloudMeditationWatcher {
         observers = []
     }
 
-    private func handleResults(changedURLs: [URL]?) {
+    private func handleResults() {
         guard let q = query else { return }
         q.disableUpdates()
         defer { q.enableUpdates() }
@@ -75,7 +61,10 @@ final class iCloudMeditationWatcher {
             }
         }
 
-        NotificationCenter.default.post(name: .meditationsDidChange, object: changedURLs)
+        // Notify the UI to re-scan the directory. The player is intentionally NOT a subscriber:
+        // metadata churn (sync state, download progress, attribute refreshes) must never reach
+        // into in-flight playback. User-initiated edit/archive/save paths stop the player explicitly.
+        NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
     }
 
     deinit {

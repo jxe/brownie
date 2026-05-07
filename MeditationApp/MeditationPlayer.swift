@@ -18,7 +18,6 @@ class MeditationPlayer: NSObject {
     var stepIndex = 0
     var totalSteps = 0
     var currentSourceURL: URL?
-    @ObservationIgnored var currentSourceModifiedAt: Date?
     var elapsedSeconds: Int = 0
 
     var selectedVoiceID: String {
@@ -271,9 +270,6 @@ class MeditationPlayer: NSObject {
         stop()
         configureAudioSession()
         currentSourceURL = sourceURL
-        currentSourceModifiedAt = sourceURL.flatMap {
-            (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-        }
         currentMeditation = meditation
         currentTitle = meditation.title
 
@@ -472,7 +468,6 @@ class MeditationPlayer: NSObject {
 
         state = .idle
         currentSourceURL = nil
-        currentSourceModifiedAt = nil
         currentMeditation = nil
         stepIndex = 0
         totalSteps = 0

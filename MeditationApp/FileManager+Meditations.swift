@@ -46,19 +46,42 @@ extension FileManager {
     }
 
     func readMeditation(at url: URL) -> String? {
-        try? String(contentsOf: url, encoding: .utf8)
+        // Coordinated read so iCloud downloads the latest content (if any) before we parse,
+        // and so we play nicely with any other process / NSFilePresenter touching the file.
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationError: NSError?
+        var result: String?
+        coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinatedURL in
+            result = try? String(contentsOf: coordinatedURL, encoding: .utf8)
+        }
+        if let coordinationError {
+            print("Read coordination error: \(coordinationError)")
+        }
+        return result
     }
 
     func saveMeditation(_ content: String, filename: String) -> URL? {
         let name = filename.hasSuffix(".med") ? filename : "\(filename).med"
         let url = meditationsDirectory.appendingPathComponent(name)
-        do {
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            return url
-        } catch {
-            print("Save error: \(error)")
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationError: NSError?
+        var writeError: Error?
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
+            do {
+                try content.write(to: coordinatedURL, atomically: true, encoding: .utf8)
+            } catch {
+                writeError = error
+            }
+        }
+        if let coordinationError {
+            print("Save coordination error: \(coordinationError)")
             return nil
         }
+        if let writeError {
+            print("Save error: \(writeError)")
+            return nil
+        }
+        return url
     }
 
     func deleteMeditation(at url: URL) {
