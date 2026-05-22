@@ -5,6 +5,7 @@ import MediaPlayer
 class MeditationPlayer: NSObject {
     enum State {
         case idle
+        case preparing
         case playing
         case paused
         case finished
@@ -13,6 +14,7 @@ class MeditationPlayer: NSObject {
     private(set) var state: State = .idle
 
     var isPlaying: Bool { state == .playing }
+    var isPreparing: Bool { state == .preparing }
 
     var currentText = ""
     var stepIndex = 0
@@ -92,6 +94,7 @@ class MeditationPlayer: NSObject {
     @ObservationIgnored private var currentMeditation: Meditation?
     @ObservationIgnored private var currentTitle = ""
     @ObservationIgnored private var playbackStarted = false
+    @ObservationIgnored private var playbackGeneration = 0
 
     override init() {
         if let saved = UserDefaults.standard.string(forKey: "selectedVoiceID"),
@@ -182,6 +185,9 @@ class MeditationPlayer: NSObject {
             switch currentState {
             case .idle:
                 return .noActionableNowPlayingItem
+            case .preparing:
+                self.updateNowPlayingInfo()
+                return .success
             default:
                 // Update Now Playing synchronously so Control Center sees it before handler returns
                 self.setNowPlayingState(.playing)
@@ -202,6 +208,8 @@ class MeditationPlayer: NSObject {
                 // If already paused (system thought we were playing), just confirm state
                 if self.state == .playing {
                     self.pause()
+                } else if self.state == .preparing {
+                    self.stop()
                 } else {
                     self.updateNowPlayingInfo()
                 }
@@ -252,6 +260,8 @@ class MeditationPlayer: NSObject {
         switch state {
         case .playing:
             MPNowPlayingInfoCenter.default().playbackState = .playing
+        case .preparing:
+            MPNowPlayingInfoCenter.default().playbackState = .paused
         case .finished, .idle:
             MPNowPlayingInfoCenter.default().playbackState = .stopped
         case .paused:
@@ -268,6 +278,8 @@ class MeditationPlayer: NSObject {
 
     func play(_ meditation: Meditation, sourceURL: URL? = nil) {
         stop()
+        playbackGeneration += 1
+        let generation = playbackGeneration
         configureAudioSession()
         currentSourceURL = sourceURL
         currentMeditation = meditation
@@ -283,16 +295,21 @@ class MeditationPlayer: NSObject {
             }
         }
 
+        guard !flatSteps.isEmpty else {
+            stop()
+            return
+        }
+
         totalSteps = flatSteps.count
         stepIndex = 0
-        state = .playing
+        state = .preparing
         playbackStarted = false
 
         let player = StreamingPlayer(format: renderer.format)
         self.streamingPlayer = player
 
         player.onPlaybackFinished = { [weak self] in
-            self?.handlePlaybackFinished()
+            self?.handlePlaybackFinished(generation: generation)
         }
         player.onPositionUpdate = { [weak self] step, text, elapsed in
             guard let self else { return }
@@ -316,6 +333,7 @@ class MeditationPlayer: NSObject {
         let rate = self.speakingRate
 
         renderTask = Task { [weak self, renderer] in
+            guard let owner = self else { return }
             struct ActiveTail { let buffer: AVAudioPCMBuffer; var frame: Int }
             var activeTails: [ActiveTail] = []
 
@@ -331,7 +349,17 @@ class MeditationPlayer: NSObject {
                     do {
                         base = try await renderer.renderSpeech(text: speakText, voice: voice, rate: rate)
                     } catch {
+                        guard !Task.isCancelled else { return }
                         print("Render error for step \(i): \(error)")
+                        let shouldAbort = await MainActor.run { () -> Bool in
+                            guard owner.playbackGeneration == generation else { return true }
+                            if !owner.playbackStarted {
+                                owner.stop()
+                                return true
+                            }
+                            return false
+                        }
+                        if shouldAbort { return }
                         continue
                     }
                 case .pause(let duration):
@@ -379,6 +407,7 @@ class MeditationPlayer: NSObject {
                 let needsDrain = isLastStep && !activeTails.isEmpty
 
                 await MainActor.run {
+                    guard owner.playbackGeneration == generation else { return }
                     if isLastStep && !needsDrain {
                         player.scheduleFinalBuffer(base, marker: marker)
                     } else {
@@ -386,9 +415,11 @@ class MeditationPlayer: NSObject {
                     }
 
                     // Start playback after first buffer is scheduled
-                    if let self = self, !self.playbackStarted {
-                        self.playbackStarted = true
+                    if !owner.playbackStarted {
+                        owner.playbackStarted = true
+                        owner.state = .playing
                         player.play()
+                        owner.updateNowPlayingInfo()
                     }
                 }
             }
@@ -420,9 +451,15 @@ class MeditationPlayer: NSObject {
                         displayText: ""
                     )
                     await MainActor.run {
+                        guard owner.playbackGeneration == generation else { return }
                         player.scheduleFinalBuffer(drain, marker: drainMarker)
                     }
                 }
+            }
+
+            await MainActor.run {
+                guard owner.playbackGeneration == generation, !owner.playbackStarted else { return }
+                owner.stop()
             }
         }
     }
@@ -435,6 +472,8 @@ class MeditationPlayer: NSObject {
             resume()
         case .playing:
             pause()
+        case .preparing:
+            stop()
         case .idle:
             break
         }
@@ -461,6 +500,7 @@ class MeditationPlayer: NSObject {
     }
 
     func stop() {
+        playbackGeneration += 1
         renderTask?.cancel()
         renderTask = nil
         streamingPlayer?.stop()
@@ -486,7 +526,8 @@ class MeditationPlayer: NSObject {
 
     // MARK: - Completion
 
-    private func handlePlaybackFinished() {
+    private func handlePlaybackFinished(generation: Int) {
+        guard playbackGeneration == generation else { return }
         state = .finished
         currentText = ""
         elapsedSeconds = 0

@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 
 // MARK: - Bell Registry
 
@@ -35,7 +35,7 @@ class AudioRenderer {
     /// Standard output format: 16kHz mono float32
     let format: AVAudioFormat
 
-    private let synthesizer = AVSpeechSynthesizer()
+    private let speechRenderTimeout: TimeInterval = 12
     private var cachedBells: [String: AVAudioPCMBuffer] = [:]
 
     init() {
@@ -46,27 +46,23 @@ class AudioRenderer {
 
     /// Renders spoken text to an audio buffer using AVSpeechSynthesizer.write.
     func renderSpeech(text: String, voice: AVSpeechSynthesisVoice?, rate: Float) async throws -> AVAudioPCMBuffer {
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = rate
-        utterance.voice = voice
-        utterance.pitchMultiplier = 1.0
-
         let buffers: [AVAudioPCMBuffer] = try await withCheckedThrowingContinuation { continuation in
-            var collected: [AVAudioPCMBuffer] = []
-            var finished = false
+            let session = SpeechRenderSession(text: text, voice: voice, rate: rate)
+            let preview = Self.preview(text)
+
+            let timeoutWorkItem = DispatchWorkItem {
+                session.stopSpeaking()
+                session.finishFailure(
+                    AudioRendererError.speechTimedOut(seconds: self.speechRenderTimeout, preview: preview),
+                    continuation: continuation
+                )
+            }
+            session.setTimeoutWorkItem(timeoutWorkItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + speechRenderTimeout, execute: timeoutWorkItem)
 
             // AVSpeechSynthesizer.write must be called on the main thread
             DispatchQueue.main.async {
-                self.synthesizer.write(utterance) { buffer in
-                    guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
-                        if !finished {
-                            finished = true
-                            continuation.resume(returning: collected)
-                        }
-                        return
-                    }
-                    collected.append(pcm)
-                }
+                session.start(continuation: continuation)
             }
         }
 
@@ -226,6 +222,11 @@ class AudioRenderer {
         return "\(Int(seconds))"
     }
 
+    private static func preview(_ text: String) -> String {
+        let compact = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return String(compact.prefix(80))
+    }
+
     /// Concatenates multiple buffers and converts to the standard format.
     private func concatenateAndConvert(buffers: [AVAudioPCMBuffer]) throws -> AVAudioPCMBuffer {
         let sourceFormat = buffers[0].format
@@ -287,6 +288,107 @@ class AudioRenderer {
     }
 }
 
-enum AudioRendererError: Error {
+private final class SpeechRenderSession: @unchecked Sendable {
+    private let lock = NSLock()
+    private let text: String
+    private let voice: AVSpeechSynthesisVoice?
+    private let rate: Float
+    private let synthesizer = AVSpeechSynthesizer()
+    private var timeoutWorkItem: DispatchWorkItem?
+    private var collected: [AVAudioPCMBuffer] = []
+    private var finished = false
+
+    init(text: String, voice: AVSpeechSynthesisVoice?, rate: Float) {
+        self.text = text
+        self.voice = voice
+        self.rate = rate
+    }
+
+    func start(continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = rate
+        utterance.voice = voice
+        utterance.pitchMultiplier = 1.0
+
+        synthesizer.write(utterance) { [weak self] buffer in
+            guard let self else { return }
+            guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
+                finishSuccess(continuation: continuation)
+                return
+            }
+            append(pcm)
+        }
+    }
+
+    func stopSpeaking() {
+        if synthesizer.isSpeaking {
+            synthesizer.stopSpeaking(at: .immediate)
+        }
+    }
+
+    func setTimeoutWorkItem(_ item: DispatchWorkItem) {
+        lock.lock()
+        timeoutWorkItem = item
+        lock.unlock()
+    }
+
+    func append(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        if !finished {
+            collected.append(buffer)
+        }
+        lock.unlock()
+    }
+
+    func finishSuccess(continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>) {
+        let buffers: [AVAudioPCMBuffer]
+        let timeout: DispatchWorkItem?
+
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        buffers = collected
+        timeout = timeoutWorkItem
+        timeoutWorkItem = nil
+        lock.unlock()
+
+        timeout?.cancel()
+        continuation.resume(returning: buffers)
+    }
+
+    func finishFailure(_ error: Error, continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>) {
+        let timeout: DispatchWorkItem?
+
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        collected.removeAll()
+        timeout = timeoutWorkItem
+        timeoutWorkItem = nil
+        lock.unlock()
+
+        timeout?.cancel()
+        stopSpeaking()
+        continuation.resume(throwing: error)
+    }
+}
+
+enum AudioRendererError: Error, CustomStringConvertible {
     case conversionFailed
+    case speechTimedOut(seconds: TimeInterval, preview: String)
+
+    var description: String {
+        switch self {
+        case .conversionFailed:
+            return "Audio conversion failed"
+        case .speechTimedOut(let seconds, let preview):
+            return "Speech render timed out after \(seconds)s: \(preview)"
+        }
+    }
 }

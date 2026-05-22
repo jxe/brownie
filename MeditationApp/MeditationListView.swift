@@ -138,12 +138,16 @@ struct MeditationListView: View {
         let filename = url.deletingPathExtension().lastPathComponent
         let isCurrent = player.currentSourceURL == url
         let isActive = isCurrent && player.isPlaying
+        let isPreparing = isCurrent && player.isPreparing
+        let isEngaged = isActive || isPreparing
         let hasLogToday = store.hasMeditationLogToday(filename: filename)
         let showHelpfulToggle = isCurrent
             || hasLogToday
             || store.wasRecentlyPlayed(filename: filename)
         Button {
-            if isCurrent {
+            if isPreparing {
+                player.stop()
+            } else if isCurrent {
                 player.togglePause()
             } else {
                 playFile(url)
@@ -155,12 +159,16 @@ struct MeditationListView: View {
                         Text(titleFor(url))
                             .font(.body)
                             .fontWeight(.medium)
-                            .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.6))
+                            .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.6))
                         if isActive {
                             PlayingPulseDot()
                         }
                     }
-                    if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
+                    if isPreparing {
+                        Text("Preparing...")
+                            .font(.caption)
+                            .foregroundStyle(Color.accentColor)
+                    } else if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
                         Text(formatTime(player.elapsedSeconds))
                             .font(.caption)
                             .foregroundStyle(Color.accentColor)
@@ -184,12 +192,12 @@ struct MeditationListView: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(Color("HighlightColor").opacity(isActive ? 1.0 : 0.3))
+                    .fill(Color("HighlightColor").opacity(isActive ? 1.0 : (isPreparing ? 0.65 : 0.3)))
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color("BackgroundColor"))
                     )
-                    .animation(.easeInOut(duration: 0.2), value: isActive)
+                    .animation(.easeInOut(duration: 0.2), value: isEngaged)
             )
             .shadow(color: .black.opacity(isActive ? 0.08 : 0.0), radius: isActive ? 6 : 0, y: isActive ? 3 : 0)
             .contentShape(RoundedRectangle(cornerRadius: 14))
