@@ -162,6 +162,10 @@ struct MeditationListView: View {
                             .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.6))
                         if isActive {
                             PlayingPulseDot()
+                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        } else if isPreparing {
+                            FormingPulseDot()
+                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
                     }
                     if isPreparing {
@@ -196,13 +200,6 @@ struct MeditationListView: View {
 
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color("HighlightColor").opacity(isActive ? 1.0 : (isPreparing ? 0.65 : 0.3)))
-
-                    if isPreparing {
-                        PreparingRowShimmer()
-                    }
-
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.accentColor.opacity(isPreparing ? 0.22 : 0.0), lineWidth: 1)
                 }
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .animation(.easeInOut(duration: 0.2), value: isEngaged)
@@ -487,37 +484,28 @@ private struct MeditationRowPressContent: View {
     }
 }
 
-private struct PreparingRowShimmer: View {
+private struct FormingPulseDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isAnimating = false
+    @State private var formed = false
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            let shimmerWidth = max(width * 0.55, 160)
+        ZStack {
+            Circle()
+                .stroke(Color.accentColor.opacity(formed ? 0.24 : 0.58), lineWidth: formed ? 1.2 : 1.8)
+                .frame(width: 14, height: 14)
+                .scaleEffect(formed ? 1.0 : 1.65)
+                .opacity(formed ? 0.42 : 0.95)
 
-            if reduceMotion {
-                Color.white.opacity(0.07)
-            } else {
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .white.opacity(0.03), location: 0.34),
-                        .init(color: .white.opacity(0.13), location: 0.50),
-                        .init(color: .white.opacity(0.03), location: 0.66),
-                        .init(color: .clear, location: 1.0),
-                    ],
-                    startPoint: UnitPoint(x: 0.2, y: 0.0),
-                    endPoint: UnitPoint(x: 0.8, y: 1.0)
-                )
-                .frame(width: shimmerWidth)
-                .offset(x: isAnimating ? width + shimmerWidth : -shimmerWidth)
-                .animation(.linear(duration: 2.6).repeatForever(autoreverses: false), value: isAnimating)
-            }
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 8, height: 8)
+                .scaleEffect(formed ? 0.9 : 0.2)
+                .opacity(formed ? 0.95 : 0.0)
         }
-        .blendMode(.screen)
-        .onAppear { isAnimating = true }
-        .onDisappear { isAnimating = false }
+        .frame(width: 14, height: 14)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.72), value: formed)
+        .onAppear { formed = true }
+        .onDisappear { formed = false }
         .allowsHitTesting(false)
     }
 }
