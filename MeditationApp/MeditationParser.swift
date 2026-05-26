@@ -374,14 +374,19 @@ struct MeditationParser {
                         if case .text = $0 { return false }; return true
                     })
                     if hasNestedSpecials {
-                        // Flush current text buffer before inserting nested content
-                        if !textBuffer.trimmingCharacters(in: .whitespaces).isEmpty {
-                            let resolved = PronounResolver.resolve(textBuffer.trimmingCharacters(in: .whitespaces), gender: currentGender)
-                            steps.append(.speak(resolved))
-                            textBuffer = ""
+                        let nestedSteps = expandSpeakLine(drawn, pools: pools)
+                        if nestedSteps.count == 1, case .speak(let nestedText) = nestedSteps[0] {
+                            textBuffer += nestedText
+                        } else {
+                            // Flush current text buffer before inserting nested content
+                            if !textBuffer.trimmingCharacters(in: .whitespaces).isEmpty {
+                                let resolved = PronounResolver.resolve(textBuffer.trimmingCharacters(in: .whitespaces), gender: currentGender)
+                                steps.append(.speak(resolved))
+                                textBuffer = ""
+                            }
+                            // Recursively expanded content contains timing or bells, so keep it as separate steps.
+                            steps.append(contentsOf: nestedSteps)
                         }
-                        // Recursively expand the drawn text as its own speak line
-                        steps.append(contentsOf: expandSpeakLine(drawn, pools: pools))
                     } else {
                         textBuffer += drawn
                     }

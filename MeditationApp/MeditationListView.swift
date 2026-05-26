@@ -165,9 +165,8 @@ struct MeditationListView: View {
                         }
                     }
                     if isPreparing {
-                        Text("Preparing...")
-                            .font(.caption)
-                            .foregroundStyle(Color.accentColor)
+                        Color.clear
+                            .frame(height: 17)
                     } else if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
                         Text(formatTime(player.elapsedSeconds))
                             .font(.caption)
@@ -191,12 +190,21 @@ struct MeditationListView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color("HighlightColor").opacity(isActive ? 1.0 : (isPreparing ? 0.65 : 0.3)))
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color("BackgroundColor"))
-                    )
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color("BackgroundColor"))
+
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color("HighlightColor").opacity(isActive ? 1.0 : (isPreparing ? 0.65 : 0.3)))
+
+                    if isPreparing {
+                        PreparingRowShimmer()
+                    }
+
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.accentColor.opacity(isPreparing ? 0.22 : 0.0), lineWidth: 1)
+                }
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                     .animation(.easeInOut(duration: 0.2), value: isEngaged)
             )
             .shadow(color: .black.opacity(isActive ? 0.08 : 0.0), radius: isActive ? 6 : 0, y: isActive ? 3 : 0)
@@ -476,6 +484,41 @@ private struct MeditationRowPressContent: View {
                     }
                 }
             }
+    }
+}
+
+private struct PreparingRowShimmer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isAnimating = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let shimmerWidth = max(width * 0.55, 160)
+
+            if reduceMotion {
+                Color.white.opacity(0.07)
+            } else {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .white.opacity(0.03), location: 0.34),
+                        .init(color: .white.opacity(0.13), location: 0.50),
+                        .init(color: .white.opacity(0.03), location: 0.66),
+                        .init(color: .clear, location: 1.0),
+                    ],
+                    startPoint: UnitPoint(x: 0.2, y: 0.0),
+                    endPoint: UnitPoint(x: 0.8, y: 1.0)
+                )
+                .frame(width: shimmerWidth)
+                .offset(x: isAnimating ? width + shimmerWidth : -shimmerWidth)
+                .animation(.linear(duration: 2.6).repeatForever(autoreverses: false), value: isAnimating)
+            }
+        }
+        .blendMode(.screen)
+        .onAppear { isAnimating = true }
+        .onDisappear { isAnimating = false }
+        .allowsHitTesting(false)
     }
 }
 

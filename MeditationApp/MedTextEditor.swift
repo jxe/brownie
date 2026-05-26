@@ -4,18 +4,30 @@ import UIKit
 struct MedTextEditor: UIViewRepresentable {
     @Binding var text: String
 
-    private static let symbols: [(String, String)] = [
-        ("·", "·"),
-        ("″", "\u{2033}"),
-        ("′", "\u{2032}"),
-        ("×", "\u{00D7}"),
-        ("\u{1D110}", "\u{1D110}"),  // 𝄐 fermata (rest between stanzas)
-        ("⏳", "\u{23F3}"),
-        ("🔔", "\u{1F514}"),
-        ("♀", "\u{2640}"),
-        ("♂", "\u{2642}"),
-        ("~", "~"),
-        ("#", "#"),
+    private static let symbolGroups: [[(label: String, char: String, accessibilityLabel: String)]] = [
+        [
+            ("~", "~", "Pool reference"),
+            ("#", "#", "Title, tag, or comment marker"),
+        ],
+        [
+            ("×", "\u{00D7}", "Repeat marker"),
+            ("\u{1D110}", "\u{1D110}", "Fermata rest marker"),
+        ],
+        [
+            ("·", "·", "One second pause"),
+            ("″", "\u{2033}", "Seconds marker"),
+            ("′", "\u{2032}", "Minutes marker"),
+            ("⏳", "\u{23F3}", "Countdown timer"),
+        ],
+        [
+            ("🔔", "\u{1F514}", "Bell"),
+            ("🛎", "\u{1F6CE}", "Chime"),
+            ("🛢", "\u{1F6E2}", "Gong"),
+        ],
+        [
+            ("♀", "\u{2640}", "Female gender marker"),
+            ("♂", "\u{2642}", "Male gender marker"),
+        ],
     ]
 
     func makeCoordinator() -> Coordinator {
@@ -26,7 +38,7 @@ struct MedTextEditor: UIViewRepresentable {
         let textView = UITextView()
         textView.font = medMonoFont
         textView.autocorrectionType = .no
-        textView.autocapitalizationType = .none
+        textView.autocapitalizationType = .sentences
         textView.smartQuotesType = .no
         textView.smartDashesType = .no
         textView.delegate = context.coordinator
@@ -47,42 +59,76 @@ struct MedTextEditor: UIViewRepresentable {
     }
 
     private func makeToolbar(textView: UITextView) -> UIView {
-        let bar = UIView()
-        bar.backgroundColor = .secondarySystemBackground
+        let bar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+        bar.backgroundColor = .systemBackground.withAlphaComponent(0.55)
+        bar.clipsToBounds = true
 
         let scroll = UIScrollView()
         scroll.showsHorizontalScrollIndicator = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
-        bar.addSubview(scroll)
+        scroll.alwaysBounceHorizontal = true
+        scroll.contentInsetAdjustmentBehavior = .never
+        bar.contentView.addSubview(scroll)
 
         let stack = UIStackView()
         stack.axis = .horizontal
-        stack.spacing = 4
+        stack.alignment = .center
+        stack.spacing = 2
         stack.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(stack)
 
-        for (label, char) in Self.symbols {
-            let btn = SymbolButton(symbol: char, label: label) { [weak textView] in
-                guard let tv = textView else { return }
-                tv.insertText(char)
+        for (groupIndex, group) in Self.symbolGroups.enumerated() {
+            if groupIndex > 0 {
+                stack.addArrangedSubview(AccessoryGap(width: 12))
             }
-            stack.addArrangedSubview(btn)
+            for symbol in group {
+                let btn = SymbolButton(label: symbol.label, accessibilityLabel: symbol.accessibilityLabel) { [weak textView] in
+                    guard let tv = textView else { return }
+                    tv.insertText(symbol.char)
+                }
+                stack.addArrangedSubview(btn)
+            }
         }
 
-        // Add a "Done" button at the end
-        let done = UIButton(type: .system)
-        done.setTitle("Done", for: .normal)
-        done.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        let trailingSeparator = UIView()
+        trailingSeparator.translatesAutoresizingMaskIntoConstraints = false
+        trailingSeparator.backgroundColor = .clear
+        bar.contentView.addSubview(trailingSeparator)
+
+        let done = AccessoryIconButton(systemName: "keyboard.chevron.compact.down")
+        done.accessibilityLabel = "Dismiss keyboard"
+        done.translatesAutoresizingMaskIntoConstraints = false
         done.addAction(UIAction { [weak textView] _ in
             textView?.resignFirstResponder()
         }, for: .touchUpInside)
-        stack.addArrangedSubview(done)
+        bar.contentView.addSubview(done)
+
+        let topRule = UIView()
+        topRule.translatesAutoresizingMaskIntoConstraints = false
+        topRule.backgroundColor = .separator.withAlphaComponent(0.35)
+        bar.contentView.addSubview(topRule)
 
         NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: bar.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+            topRule.leadingAnchor.constraint(equalTo: bar.contentView.leadingAnchor),
+            topRule.trailingAnchor.constraint(equalTo: bar.contentView.trailingAnchor),
+            topRule.topAnchor.constraint(equalTo: bar.contentView.topAnchor),
+            topRule.heightAnchor.constraint(equalToConstant: 0.5),
+
+            scroll.leadingAnchor.constraint(equalTo: bar.contentView.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingSeparator.leadingAnchor),
+            scroll.topAnchor.constraint(equalTo: bar.contentView.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bar.contentView.bottomAnchor),
+
+            trailingSeparator.trailingAnchor.constraint(equalTo: done.leadingAnchor),
+            trailingSeparator.centerYAnchor.constraint(equalTo: bar.contentView.centerYAnchor),
+            trailingSeparator.widthAnchor.constraint(equalToConstant: 8),
+            trailingSeparator.heightAnchor.constraint(equalToConstant: 1),
+
+            done.trailingAnchor.constraint(equalTo: bar.contentView.trailingAnchor, constant: -4),
+            done.centerYAnchor.constraint(equalTo: bar.contentView.centerYAnchor),
+            done.widthAnchor.constraint(equalToConstant: 48),
+            done.heightAnchor.constraint(equalToConstant: 42),
+
             stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 8),
             stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -8),
             stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
@@ -90,7 +136,7 @@ struct MedTextEditor: UIViewRepresentable {
             stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
         ])
 
-        bar.frame = CGRect(x: 0, y: 0, width: 0, height: 44)
+        bar.frame = CGRect(x: 0, y: 0, width: 0, height: 48)
         return bar
     }
 
@@ -146,21 +192,61 @@ struct MedTextEditor: UIViewRepresentable {
 }
 
 private class SymbolButton: UIButton {
-    init(symbol: String, label: String, action: @escaping () -> Void) {
+    init(label: String, accessibilityLabel: String, action: @escaping () -> Void) {
         super.init(frame: .zero)
-        var config = UIButton.Configuration.filled()
-        config.title = label
-        config.baseForegroundColor = .label
-        config.baseBackgroundColor = .tertiarySystemBackground
-        config.cornerStyle = .medium
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var out = incoming
-            out.font = .systemFont(ofSize: 18)
-            return out
-        }
-        self.configuration = config
+        setTitle(label, for: .normal)
+        setTitleColor(.label, for: .normal)
+        titleLabel?.font = .systemFont(ofSize: 19, weight: .semibold)
+        backgroundColor = .clear
+        layer.cornerRadius = 8
+        self.accessibilityLabel = accessibilityLabel
+        translatesAutoresizingMaskIntoConstraints = false
         addAction(UIAction { _ in action() }, for: .touchUpInside)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 38),
+            heightAnchor.constraint(equalToConstant: 36),
+        ])
+    }
+
+    override var isHighlighted: Bool {
+        didSet {
+            backgroundColor = isHighlighted ? .tertiarySystemFill : .clear
+            transform = isHighlighted ? CGAffineTransform(scaleX: 0.94, y: 0.94) : .identity
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+private class AccessoryIconButton: UIButton {
+    init(systemName: String) {
+        super.init(frame: .zero)
+        let image = UIImage(systemName: systemName)
+        setImage(image, for: .normal)
+        tintColor = .label
+        backgroundColor = .clear
+        layer.cornerRadius = 8
+    }
+
+    override var isHighlighted: Bool {
+        didSet {
+            backgroundColor = isHighlighted ? .tertiarySystemFill : .clear
+            transform = isHighlighted ? CGAffineTransform(scaleX: 0.94, y: 0.94) : .identity
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+private class AccessoryGap: UIView {
+    init(width: CGFloat) {
+        super.init(frame: .zero)
+        backgroundColor = .clear
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: width),
+            heightAnchor.constraint(equalToConstant: 1),
+        ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
