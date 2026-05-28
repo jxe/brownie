@@ -50,12 +50,23 @@ extension FileManager {
         // and so we play nicely with any other process / NSFilePresenter touching the file.
         let coordinator = NSFileCoordinator(filePresenter: nil)
         var coordinationError: NSError?
+        var readError: Error?
         var result: String?
         coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinatedURL in
-            result = try? String(contentsOf: coordinatedURL, encoding: .utf8)
+            do {
+                result = try String(contentsOf: coordinatedURL, encoding: .utf8)
+            } catch {
+                readError = error
+            }
         }
-        if let coordinationError {
-            print("Read coordination error: \(coordinationError)")
+        if result == nil {
+            // iCloud/account daemons can emit transient simulator diagnostics; log only when
+            // Brownie actually cannot load the selected meditation text.
+            if let readError {
+                print("Brownie could not read \(url.lastPathComponent): \(readError.localizedDescription)")
+            } else if let coordinationError {
+                print("Brownie could not coordinate iCloud read for \(url.lastPathComponent): \(coordinationError.localizedDescription)")
+            }
         }
         return result
     }

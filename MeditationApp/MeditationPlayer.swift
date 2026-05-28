@@ -189,13 +189,11 @@ class MeditationPlayer: NSObject {
                 self.updateNowPlayingInfo()
                 return .success
             default:
-                // Update Now Playing synchronously so Control Center sees it before handler returns
-                self.setNowPlayingState(.playing)
                 DispatchQueue.main.async {
                     switch self.state {
                     case .finished: self.replay()
                     case .paused: self.resume()
-                    default: break
+                    default: self.updateNowPlayingInfo()
                     }
                 }
                 return .success
@@ -203,7 +201,6 @@ class MeditationPlayer: NSObject {
         }
         center.pauseCommand.addTarget { [weak self] _ in
             guard let self else { return .success }
-            self.setNowPlayingState(.paused)
             DispatchQueue.main.async {
                 // If already paused (system thought we were playing), just confirm state
                 if self.state == .playing {
@@ -218,25 +215,9 @@ class MeditationPlayer: NSObject {
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self else { return .success }
-            let currentState = self.state
-            let newState: MPNowPlayingPlaybackState = currentState == .playing ? .paused : .playing
-            self.setNowPlayingState(newState)
             DispatchQueue.main.async { self.togglePause() }
             return .success
         }
-    }
-
-    /// Thread-safe immediate update of Now Playing playback state.
-    /// Called from remote command handlers before returning, so Control Center
-    /// reflects the change without waiting for the main-queue dispatch.
-    private func setNowPlayingState(_ playbackState: MPNowPlayingPlaybackState) {
-        let center = MPNowPlayingInfoCenter.default()
-        // Set nowPlayingInfo first — assigning it can reset playbackState
-        if var info = center.nowPlayingInfo {
-            info[MPNowPlayingInfoPropertyPlaybackRate] = playbackState == .playing ? 1.0 : 0.0
-            center.nowPlayingInfo = info
-        }
-        center.playbackState = playbackState
     }
 
     // MARK: - Now Playing
@@ -257,21 +238,10 @@ class MeditationPlayer: NSObject {
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        switch state {
-        case .playing:
-            MPNowPlayingInfoCenter.default().playbackState = .playing
-        case .preparing:
-            MPNowPlayingInfoCenter.default().playbackState = .paused
-        case .finished, .idle:
-            MPNowPlayingInfoCenter.default().playbackState = .stopped
-        case .paused:
-            MPNowPlayingInfoCenter.default().playbackState = .paused
-        }
     }
 
     private func clearNowPlayingInfo() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
 
     // MARK: - Controls
@@ -336,6 +306,7 @@ class MeditationPlayer: NSObject {
             guard let owner = self else { return }
             struct ActiveTail { let buffer: AVAudioPCMBuffer; var frame: Int }
             var activeTails: [ActiveTail] = []
+            var didReportRenderFailure = false
 
             for (i, step) in flatSteps.enumerated() {
                 guard !Task.isCancelled else { return }
@@ -350,7 +321,6 @@ class MeditationPlayer: NSObject {
                         base = try await renderer.renderSpeech(text: speakText, voice: voice, rate: rate)
                     } catch {
                         guard !Task.isCancelled else { return }
-                        print("Render error for step \(i): \(error)")
                         let shouldAbort = await MainActor.run { () -> Bool in
                             guard owner.playbackGeneration == generation else { return true }
                             if !owner.playbackStarted {
@@ -358,6 +328,11 @@ class MeditationPlayer: NSObject {
                                 return true
                             }
                             return false
+                        }
+                        if !didReportRenderFailure {
+                            let action = shouldAbort ? "failed" : "skipped"
+                            print("Brownie speech render \(action) at step \(i): \(error)")
+                            didReportRenderFailure = true
                         }
                         if shouldAbort { return }
                         continue

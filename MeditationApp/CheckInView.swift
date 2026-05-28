@@ -34,6 +34,8 @@ struct CheckInView: View {
     @State private var showingPositiveSheet = false
     @State private var navigationPath = NavigationPath()
     @State private var destinationFrames: [String: CGRect] = [:]
+    @State private var pendingDestinationFrames: [String: CGRect]?
+    @State private var destinationFrameUpdateScheduled = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -77,7 +79,7 @@ struct CheckInView: View {
                     .animation(.spring(duration: 0.4, bounce: 0.3), value: selectedEmotions.map(\.id))
                     .onPreferenceChange(ChipDestinationPreferenceKey.self) { frames in
                         if showingNegativeSheet || showingPositiveSheet {
-                            destinationFrames = frames
+                            queueDestinationFrameUpdate(frames)
                         }
                     }
                 }
@@ -180,6 +182,25 @@ struct CheckInView: View {
                 emotions: Emotion.positive,
                 destinationFrames: $destinationFrames
             )
+        }
+    }
+
+    private func queueDestinationFrameUpdate(_ frames: [String: CGRect]) {
+        pendingDestinationFrames = frames
+        guard !destinationFrameUpdateScheduled else { return }
+
+        destinationFrameUpdateScheduled = true
+        DispatchQueue.main.async {
+            destinationFrameUpdateScheduled = false
+            guard showingNegativeSheet || showingPositiveSheet else {
+                pendingDestinationFrames = nil
+                return
+            }
+            guard let frames = pendingDestinationFrames else { return }
+            pendingDestinationFrames = nil
+            if destinationFrames != frames {
+                destinationFrames = frames
+            }
         }
     }
 }

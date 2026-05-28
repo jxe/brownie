@@ -160,12 +160,10 @@ struct MeditationListView: View {
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.6))
-                        if isActive {
-                            PlayingPulseDot()
+                        if isEngaged {
+                            PlayingPulseDot(isPulsing: isActive)
                                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                        } else if isPreparing {
-                            FormingPulseDot()
-                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                .animation(.easeOut(duration: 0.25), value: isEngaged)
                         }
                     }
                     if isPreparing {
@@ -199,12 +197,12 @@ struct MeditationListView: View {
                         .fill(Color("BackgroundColor"))
 
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color("HighlightColor").opacity(isActive ? 1.0 : (isPreparing ? 0.65 : 0.3)))
+                        .fill(Color("HighlightColor").opacity(isEngaged ? 1.0 : 0.3))
                 }
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .animation(.easeInOut(duration: 0.2), value: isEngaged)
             )
-            .shadow(color: .black.opacity(isActive ? 0.08 : 0.0), radius: isActive ? 6 : 0, y: isActive ? 3 : 0)
+            .shadow(color: .black.opacity(isEngaged ? 0.08 : 0.0), radius: isEngaged ? 6 : 0, y: isEngaged ? 3 : 0)
             .contentShape(RoundedRectangle(cornerRadius: 14))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
@@ -484,41 +482,29 @@ private struct MeditationRowPressContent: View {
     }
 }
 
-private struct FormingPulseDot: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var formed = false
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.accentColor.opacity(formed ? 0.24 : 0.58), lineWidth: formed ? 1.2 : 1.8)
-                .frame(width: 14, height: 14)
-                .scaleEffect(formed ? 1.0 : 1.65)
-                .opacity(formed ? 0.42 : 0.95)
-
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 8, height: 8)
-                .scaleEffect(formed ? 0.9 : 0.2)
-                .opacity(formed ? 0.95 : 0.0)
-        }
-        .frame(width: 14, height: 14)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.72), value: formed)
-        .onAppear { formed = true }
-        .onDisappear { formed = false }
-        .allowsHitTesting(false)
-    }
-}
-
 private struct PlayingPulseDot: View {
+    let isPulsing: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
+
     var body: some View {
         Circle()
             .fill(Color.accentColor)
             .frame(width: 8, height: 8)
             .scaleEffect(pulse ? 1.3 : 0.9)
             .opacity(pulse ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulse)
-            .onAppear { pulse = true }
+            .allowsHitTesting(false)
+            .onAppear { updatePulse(isPulsing) }
+            .onChange(of: isPulsing) { _, pulsing in updatePulse(pulsing) }
+    }
+
+    private func updatePulse(_ pulsing: Bool) {
+        guard pulsing, !reduceMotion else {
+            pulse = false
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+            pulse = true
+        }
     }
 }
