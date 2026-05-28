@@ -37,6 +37,11 @@ class AudioRenderer {
 
     private let speechRenderTimeout: TimeInterval = 12
     private var cachedBells: [String: AVAudioPCMBuffer] = [:]
+    /// One synthesizer reused for the renderer's lifetime. Creating a fresh
+    /// `AVSpeechSynthesizer` per utterance spawns and tears down a TTS daemon
+    /// each time, flooding the console with plugin-interrupted / RBS-assertion
+    /// churn. Render calls are awaited serially, so writes never overlap.
+    private let synthesizer = AVSpeechSynthesizer()
 
     init() {
         self.format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
@@ -47,7 +52,7 @@ class AudioRenderer {
     /// Renders spoken text to an audio buffer using AVSpeechSynthesizer.write.
     func renderSpeech(text: String, voice: AVSpeechSynthesisVoice?, rate: Float) async throws -> AVAudioPCMBuffer {
         let buffers: [AVAudioPCMBuffer] = try await withCheckedThrowingContinuation { continuation in
-            let session = SpeechRenderSession(text: text, voice: voice, rate: rate)
+            let session = SpeechRenderSession(synthesizer: synthesizer, text: text, voice: voice, rate: rate)
             let preview = Self.preview(text)
 
             let timeoutWorkItem = DispatchWorkItem {
@@ -293,12 +298,13 @@ private final class SpeechRenderSession: @unchecked Sendable {
     private let text: String
     private let voice: AVSpeechSynthesisVoice?
     private let rate: Float
-    private let synthesizer = AVSpeechSynthesizer()
+    private let synthesizer: AVSpeechSynthesizer
     private var timeoutWorkItem: DispatchWorkItem?
     private var collected: [AVAudioPCMBuffer] = []
     private var finished = false
 
-    init(text: String, voice: AVSpeechSynthesisVoice?, rate: Float) {
+    init(synthesizer: AVSpeechSynthesizer, text: String, voice: AVSpeechSynthesisVoice?, rate: Float) {
+        self.synthesizer = synthesizer
         self.text = text
         self.voice = voice
         self.rate = rate

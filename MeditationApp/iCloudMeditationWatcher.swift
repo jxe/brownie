@@ -9,7 +9,7 @@ final class iCloudMeditationWatcher {
 
     func start() {
         guard query == nil else { return }
-        guard FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joeedelman.meditations") != nil else {
+        guard FileManager.default.iCloudContainerURL != nil else {
             return
         }
 

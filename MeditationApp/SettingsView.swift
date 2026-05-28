@@ -168,7 +168,7 @@ struct SettingsView: View {
         guard !isRefreshing else { return }
 
         // If iCloud is not available, just reload local files
-        guard FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joeedelman.meditations") != nil else {
+        guard FileManager.default.iCloudContainerURL != nil else {
             NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
             return
         }

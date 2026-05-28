@@ -1,9 +1,18 @@
 import Foundation
 
 extension FileManager {
+    /// Resolves the app's iCloud container, but only when an iCloud account is
+    /// present. `ubiquityIdentityToken` is a cheap check; calling
+    /// `url(forUbiquityContainerIdentifier:)` with no account spins up the
+    /// iCloud daemon and floods the console with permission/account errors.
+    var iCloudContainerURL: URL? {
+        guard ubiquityIdentityToken != nil else { return nil }
+        return url(forUbiquityContainerIdentifier: "iCloud.com.joeedelman.meditations")
+    }
+
     var meditationsDirectory: URL {
         // Use iCloud container if available, fall back to local documents
-        if let icloud = url(forUbiquityContainerIdentifier: "iCloud.com.joeedelman.meditations") {
+        if let icloud = iCloudContainerURL {
             let dir = icloud.appendingPathComponent("Documents")
             if !fileExists(atPath: dir.path) {
                 try? createDirectory(at: dir, withIntermediateDirectories: true)
@@ -133,7 +142,7 @@ extension FileManager {
 
     /// Moves any .med files from local Documents/Meditations to iCloud container
     func migrateToiCloud() {
-        guard let icloud = url(forUbiquityContainerIdentifier: "iCloud.com.joeedelman.meditations") else { return }
+        guard let icloud = iCloudContainerURL else { return }
         let icloudDocs = icloud.appendingPathComponent("Documents")
         if !fileExists(atPath: icloudDocs.path) {
             try? createDirectory(at: icloudDocs, withIntermediateDirectories: true)
