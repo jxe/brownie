@@ -50,9 +50,7 @@ struct CheckInView: View {
     }
 
     private var selectedEmotions: [Emotion] {
-        Emotion.all
-            .filter { store.isSelected($0) }
-            .sorted { store.count(for: $0) > store.count(for: $1) }
+        store.selectedEmotionsSorted()
     }
 
     var body: some View {
@@ -213,8 +211,8 @@ private struct SelectedEmotionChipView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
 
-    private var count: Int { store.count(for: emotion) }
-    @State private var floatingCounts: [(id: UUID, count: Int)] = []
+    private var timeContribution: TimeInterval { store.timeContribution(for: emotion) }
+    @State private var floatingTimes: [(id: UUID, seconds: TimeInterval)] = []
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
     }
@@ -222,7 +220,7 @@ private struct SelectedEmotionChipView: View {
     var body: some View {
         Button {
             store.tap(emotion)
-            triggerFloatingCount()
+            triggerFloatingTime()
         } label: {
             HStack(spacing: 6) {
                 Text(emotion.emoji)
@@ -248,8 +246,8 @@ private struct SelectedEmotionChipView: View {
         .buttonStyle(ScaleButtonStyle())
         .overlay(alignment: .trailing) {
             ZStack {
-                ForEach(floatingCounts, id: \.id) { entry in
-                    FloatingPlusOneView(count: entry.count)
+                ForEach(floatingTimes, id: \.id) { entry in
+                    FloatingTimeContributionView(seconds: entry.seconds)
                 }
             }
             .padding(.trailing, 12)
@@ -278,11 +276,11 @@ private struct SelectedEmotionChipView: View {
         }
     }
 
-    private func triggerFloatingCount() {
+    private func triggerFloatingTime() {
         let id = UUID()
-        floatingCounts.append((id: id, count: count))
+        floatingTimes.append((id: id, seconds: timeContribution))
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-            floatingCounts.removeAll { $0.id == id }
+            floatingTimes.removeAll { $0.id == id }
         }
     }
 }
@@ -291,7 +289,8 @@ private struct GlassPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                Color.white.opacity(configuration.isPressed ? 0.2 : 0)
+                Rectangle()
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.2 : 0))
                     .blendMode(.plusLighter)
             )
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
@@ -326,15 +325,21 @@ private struct ScaleButtonContent: View {
     }
 }
 
-private struct FloatingPlusOneView: View {
-    let count: Int
+private struct FloatingTimeContributionView: View {
+    let seconds: TimeInterval
     @State private var isVisible = false
     private let tilt: Double = .random(in: -10...10)
     private var drift: CGFloat { CGFloat(tilt) * 0.5 }
+    private var formattedTime: String {
+        let total = max(0, Int(seconds))
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
 
     var body: some View {
-        Text("\(count)")
-            .font(.title3)
+        Text(formattedTime)
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .monospacedDigit()
             .foregroundStyle(.primary.opacity(isVisible ? 0 : 0.8))
             .rotationEffect(.degrees(isVisible ? tilt : 0))
             .offset(x: isVisible ? drift : 0, y: isVisible ? -34 : 0)

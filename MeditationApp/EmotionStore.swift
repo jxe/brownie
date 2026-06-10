@@ -4,6 +4,7 @@ import Observation
 @Observable
 class EmotionStore {
     var emotionCounts: [String: Int] = [:]
+    var emotionTimeContributions: [String: TimeInterval] = [:]
     var inFlightEmotions: Set<String> = []
     private(set) var journalEntries: [JournalEntry] = []
 
@@ -17,6 +18,7 @@ class EmotionStore {
 
     private enum SessionKeys {
         static let emotionCounts = "checkin_emotionCounts"
+        static let emotionTimeContributions = "checkin_emotionTimeContributions"
         static let sessionTime = "checkin_sessionTime"
         static let lastInteraction = "checkin_lastInteractionTime"
         static let sessionStart = "checkin_sessionStartTime"
@@ -38,29 +40,37 @@ class EmotionStore {
             sessionStartTime = Date()
         }
         emotionCounts[emotion.name, default: 0] += 1
-        addSessionCredit()
+        let credit = addSessionCredit()
+        emotionTimeContributions[emotion.name, default: 0] += credit
         lastInteractionTime = Date()
         saveSession()
     }
 
-    private func addSessionCredit() {
+    private func addSessionCredit() -> TimeInterval {
         let now = Date()
+        var credit: TimeInterval = 0
         if let last = lastTapTime {
             let elapsed = now.timeIntervalSince(last)
-            let credit = min(elapsed, 20)
+            credit = min(elapsed, 20)
             sessionTime += credit
         }
         lastTapTime = now
+        return credit
     }
 
     func deselect(_ emotion: Emotion) {
         emotionCounts.removeValue(forKey: emotion.name)
+        emotionTimeContributions.removeValue(forKey: emotion.name)
         lastInteractionTime = Date()
         saveSession()
     }
 
     func count(for emotion: Emotion) -> Int {
         emotionCounts[emotion.name, default: 0]
+    }
+
+    func timeContribution(for emotion: Emotion) -> TimeInterval {
+        emotionTimeContributions[emotion.name, default: 0]
     }
 
     func isSelected(_ emotion: Emotion) -> Bool {
@@ -70,7 +80,17 @@ class EmotionStore {
     func selectedEmotionsSorted() -> [Emotion] {
         Emotion.all
             .filter { isSelected($0) }
-            .sorted { count(for: $0) > count(for: $1) }
+            .sorted { lhs, rhs in
+                let lhsTime = timeContribution(for: lhs)
+                let rhsTime = timeContribution(for: rhs)
+                if lhsTime != rhsTime { return lhsTime > rhsTime }
+
+                let lhsCount = count(for: lhs)
+                let rhsCount = count(for: rhs)
+                if lhsCount != rhsCount { return lhsCount > rhsCount }
+
+                return lhs.name < rhs.name
+            }
     }
 
     func submit(emotion: Emotion, answer: String) {
@@ -208,7 +228,12 @@ class EmotionStore {
                 guard n > 0 else { return nil }
                 return .init(name: e.name, emoji: e.emoji, count: n)
             }
-            .sorted { $0.count > $1.count }
+            .sorted {
+                let lhsTime = emotionTimeContributions[$0.name, default: 0]
+                let rhsTime = emotionTimeContributions[$1.name, default: 0]
+                if lhsTime != rhsTime { return lhsTime > rhsTime }
+                return $0.count > $1.count
+            }
         let entry = JournalEntry(
             id: UUID(),
             timestamp: Date(),
@@ -225,6 +250,7 @@ class EmotionStore {
 
     private func clearSessionState() {
         emotionCounts = [:]
+        emotionTimeContributions = [:]
         sessionTime = 0
         lastTapTime = nil
         lastInteractionTime = nil
@@ -235,6 +261,7 @@ class EmotionStore {
     private func saveSession() {
         let defaults = UserDefaults.standard
         defaults.set(emotionCounts, forKey: SessionKeys.emotionCounts)
+        defaults.set(emotionTimeContributions, forKey: SessionKeys.emotionTimeContributions)
         defaults.set(sessionTime, forKey: SessionKeys.sessionTime)
         if let time = lastInteractionTime {
             defaults.set(time.timeIntervalSince1970, forKey: SessionKeys.lastInteraction)
@@ -252,6 +279,9 @@ class EmotionStore {
         let defaults = UserDefaults.standard
         if let counts = defaults.dictionary(forKey: SessionKeys.emotionCounts) as? [String: Int] {
             emotionCounts = counts
+        }
+        if let contributions = defaults.dictionary(forKey: SessionKeys.emotionTimeContributions) as? [String: Double] {
+            emotionTimeContributions = contributions
         }
         let time = defaults.double(forKey: SessionKeys.sessionTime)
         if time > 0 { sessionTime = time }
