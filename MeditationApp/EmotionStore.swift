@@ -112,16 +112,32 @@ class EmotionStore {
         emotionTimeContributions[emotion.name, default: 0]
     }
 
+    func timeContribution(for emotion: Emotion, asOf date: Date) -> TimeInterval {
+        timeContribution(for: emotion) + liveAccruingCredit(for: emotion.name, asOf: date)
+    }
+
+    func sessionTime(asOf date: Date) -> TimeInterval {
+        sessionTime + liveAccruingCredit(asOf: date)
+    }
+
     func isSelected(_ emotion: Emotion) -> Bool {
         count(for: emotion) > 0
     }
 
     func selectedEmotionsSorted() -> [Emotion] {
+        selectedEmotionsSorted(asOf: nil)
+    }
+
+    func selectedEmotionsSorted(asOf date: Date) -> [Emotion] {
+        selectedEmotionsSorted(asOf: date as Date?)
+    }
+
+    private func selectedEmotionsSorted(asOf date: Date?) -> [Emotion] {
         Emotion.all
             .filter { isSelected($0) }
             .sorted { lhs, rhs in
-                let lhsTime = timeContribution(for: lhs)
-                let rhsTime = timeContribution(for: rhs)
+                let lhsTime = date.map { timeContribution(for: lhs, asOf: $0) } ?? timeContribution(for: lhs)
+                let rhsTime = date.map { timeContribution(for: rhs, asOf: $0) } ?? timeContribution(for: rhs)
                 if lhsTime != rhsTime { return lhsTime > rhsTime }
 
                 let lhsCount = count(for: lhs)
@@ -130,6 +146,15 @@ class EmotionStore {
 
                 return lhs.name < rhs.name
             }
+    }
+
+    private func liveAccruingCredit(for emotionName: String? = nil, asOf date: Date) -> TimeInterval {
+        guard let lastTapTime,
+              let lastTappedEmotionName,
+              emotionName == nil || emotionName == lastTappedEmotionName,
+              emotionCounts[lastTappedEmotionName, default: 0] > 0 else { return 0 }
+
+        return min(max(0, date.timeIntervalSince(lastTapTime)), Self.maxEmotionCreditDuration)
     }
 
     func submit(emotion: Emotion, answer: String) {

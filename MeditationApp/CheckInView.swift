@@ -40,6 +40,7 @@ struct CheckInView: View {
     @State private var destinationFrameUpdateScheduled = false
     @State private var floatingTimeEvents: [String: [FloatingTimeEvent]] = [:]
     @State private var autoStopAccruingWorkItem: DispatchWorkItem?
+    @State private var liveNow = Date()
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -47,14 +48,14 @@ struct CheckInView: View {
     ]
 
     private var formattedSessionTime: String {
-        let total = Int(store.sessionTime)
+        let total = Int(store.sessionTime(asOf: liveNow))
         let minutes = total / 60
         let seconds = total % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
 
     private var selectedEmotions: [Emotion] {
-        store.selectedEmotionsSorted()
+        store.selectedEmotionsSorted(asOf: liveNow)
     }
 
     var body: some View {
@@ -103,7 +104,7 @@ struct CheckInView: View {
 
                     HStack(spacing: 0) {
                         Button {
-                            showingNegativeSheet = true
+                            openEmotionPicker(.negative)
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "minus.circle.fill")
@@ -122,7 +123,7 @@ struct CheckInView: View {
                             .frame(height: 24)
 
                         Button {
-                            showingPositiveSheet = true
+                            openEmotionPicker(.positive)
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "plus.circle.fill")
@@ -175,11 +176,13 @@ struct CheckInView: View {
         }
         .onAppear {
             store.clearSessionIfStale()
+            liveNow = Date()
             scheduleAutoStopAccruing()
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 store.clearSessionIfStale()
+                liveNow = Date()
                 scheduleAutoStopAccruing()
             } else {
                 stopAccruingWithoutAnimation()
@@ -187,10 +190,15 @@ struct CheckInView: View {
         }
         .onChange(of: isActive) { _, active in
             if active {
+                liveNow = Date()
                 scheduleAutoStopAccruing()
             } else {
                 stopAccruingWithoutAnimation()
             }
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+            guard isActive, scenePhase == .active, store.accruingEmotionID != nil else { return }
+            liveNow = now
         }
         .sheet(isPresented: $showingNegativeSheet) {
             EmotionPickerSheet(
@@ -235,7 +243,18 @@ struct CheckInView: View {
         if let creditedEmotion = store.tap(emotion) {
             showFloatingTime(creditedEmotion)
         }
+        liveNow = Date()
         scheduleAutoStopAccruing()
+    }
+
+    private func openEmotionPicker(_ category: EmotionCategory) {
+        stopAccruingAndShowCredit()
+        switch category {
+        case .negative:
+            showingNegativeSheet = true
+        case .positive:
+            showingPositiveSheet = true
+        }
     }
 
     private func showFloatingTime(_ credit: EmotionStore.TimeCredit) {
@@ -247,11 +266,13 @@ struct CheckInView: View {
         if let creditedEmotion = store.stopAccruing() {
             showFloatingTime(creditedEmotion)
         }
+        liveNow = Date()
     }
 
     private func stopAccruingWithoutAnimation() {
         cancelAutoStopAccruing()
         store.stopAccruing()
+        liveNow = Date()
     }
 
     private func scheduleAutoStopAccruing() {
