@@ -3,6 +3,13 @@ import Observation
 
 @Observable
 class EmotionStore {
+    static let maxEmotionCreditDuration: TimeInterval = 20
+
+    struct TimeCredit {
+        let emotionID: String
+        let totalContribution: TimeInterval
+    }
+
     var emotionCounts: [String: Int] = [:]
     var emotionTimeContributions: [String: TimeInterval] = [:]
     var inFlightEmotions: Set<String> = []
@@ -11,6 +18,9 @@ class EmotionStore {
     /// Cumulative engagement time in seconds, grows with each tap.
     var sessionTime: TimeInterval = 0
     private var lastTapTime: Date?
+    private var lastTappedEmotionName: String?
+    var accruingEmotionID: String? { lastTappedEmotionName }
+    var accruingStartedAt: Date? { lastTapTime }
     private var lastInteractionTime: Date?
     /// Wall-clock timestamp of the first tap in the current session. Cleared
     /// alongside `emotionCounts`; used to compute the session span when logging.
@@ -20,6 +30,8 @@ class EmotionStore {
         static let emotionCounts = "checkin_emotionCounts"
         static let emotionTimeContributions = "checkin_emotionTimeContributions"
         static let sessionTime = "checkin_sessionTime"
+        static let lastTap = "checkin_lastTapTime"
+        static let lastTappedEmotion = "checkin_lastTappedEmotion"
         static let lastInteraction = "checkin_lastInteractionTime"
         static let sessionStart = "checkin_sessionStartTime"
         static let recentMeditationPlays = "recentMeditationPlays"
@@ -35,32 +47,59 @@ class EmotionStore {
         loadRecentPlays()
     }
 
-    func tap(_ emotion: Emotion) {
+    @discardableResult
+    func tap(_ emotion: Emotion) -> TimeCredit? {
+        let now = Date()
         if sessionStartTime == nil {
-            sessionStartTime = Date()
+            sessionStartTime = now
         }
         emotionCounts[emotion.name, default: 0] += 1
-        let credit = addSessionCredit()
-        emotionTimeContributions[emotion.name, default: 0] += credit
-        lastInteractionTime = Date()
+        let creditedEmotion = addSessionCredit(at: now)
+        lastTappedEmotionName = emotion.name
+        lastInteractionTime = now
         saveSession()
+        return creditedEmotion
     }
 
-    private func addSessionCredit() -> TimeInterval {
+    @discardableResult
+    func stopAccruing() -> TimeCredit? {
+        guard lastTapTime != nil || lastTappedEmotionName != nil else { return nil }
+
         let now = Date()
-        var credit: TimeInterval = 0
-        if let last = lastTapTime {
-            let elapsed = now.timeIntervalSince(last)
-            credit = min(elapsed, 20)
-            sessionTime += credit
-        }
-        lastTapTime = now
-        return credit
+        let creditedEmotion = addSessionCredit(at: now)
+        lastTappedEmotionName = nil
+        lastTapTime = nil
+        lastInteractionTime = now
+        saveSession()
+        return creditedEmotion
+    }
+
+    private func addSessionCredit(at now: Date) -> TimeCredit? {
+        defer { lastTapTime = now }
+        guard let last = lastTapTime else { return nil }
+
+        let elapsed = now.timeIntervalSince(last)
+        let credit = min(elapsed, Self.maxEmotionCreditDuration)
+        guard credit > 0 else { return nil }
+
+        guard let emotionName = lastTappedEmotionName,
+              emotionCounts[emotionName, default: 0] > 0 else { return nil }
+
+        sessionTime += credit
+        emotionTimeContributions[emotionName, default: 0] += credit
+        return TimeCredit(
+            emotionID: emotionName,
+            totalContribution: emotionTimeContributions[emotionName, default: 0]
+        )
     }
 
     func deselect(_ emotion: Emotion) {
         emotionCounts.removeValue(forKey: emotion.name)
         emotionTimeContributions.removeValue(forKey: emotion.name)
+        if lastTappedEmotionName == emotion.name {
+            lastTappedEmotionName = nil
+            lastTapTime = nil
+        }
         lastInteractionTime = Date()
         saveSession()
     }
@@ -253,6 +292,7 @@ class EmotionStore {
         emotionTimeContributions = [:]
         sessionTime = 0
         lastTapTime = nil
+        lastTappedEmotionName = nil
         lastInteractionTime = nil
         sessionStartTime = nil
         saveSession()
@@ -263,6 +303,16 @@ class EmotionStore {
         defaults.set(emotionCounts, forKey: SessionKeys.emotionCounts)
         defaults.set(emotionTimeContributions, forKey: SessionKeys.emotionTimeContributions)
         defaults.set(sessionTime, forKey: SessionKeys.sessionTime)
+        if let time = lastTapTime {
+            defaults.set(time.timeIntervalSince1970, forKey: SessionKeys.lastTap)
+        } else {
+            defaults.removeObject(forKey: SessionKeys.lastTap)
+        }
+        if let emotionName = lastTappedEmotionName {
+            defaults.set(emotionName, forKey: SessionKeys.lastTappedEmotion)
+        } else {
+            defaults.removeObject(forKey: SessionKeys.lastTappedEmotion)
+        }
         if let time = lastInteractionTime {
             defaults.set(time.timeIntervalSince1970, forKey: SessionKeys.lastInteraction)
         } else {
@@ -285,6 +335,9 @@ class EmotionStore {
         }
         let time = defaults.double(forKey: SessionKeys.sessionTime)
         if time > 0 { sessionTime = time }
+        let tapStamp = defaults.double(forKey: SessionKeys.lastTap)
+        if tapStamp > 0 { lastTapTime = Date(timeIntervalSince1970: tapStamp) }
+        lastTappedEmotionName = defaults.string(forKey: SessionKeys.lastTappedEmotion)
         let stamp = defaults.double(forKey: SessionKeys.lastInteraction)
         if stamp > 0 { lastInteractionTime = Date(timeIntervalSince1970: stamp) }
         let startStamp = defaults.double(forKey: SessionKeys.sessionStart)

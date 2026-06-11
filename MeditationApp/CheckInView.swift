@@ -25,6 +25,8 @@ private struct DisableScrollTouchDelay: UIViewRepresentable {
 }
 
 struct CheckInView: View {
+    let isActive: Bool
+
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -36,6 +38,8 @@ struct CheckInView: View {
     @State private var destinationFrames: [String: CGRect] = [:]
     @State private var pendingDestinationFrames: [String: CGRect]?
     @State private var destinationFrameUpdateScheduled = false
+    @State private var floatingTimeEvents: [String: [FloatingTimeEvent]] = [:]
+    @State private var autoStopAccruingWorkItem: DispatchWorkItem?
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -64,6 +68,9 @@ struct CheckInView: View {
                         ForEach(selectedEmotions) { emotion in
                             SelectedEmotionChipView(
                                 emotion: emotion,
+                                isAccruing: store.accruingEmotionID == emotion.id,
+                                floatingTimes: floatingTimeEvents[emotion.id, default: []],
+                                onTap: { tapSelectedEmotion(emotion) },
                                 onReflect: { navigationPath.append(emotion) }
                             )
                             .opacity(store.inFlightEmotions.contains(emotion.id) ? 0 : 1)
@@ -147,6 +154,9 @@ struct CheckInView: View {
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .onTapGesture {
+                            stopAccruingAndShowCredit()
+                        }
                         .contextMenu {
                             if !store.emotionCounts.isEmpty {
                                 Button {
@@ -163,22 +173,41 @@ struct CheckInView: View {
                 ReflectionView(emotion: emotion)
             }
         }
-        .onAppear { store.clearSessionIfStale() }
+        .onAppear {
+            store.clearSessionIfStale()
+            scheduleAutoStopAccruing()
+        }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active { store.clearSessionIfStale() }
+            if newPhase == .active {
+                store.clearSessionIfStale()
+                scheduleAutoStopAccruing()
+            } else {
+                stopAccruingWithoutAnimation()
+            }
+        }
+        .onChange(of: isActive) { _, active in
+            if active {
+                scheduleAutoStopAccruing()
+            } else {
+                stopAccruingWithoutAnimation()
+            }
         }
         .sheet(isPresented: $showingNegativeSheet) {
             EmotionPickerSheet(
                 title: "Negative",
                 emotions: Emotion.negative,
-                destinationFrames: $destinationFrames
+                destinationFrames: $destinationFrames,
+                onTimeCredit: showFloatingTime,
+                onAccruingChanged: scheduleAutoStopAccruing
             )
         }
         .sheet(isPresented: $showingPositiveSheet) {
             EmotionPickerSheet(
                 title: "Positive",
                 emotions: Emotion.positive,
-                destinationFrames: $destinationFrames
+                destinationFrames: $destinationFrames,
+                onTimeCredit: showFloatingTime,
+                onAccruingChanged: scheduleAutoStopAccruing
             )
         }
     }
@@ -201,26 +230,96 @@ struct CheckInView: View {
             }
         }
     }
+
+    private func tapSelectedEmotion(_ emotion: Emotion) {
+        if let creditedEmotion = store.tap(emotion) {
+            showFloatingTime(creditedEmotion)
+        }
+        scheduleAutoStopAccruing()
+    }
+
+    private func showFloatingTime(_ credit: EmotionStore.TimeCredit) {
+        addFloatingTime(for: credit.emotionID, seconds: credit.totalContribution)
+    }
+
+    private func stopAccruingAndShowCredit() {
+        cancelAutoStopAccruing()
+        if let creditedEmotion = store.stopAccruing() {
+            showFloatingTime(creditedEmotion)
+        }
+    }
+
+    private func stopAccruingWithoutAnimation() {
+        cancelAutoStopAccruing()
+        store.stopAccruing()
+    }
+
+    private func scheduleAutoStopAccruing() {
+        cancelAutoStopAccruing()
+
+        guard isActive,
+              scenePhase == .active,
+              let emotionID = store.accruingEmotionID,
+              let startedAt = store.accruingStartedAt else { return }
+
+        let remaining = EmotionStore.maxEmotionCreditDuration - Date().timeIntervalSince(startedAt)
+        guard remaining > 0 else {
+            stopAccruingAndShowCredit()
+            return
+        }
+
+        let workItem = DispatchWorkItem {
+            guard store.accruingEmotionID == emotionID else { return }
+            stopAccruingAndShowCredit()
+        }
+        autoStopAccruingWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + remaining, execute: workItem)
+    }
+
+    private func cancelAutoStopAccruing() {
+        autoStopAccruingWorkItem?.cancel()
+        autoStopAccruingWorkItem = nil
+    }
+
+    private func addFloatingTime(for emotionID: String, seconds: TimeInterval) {
+        let event = FloatingTimeEvent(seconds: seconds)
+        floatingTimeEvents[emotionID, default: []].append(event)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+            floatingTimeEvents[emotionID]?.removeAll { $0.id == event.id }
+            if floatingTimeEvents[emotionID]?.isEmpty == true {
+                floatingTimeEvents.removeValue(forKey: emotionID)
+            }
+        }
+    }
 }
 
 // MARK: - Selected Emotion Chip (main screen)
 
+private struct FloatingTimeEvent: Identifiable {
+    let id = UUID()
+    let seconds: TimeInterval
+}
+
 private struct SelectedEmotionChipView: View {
     let emotion: Emotion
+    let isAccruing: Bool
+    let floatingTimes: [FloatingTimeEvent]
+    var onTap: () -> Void
     var onReflect: () -> Void
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
 
-    private var timeContribution: TimeInterval { store.timeContribution(for: emotion) }
-    @State private var floatingTimes: [(id: UUID, seconds: TimeInterval)] = []
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
+    }
+    private var indicatorColor: Color {
+        Color(.systemBackground)
     }
 
     var body: some View {
         Button {
-            store.tap(emotion)
-            triggerFloatingTime()
+            onTap()
         } label: {
             HStack(spacing: 6) {
                 Text(emotion.emoji)
@@ -228,6 +327,16 @@ private struct SelectedEmotionChipView: View {
                 Text(emotion.name)
                     .font(.subheadline)
                     .fontWeight(.medium)
+                Spacer(minLength: 4)
+                Circle()
+                    .fill(indicatorColor)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: indicatorColor.opacity(isAccruing ? 0.95 : 0), radius: 5)
+                    .shadow(color: indicatorColor.opacity(isAccruing ? 0.65 : 0), radius: 10)
+                    .opacity(isAccruing ? 1 : 0)
+                    .scaleEffect(isAccruing ? 1 : 0.4)
+                    .padding(.trailing, 10)
+                    .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -246,7 +355,7 @@ private struct SelectedEmotionChipView: View {
         .buttonStyle(ScaleButtonStyle())
         .overlay(alignment: .trailing) {
             ZStack {
-                ForEach(floatingTimes, id: \.id) { entry in
+                ForEach(floatingTimes) { entry in
                     FloatingTimeContributionView(seconds: entry.seconds)
                 }
             }
@@ -273,14 +382,6 @@ private struct SelectedEmotionChipView: View {
             }
         } preview: {
             ReflectionPreview(emotion: emotion)
-        }
-    }
-
-    private func triggerFloatingTime() {
-        let id = UUID()
-        floatingTimes.append((id: id, seconds: timeContribution))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-            floatingTimes.removeAll { $0.id == id }
         }
     }
 }
@@ -332,7 +433,10 @@ private struct FloatingTimeContributionView: View {
     private var drift: CGFloat { CGFloat(tilt) * 0.5 }
     private var formattedTime: String {
         let total = max(0, Int(seconds))
-        return String(format: "%d:%02d", total / 60, total % 60)
+        if total < 60 {
+            return "\(total)s"
+        }
+        return "\(total / 60)m\(total % 60)s"
     }
 
     var body: some View {
@@ -392,6 +496,8 @@ private struct EmotionPickerSheet: View {
     let title: String
     let emotions: [Emotion]
     @Binding var destinationFrames: [String: CGRect]
+    var onTimeCredit: (EmotionStore.TimeCredit) -> Void
+    var onAccruingChanged: () -> Void
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
@@ -477,7 +583,10 @@ private struct EmotionPickerSheet: View {
 
         // Mark as in-flight and add to store so the main grid lays out the chip (invisible)
         store.inFlightEmotions.insert(emotion.id)
-        store.tap(emotion)
+        if let creditedEmotion = store.tap(emotion) {
+            onTimeCredit(creditedEmotion)
+        }
+        onAccruingChanged()
 
         // Wait one frame for the main grid to lay out the new chip and report its frame
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {

@@ -35,7 +35,7 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Feelings", systemImage: "heart.text.square", value: .feelings) {
-                CheckInView()
+                CheckInView(isActive: selectedTab == .feelings)
             }
             Tab("Meditations", systemImage: "list.bullet", value: .meditations) {
                 NavigationStack {
@@ -56,4 +56,3 @@ struct ContentView: View {
         .environment(\.feelingsTabCenterX, feelingsTabCenterX)
     }
 }
-
