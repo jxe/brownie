@@ -72,6 +72,7 @@ struct CheckInView: View {
                             SelectedEmotionChipView(
                                 emotion: emotion,
                                 isAccruing: store.accruingEmotionID == emotion.id,
+                                timeContribution: store.timeContribution(for: emotion, asOf: liveNow),
                                 floatingTimes: floatingTimeEvents[emotion.id, default: []],
                                 onTap: { tapSelectedEmotion(emotion) },
                                 onReflect: { navigationPath.append(emotion) }
@@ -355,6 +356,7 @@ private struct FloatingTimeEvent: Identifiable {
 private struct SelectedEmotionChipView: View {
     let emotion: Emotion
     let isAccruing: Bool
+    let timeContribution: TimeInterval
     let floatingTimes: [FloatingTimeEvent]
     var onTap: () -> Void
     var onReflect: () -> Void
@@ -364,7 +366,7 @@ private struct SelectedEmotionChipView: View {
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
     }
-    private var indicatorColor: Color {
+    private var counterColor: Color {
         Color(.systemBackground)
     }
 
@@ -379,14 +381,15 @@ private struct SelectedEmotionChipView: View {
                     .font(.subheadline)
                     .fontWeight(.medium)
                 Spacer(minLength: 4)
-                Circle()
-                    .fill(indicatorColor)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: indicatorColor.opacity(isAccruing ? 0.95 : 0), radius: 5)
-                    .shadow(color: indicatorColor.opacity(isAccruing ? 0.65 : 0), radius: 10)
+                Text(ChipTimeFormatter.string(from: timeContribution))
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(counterColor)
+                    .shadow(color: counterColor.opacity(isAccruing ? 0.95 : 0), radius: 5)
+                    .shadow(color: counterColor.opacity(isAccruing ? 0.65 : 0), radius: 10)
                     .opacity(isAccruing ? 1 : 0)
                     .scaleEffect(isAccruing ? 1 : 0.4)
-                    .padding(.trailing, 10)
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -482,16 +485,9 @@ private struct FloatingTimeContributionView: View {
     @State private var isVisible = false
     private let tilt: Double = .random(in: -10...10)
     private var drift: CGFloat { CGFloat(tilt) * 0.5 }
-    private var formattedTime: String {
-        let total = max(0, Int(seconds))
-        if total < 60 {
-            return "\(total)s"
-        }
-        return "\(total / 60)m\(total % 60)s"
-    }
 
     var body: some View {
-        Text(formattedTime)
+        Text(ChipTimeFormatter.string(from: seconds))
             .font(.subheadline)
             .fontWeight(.semibold)
             .monospacedDigit()
@@ -504,6 +500,21 @@ private struct FloatingTimeContributionView: View {
                     isVisible = true
                 }
             }
+    }
+}
+
+private enum ChipTimeFormatter {
+    static func string(from seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        if total < 60 {
+            return "\(total)s"
+        }
+
+        let roundedMinutes = (Double(total) / 60 * 10).rounded() / 10
+        if roundedMinutes.rounded() == roundedMinutes {
+            return "\(Int(roundedMinutes))m"
+        }
+        return String(format: "%.1fm", roundedMinutes)
     }
 }
 
