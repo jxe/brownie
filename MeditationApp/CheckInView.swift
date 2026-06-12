@@ -36,6 +36,8 @@ struct CheckInView: View {
     @State private var showingPositiveSheet = false
     @State private var navigationPath = NavigationPath()
     @State private var destinationFrames: [String: CGRect] = [:]
+    @State private var visibleChipFrames: [String: CGRect] = [:]
+    @State private var scrollViewFrame: CGRect = .zero
     @State private var pendingDestinationFrames: [String: CGRect]?
     @State private var destinationFrameUpdateScheduled = false
     @State private var floatingTimeEvents: [String: [FloatingTimeEvent]] = [:]
@@ -84,6 +86,7 @@ struct CheckInView: View {
                     .padding(.horizontal)
                     .animation(.spring(duration: 0.4, bounce: 0.3), value: selectedEmotions.map(\.id))
                     .onPreferenceChange(ChipDestinationPreferenceKey.self) { frames in
+                        visibleChipFrames = frames
                         if showingNegativeSheet || showingPositiveSheet {
                             queueDestinationFrameUpdate(frames)
                         }
@@ -93,6 +96,26 @@ struct CheckInView: View {
                 // Extra bottom padding so content doesn't hide behind floating buttons
                 // .padding(.bottom, 10)
             }
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear {
+                            scrollViewFrame = geo.frame(in: .global)
+                        }
+                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                            scrollViewFrame = newFrame
+                        }
+                }
+            )
+            .simultaneousGesture(
+                SpatialTapGesture().onEnded { value in
+                    let globalPoint = CGPoint(
+                        x: scrollViewFrame.minX + value.location.x,
+                        y: scrollViewFrame.minY + value.location.y
+                    )
+                    stopAccruingIfBackgroundTap(at: globalPoint)
+                }
+            )
             .safeAreaInset(edge: .bottom) {
                 GeometryReader { geo in
                     let barHorizontalPadding: CGFloat = 40
@@ -245,6 +268,13 @@ struct CheckInView: View {
         }
         liveNow = Date()
         scheduleAutoStopAccruing()
+    }
+
+    private func stopAccruingIfBackgroundTap(at point: CGPoint) {
+        let tappedChip = visibleChipFrames.values.contains { $0.contains(point) }
+        guard !tappedChip else { return }
+
+        stopAccruingAndShowCredit()
     }
 
     private func openEmotionPicker(_ category: EmotionCategory) {
