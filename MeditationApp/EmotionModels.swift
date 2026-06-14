@@ -68,6 +68,7 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Peace", emoji: "☮️", question: "What way of living feels complete as it is?", category: .positive, color: Color(red: 0.55, green: 0.72, blue: 0.60)),
         Emotion(name: "Pride", emoji: "🦚", question: "What way of living reflects your achievements?", category: .positive, color: Color(red: 0.45, green: 0.42, blue: 0.78)),
         Emotion(name: "Relief", emoji: "😮‍💨", question: "What way of living is no longer under threat?", category: .positive, color: Color(red: 0.50, green: 0.72, blue: 0.72)),
+        Emotion(name: "Safety", emoji: "🛡️", question: "What way of living lets you feel protected and at ease?", category: .positive, color: Color(red: 0.48, green: 0.68, blue: 0.62)),
         Emotion(name: "Tenderness", emoji: "🥰", question: "What way of living brings out your gentle care?", category: .positive, color: Color(red: 0.82, green: 0.52, blue: 0.62)),
         Emotion(name: "Trust", emoji: "🤲", question: "What way of living can you rely on?", category: .positive, color: Color(red: 0.45, green: 0.60, blue: 0.55)),
         Emotion(name: "Wonder", emoji: "🌈", question: "What way of living still surprises you?", category: .positive, color: Color(red: 0.65, green: 0.50, blue: 0.78)),

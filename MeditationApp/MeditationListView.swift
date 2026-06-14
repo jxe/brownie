@@ -4,6 +4,7 @@ struct MeditationListView: View {
     @Environment(MeditationPlayer.self) var player
     @Environment(EmotionStore.self) var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     @State private var files: [URL] = []
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
@@ -144,6 +145,14 @@ struct MeditationListView: View {
         let showHelpfulToggle = isCurrent
             || hasLogToday
             || store.wasRecentlyPlayed(filename: filename)
+        let tags = fileTags[url] ?? []
+        let showElapsedTime = isCurrent && !isPreparing && (player.isPlaying || player.elapsedSeconds > 0)
+        let elapsedText = showElapsedTime ? formatTime(player.elapsedSeconds) : "0:00"
+        let showTags = !showElapsedTime && !isPreparing && !tags.isEmpty
+        let activeFill = Color.yellow.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.62)
+        let inactiveFill = Color("HighlightColor").opacity(0.3)
+        let goldRim = Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0)
+        let goldRimWidth: CGFloat = colorScheme == .dark ? 0.75 : 1.25
         Button {
             if isPreparing {
                 player.stop()
@@ -160,31 +169,35 @@ struct MeditationListView: View {
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.6))
-                        if isEngaged {
+                        ZStack {
                             PlayingPulseDot(isPulsing: isActive)
-                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                                .animation(.easeOut(duration: 0.25), value: isEngaged)
+                                .opacity(isEngaged ? 1 : 0)
                         }
+                        .frame(width: 8, height: 8)
+                        .animation(.easeOut(duration: 0.2), value: isEngaged)
                     }
-                    if isPreparing {
-                        Color.clear
-                            .frame(height: 17)
-                    } else if isCurrent && (player.isPlaying || player.elapsedSeconds > 0) {
-                        Text(formatTime(player.elapsedSeconds))
+                    ZStack(alignment: .leading) {
+                        Text(elapsedText)
                             .font(.caption)
                             .foregroundStyle(Color.accentColor)
-                    } else if let tags = fileTags[url], !tags.isEmpty {
-                        HStack(spacing: 4) {
-                            ForEach(tags, id: \.self) { tag in
-                                Text(tag)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                                    .background(Color.accentColor.opacity(0.18))
-                                    .clipShape(Capsule())
+                            .opacity(showElapsedTime ? 1 : 0)
+                        if !tags.isEmpty {
+                            HStack(spacing: 4) {
+                                ForEach(tags, id: \.self) { tag in
+                                    Text(tag)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 2)
+                                        .background(Color.accentColor.opacity(0.18))
+                                        .clipShape(Capsule())
+                                }
                             }
+                            .opacity(showTags ? 1 : 0)
                         }
                     }
+                    .frame(minHeight: 17, alignment: .leading)
+                    .animation(.easeInOut(duration: 0.18), value: showElapsedTime)
+                    .animation(.easeInOut(duration: 0.18), value: showTags)
                 }
 
                 Spacer()
@@ -197,7 +210,11 @@ struct MeditationListView: View {
                         .fill(Color("BackgroundColor"))
 
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color("HighlightColor").opacity(isEngaged ? 1.0 : 0.3))
+                        .fill(isEngaged ? activeFill : inactiveFill)
+
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(goldRim, lineWidth: goldRimWidth)
+                        .opacity(isEngaged ? 1 : 0)
                 }
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .animation(.easeInOut(duration: 0.2), value: isEngaged)
@@ -212,8 +229,8 @@ struct MeditationListView: View {
                 Button {
                     helpfulConfirmURL = url
                 } label: {
-                    Image(systemName: hasLogToday ? "heart.fill" : "questionmark")
-                        .font(hasLogToday ? .title3 : .footnote)
+                    Image(systemName: hasLogToday ? "heart.circle.fill" : "circle")
+                        .font(.title3)
                         .foregroundStyle(hasLogToday ? Color("HeartColor") : Color.secondary)
                         .frame(width: 22, alignment: .center)
                         .padding(.horizontal, 18)
@@ -301,9 +318,20 @@ struct MeditationListView: View {
         }
         fileTitles = titleMap
         fileTags = tagMap
-        allTags = tagSet.sorted()
+        allTags = sortedTags(tagSet)
         if let sel = selectedTag, !tagSet.contains(sel) {
             selectedTag = nil
+        }
+    }
+
+    private func sortedTags(_ tags: Set<String>) -> [String] {
+        tags.sorted { lhs, rhs in
+            let lhsEmoji = lhs.startsWithEmoji
+            let rhsEmoji = rhs.startsWithEmoji
+            if lhsEmoji != rhsEmoji {
+                return lhsEmoji
+            }
+            return lhs.localizedStandardCompare(rhs) == .orderedAscending
         }
     }
 
@@ -456,29 +484,12 @@ private struct MeditationRowPressStyle: ButtonStyle {
 private struct MeditationRowPressContent: View {
     let isPressed: Bool
     let label: ButtonStyleConfiguration.Label
-    @State private var showPressed = false
-    @State private var releaseTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         label
-            .scaleEffect(showPressed ? 0.97 : 1.0)
-            .animation(showPressed ? .easeOut(duration: 0.1) : .spring(duration: 0.25, bounce: 0.15), value: showPressed)
-            .onChange(of: isPressed) { _, pressed in
-                // Cancel any pending release so a rapid re-press doesn't fire the spring-back
-                // animation while the finger is still down. (The previous implementation tried to
-                // guard this with `self.isPressed` inside an asyncAfter closure, but `self` is
-                // captured by value for a struct view, so the guard always read the stale snapshot.)
-                releaseTask?.cancel()
-                if pressed {
-                    showPressed = true
-                } else {
-                    releaseTask = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(80))
-                        guard !Task.isCancelled else { return }
-                        showPressed = false
-                    }
-                }
-            }
+            .scaleEffect(reduceMotion || !isPressed ? 1.0 : 0.985)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isPressed)
     }
 }
 
@@ -505,6 +516,24 @@ private struct PlayingPulseDot: View {
         }
         withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
             pulse = true
+        }
+    }
+}
+
+private extension String {
+    var startsWithEmoji: Bool {
+        guard let first = trimmingCharacters(in: .whitespacesAndNewlines).first else {
+            return false
+        }
+        return first.isEmojiLike
+    }
+}
+
+private extension Character {
+    var isEmojiLike: Bool {
+        unicodeScalars.contains { scalar in
+            scalar.properties.isEmojiPresentation
+                || (scalar.properties.isEmoji && scalar.properties.generalCategory == .otherSymbol)
         }
     }
 }
