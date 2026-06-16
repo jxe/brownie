@@ -290,11 +290,16 @@ class EmotionStore {
             Emotion.all.compactMap { e in
                 let n = emotionCounts[e.name, default: 0]
                 guard n > 0 else { return nil }
-                return .init(name: e.name, emoji: e.emoji, count: n)
+                return .init(
+                    name: e.name,
+                    emoji: e.emoji,
+                    count: n,
+                    engagementSeconds: emotionTimeContributions[e.name, default: 0]
+                )
             }
             .sorted {
-                let lhsTime = emotionTimeContributions[$0.name, default: 0]
-                let rhsTime = emotionTimeContributions[$1.name, default: 0]
+                let lhsTime = $0.engagementSeconds ?? 0
+                let rhsTime = $1.engagementSeconds ?? 0
                 if lhsTime != rhsTime { return lhsTime > rhsTime }
                 return $0.count > $1.count
             }

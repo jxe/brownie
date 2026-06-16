@@ -50,10 +50,7 @@ struct CheckInView: View {
     ]
 
     private var formattedSessionTime: String {
-        let total = Int(store.sessionTime(asOf: liveNow))
-        let minutes = total / 60
-        let seconds = total % 60
-        return String(format: "%d:%02d", minutes, seconds)
+        ChipTimeFormatter.string(from: store.sessionTime(asOf: liveNow))
     }
 
     private var selectedEmotions: [Emotion] {
@@ -367,7 +364,7 @@ private struct SelectedEmotionChipView: View {
         emotion.chipColor(for: colorScheme)
     }
     private var counterColor: Color {
-        Color(.systemBackground)
+        .white
     }
 
     var body: some View {
@@ -380,17 +377,7 @@ private struct SelectedEmotionChipView: View {
                 Text(emotion.name)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                Spacer(minLength: 4)
-                Text(ChipTimeFormatter.string(from: timeContribution))
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-                    .foregroundStyle(counterColor)
-                    .shadow(color: counterColor.opacity(isAccruing ? 0.95 : 0), radius: 5)
-                    .shadow(color: counterColor.opacity(isAccruing ? 0.65 : 0), radius: 10)
-                    .opacity(isAccruing ? 1 : 0)
-                    .scaleEffect(isAccruing ? 1 : 0.4)
-                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -404,6 +391,22 @@ private struct SelectedEmotionChipView: View {
                     .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.25)
                     .opacity(emotion.category == .positive ? 1 : 0)
             )
+            .overlay(alignment: .trailing) {
+                if isAccruing {
+                    Text(ChipTimeFormatter.string(from: timeContribution))
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(counterColor)
+                        .shadow(color: counterColor.opacity(0.95), radius: 5)
+                        .shadow(color: counterColor.opacity(0.65), radius: 10)
+                        .padding(.leading, 6)
+                        .background(chipColor)
+                        .padding(.trailing, 12)
+                        .transition(.scale.combined(with: .opacity))
+                        .accessibilityHidden(true)
+                }
+            }
             .foregroundStyle(colorScheme == .dark ? .white : .black)
         }
         .buttonStyle(ScaleButtonStyle())
@@ -508,6 +511,11 @@ private enum ChipTimeFormatter {
         let total = max(0, Int(seconds))
         if total < 60 {
             return "\(total)s"
+        }
+
+        if total >= 60 * 60 {
+            let totalMinutes = Int((Double(total) / 60).rounded())
+            return "\(totalMinutes / 60)h\(totalMinutes % 60)m"
         }
 
         let roundedMinutes = (Double(total) / 60 * 10).rounded() / 10

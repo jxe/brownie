@@ -22,17 +22,17 @@ struct JournalView: View {
                 **Meditation:** Helped
                 """
             case .checkInSession(let s):
-                let startStr = s.startedAt.formatted(date: .omitted, time: .shortened)
-                let endStr = entry.timestamp.formatted(date: .omitted, time: .shortened)
-                let spanMin = max(1, Int((entry.timestamp.timeIntervalSince(s.startedAt) / 60).rounded()))
-                let engagedMin = Int(s.engagementSeconds) / 60
-                let engagedSec = Int(s.engagementSeconds) % 60
-                let engagedStr = String(format: "%d:%02d", engagedMin, engagedSec)
-                let lines = s.emotions.map { "- \($0.emoji) \($0.name) ×\($0.count)" }.joined(separator: "\n")
+                let engagedStr = JournalTimeFormatter.string(from: s.engagementSeconds)
+                let lines = s.emotions.map { tally in
+                    let countString = "×\(tally.count)"
+                    if let seconds = tally.engagementSeconds, seconds > 0 {
+                        return "- \(tally.emoji) \(tally.name) \(JournalTimeFormatter.string(from: seconds)) (\(countString))"
+                    }
+                    return "- \(tally.emoji) \(tally.name) \(countString)"
+                }.joined(separator: "\n")
                 return """
                 # 🪷 Check-in — \(dateStr)
 
-                **Span:** \(startStr)–\(endStr) (\(spanMin) min)
                 **Engaged:** \(engagedStr)
 
                 \(lines)
@@ -72,7 +72,7 @@ struct JournalView: View {
                                             Text(emotion.name)
                                                 .font(.body)
                                                 .fontWeight(.medium)
-                                            Text("(\(store.count(for: emotion)))")
+                                            Text(reflectDetail(for: emotion))
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
@@ -97,7 +97,11 @@ struct JournalView: View {
                             case .meditation(let m):
                                 MeditationLogRow(entry: entry, meditation: m)
                             case .checkInSession(let s):
-                                CheckInSessionRow(entry: entry, session: s)
+                                NavigationLink {
+                                    CheckInSessionDetailView(entry: entry, session: s)
+                                } label: {
+                                    CheckInSessionRow(entry: entry, session: s)
+                                }
                             }
                         }
                         .onDelete { indexSet in
@@ -133,6 +137,17 @@ struct JournalView: View {
                 }
             }
         }
+    }
+}
+
+private extension JournalView {
+    func reflectDetail(for emotion: Emotion) -> String {
+        let seconds = store.timeContribution(for: emotion)
+        let count = store.count(for: emotion)
+        if seconds > 0 {
+            return "\(JournalTimeFormatter.string(from: seconds)) · ×\(count)"
+        }
+        return "×\(count)"
     }
 }
 
@@ -209,20 +224,15 @@ private struct CheckInSessionRow: View {
     let session: JournalEntry.Content.CheckInSession
 
     private var topEmotions: ArraySlice<JournalEntry.Content.CheckInSession.EmotionTally> {
-        session.emotions.prefix(5)
+        session.emotions.prefix(4)
     }
 
     private var moreCount: Int {
-        max(0, session.emotions.count - 5)
+        max(0, session.emotions.count - 4)
     }
 
     private var engagedString: String {
-        let total = Int(session.engagementSeconds)
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
-
-    private var spanMinutes: Int {
-        max(1, Int((entry.timestamp.timeIntervalSince(session.startedAt) / 60).rounded()))
+        JournalTimeFormatter.string(from: session.engagementSeconds)
     }
 
     var body: some View {
@@ -241,7 +251,7 @@ private struct CheckInSessionRow: View {
                 ForEach(Array(topEmotions), id: \.name) { tally in
                     HStack(spacing: 3) {
                         Text(tally.emoji)
-                        Text("\(tally.count)")
+                        Text(tally.summaryString)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
@@ -254,10 +264,90 @@ private struct CheckInSessionRow: View {
                 }
             }
 
-            Text("\(engagedString) engaged · \(spanMinutes) min span")
+            Text("\(engagedString) engaged")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct CheckInSessionDetailView: View {
+    let entry: JournalEntry
+    let session: JournalEntry.Content.CheckInSession
+
+    private var startString: String {
+        session.startedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private var endString: String {
+        entry.timestamp.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Engaged", value: JournalTimeFormatter.string(from: session.engagementSeconds))
+                LabeledContent("Started", value: startString)
+                LabeledContent("Ended", value: endString)
+            }
+
+            Section("Emotions") {
+                ForEach(session.emotions, id: \.name) { tally in
+                    HStack(spacing: 10) {
+                        Text(tally.emoji)
+                            .font(.title3)
+                        Text(tally.name)
+                            .font(.body)
+                            .fontWeight(.medium)
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(tally.detailTimeString)
+                                .font(.body)
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                            Text("×\(tally.count)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+        .navigationTitle("Check-in")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private extension JournalEntry.Content.CheckInSession.EmotionTally {
+    var summaryString: String {
+        if let engagementSeconds, engagementSeconds > 0 {
+            return JournalTimeFormatter.string(from: engagementSeconds)
+        }
+        return "\(count)"
+    }
+
+    var detailTimeString: String {
+        if let engagementSeconds, engagementSeconds > 0 {
+            return JournalTimeFormatter.string(from: engagementSeconds)
+        }
+        return "No time"
+    }
+}
+
+private enum JournalTimeFormatter {
+    static func string(from seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        if total < 60 {
+            return "\(total)s"
+        }
+
+        let roundedMinutes = (Double(total) / 60 * 10).rounded() / 10
+        if roundedMinutes.rounded() == roundedMinutes {
+            return "\(Int(roundedMinutes))m"
+        }
+        return String(format: "%.1fm", roundedMinutes)
     }
 }

@@ -173,7 +173,8 @@ struct MeditationListView: View {
                             PlayingPulseDot(isPulsing: isActive)
                                 .opacity(isEngaged ? 1 : 0)
                         }
-                        .frame(width: 8, height: 8)
+                        .frame(width: 12, height: 12)
+                        .clipped()
                         .animation(.easeOut(duration: 0.2), value: isEngaged)
                     }
                     ZStack(alignment: .leading) {
@@ -496,27 +497,32 @@ private struct MeditationRowPressContent: View {
 private struct PlayingPulseDot: View {
     let isPulsing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
 
     var body: some View {
-        Circle()
-            .fill(Color.accentColor)
-            .frame(width: 8, height: 8)
-            .scaleEffect(pulse ? 1.3 : 0.9)
-            .opacity(pulse ? 0.6 : 1.0)
-            .allowsHitTesting(false)
-            .onAppear { updatePulse(isPulsing) }
-            .onChange(of: isPulsing) { _, pulsing in updatePulse(pulsing) }
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            let progress = pulseProgress(at: timeline.date)
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 8, height: 8)
+                .scaleEffect(pulseScale(progress))
+                .opacity(pulseOpacity(progress))
+                .allowsHitTesting(false)
+        }
     }
 
-    private func updatePulse(_ pulsing: Bool) {
-        guard pulsing, !reduceMotion else {
-            pulse = false
-            return
-        }
-        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-            pulse = true
-        }
+    private func pulseProgress(at date: Date) -> Double {
+        guard isPulsing, !reduceMotion else { return 0 }
+        let cycle = 1.8
+        let elapsed = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
+        return 0.5 - 0.5 * cos((elapsed / cycle) * 2 * .pi)
+    }
+
+    private func pulseScale(_ progress: Double) -> CGFloat {
+        0.9 + (0.4 * progress)
+    }
+
+    private func pulseOpacity(_ progress: Double) -> Double {
+        1.0 - (0.4 * progress)
     }
 }
 

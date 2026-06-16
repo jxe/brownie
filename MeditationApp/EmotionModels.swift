@@ -48,6 +48,7 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Regret", emoji: "😔", question: "What way of living do you wish you had chosen?", category: .negative, color: Color(red: 0.55, green: 0.55, blue: 0.58)),
         Emotion(name: "Resentment", emoji: "🧱", question: "What way of living has been dismissed or taken from you too many times?", category: .negative, color: Color(red: 0.64, green: 0.40, blue: 0.32)),
         Emotion(name: "Sadness", emoji: "😢", question: "What way of living was lost?", category: .negative, color: Color(red: 0.35, green: 0.55, blue: 0.82)),
+        Emotion(name: "Scorn", emoji: "😒", question: "What way of living feels beneath what you can respect?", category: .negative, color: Color(red: 0.58, green: 0.45, blue: 0.28)),
         Emotion(name: "Shame", emoji: "😳", question: "What way of living did you not live up to?", category: .negative, color: Color(red: 0.85, green: 0.42, blue: 0.42)),
     ]
 
@@ -114,12 +115,14 @@ struct JournalEntry: Identifiable, Codable {
                 let name: String
                 let emoji: String
                 let count: Int
+                /// Cumulative engagement time attributed to this emotion, when available.
+                let engagementSeconds: Double?
             }
             /// First tap of the session. The entry's `timestamp` is the session end.
             let startedAt: Date
             /// Cumulative engagement time at clear (mirrors `EmotionStore.sessionTime`).
             let engagementSeconds: Double
-            /// Tallies sorted by count desc.
+            /// Tallies sorted by engagement desc, falling back to count desc.
             let emotions: [EmotionTally]
         }
     }
