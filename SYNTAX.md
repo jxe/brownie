@@ -101,6 +101,19 @@ I'm with ~person. · I appreciate them for their kindness.
 # If "Stephanie" is drawn: "I appreciate her for her kindness."
 ```
 
+### Weighted Pools
+
+Pool items can include one or more rock markers (`🪨`) to make them more likely to be drawn. Each rock adds one extra selection weight, and rocks are not spoken aloud:
+
+```
+~ thought
+  I can let this be simple.
+  This one has more pull. 🪨
+  This one has even more pull. 🪨🪨
+```
+
+The first item has weight 1, the second has weight 2, and the third has weight 3. Weighted pools still avoid drawing the same item twice in a row whenever another item is available, including when the pool refills for a new cycle.
+
 ## Repeats
 
 Use `×` (multiplication sign) to repeat lines or blocks.
@@ -227,6 +240,7 @@ Done!
 | `𝄐` | Fermata (U+1D110) | Rest between stanzas (`×5𝄐28″`) | `\|` (e.g. `x5\|28"`) |
 | `♀` | Female sign (U+2640) | Female gender on pool item | — |
 | `♂` | Male sign (U+2642) | Male gender on pool item | — |
+| `🪨` | Rock (U+1FAA8) | Extra weight on pool item | — |
 
 All-ASCII example equivalent to `×5𝄐28″ ×4 ~x ~y 11″`:
 

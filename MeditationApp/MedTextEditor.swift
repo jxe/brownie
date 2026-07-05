@@ -27,6 +27,7 @@ struct MedTextEditor: UIViewRepresentable {
         [
             ("♀", "\u{2640}", "Female gender marker"),
             ("♂", "\u{2642}", "Male gender marker"),
+            ("🪨", "\u{1FAA8}", "Pool item weight marker"),
         ],
     ]
 
@@ -290,6 +291,7 @@ private let medSyntaxRules: [MedSyntaxRule] = {
     let count = UIColor.systemBlue
     let pause = UIColor.systemOrange
     let gender = UIColor.systemPink
+    let weight = UIColor.systemBrown
     return [
         MedSyntaxRule(regex: rx(#"\A\s*(#)[ \t]*(.*?)(?:[ \t]+((?:#\S+[ \t]*)+))?[ \t]*$"#),
                       groupColors: [0: secondary]),
@@ -315,6 +317,8 @@ private let medSyntaxRules: [MedSyntaxRule] = {
                       groupColors: [1: pool, 2: pool]),
         MedSyntaxRule(regex: rx(#"[♀♂]"#),
                       groupColors: [0: gender]),
+        MedSyntaxRule(regex: rx(#"🪨"#),
+                      groupColors: [0: weight]),
     ]
 }()
 

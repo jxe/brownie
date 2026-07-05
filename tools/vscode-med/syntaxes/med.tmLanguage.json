@@ -13,6 +13,7 @@
     { "include": "#duration" },
     { "include": "#dot-pause" },
     { "include": "#pool-ref" },
+    { "include": "#weight" },
     { "include": "#pronoun" },
     { "include": "#gender" }
   ],
@@ -112,6 +113,10 @@
     "gender": {
       "match": "[♀♂]",
       "name": "constant.character.gender.med"
+    },
+    "weight": {
+      "match": "🪨",
+      "name": "constant.character.weight.med"
     }
   }
 }

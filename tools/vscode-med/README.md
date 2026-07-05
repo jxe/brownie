@@ -18,6 +18,7 @@ Or press **F5** in VS Code with this folder open to launch an Extension Developm
 - **Comments** (later `#` lines): standard comment
 - **Pool definitions**: `~person` at line start
 - **Pool references**: inline `~person`, `~why`
+- **Pool weight markers**: `🪨`
 - **Gender markers**: `♀` `♂`
 - **Gender-neutral pronouns** rewritten at runtime: `they`/`them`/`their`/`theirs`/`themselves`
 - **Repeats**: `×5`, `x5`

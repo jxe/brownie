@@ -1,21 +1,59 @@
 import Foundation
 
-// MARK: - Pool (shuffled random picker)
+// MARK: - Pool (weighted random picker)
 
 class Pool {
-    private let items: [(text: String, gender: Gender?)]
-    private var remaining: [(text: String, gender: Gender?)] = []
+    private struct Item: Equatable {
+        let text: String
+        let gender: Gender?
+        let weight: Int
+    }
+
+    private let items: [Item]
+    private var remainingCounts: [Int] = []
+    private var lastDrawn: Item?
     private(set) var lastGender: Gender?
 
-    init(items: [(String, Gender?)]) {
-        self.items = items
+    init(items: [(String, Gender?, Int)]) {
+        var combined: [Item] = []
+        for item in items {
+            let weight = max(1, item.2)
+            if let index = combined.firstIndex(where: { $0.text == item.0 && $0.gender == item.1 }) {
+                let existing = combined[index]
+                combined[index] = Item(text: existing.text, gender: existing.gender, weight: existing.weight + weight)
+            } else {
+                combined.append(Item(text: item.0, gender: item.1, weight: weight))
+            }
+        }
+        self.items = combined
+        self.remainingCounts = combined.map(\.weight)
     }
 
     func draw() -> String {
-        if remaining.isEmpty {
-            remaining = items.shuffled()
+        guard !items.isEmpty else { return "" }
+
+        if remainingCounts.allSatisfy({ $0 == 0 }) {
+            remainingCounts = items.map(\.weight)
         }
-        let item = remaining.removeLast()
+
+        var candidates = remainingCounts.indices.filter { remainingCounts[$0] > 0 }
+        if let lastDrawn {
+            let nonRepeating = candidates.filter { items[$0] != lastDrawn }
+            if !nonRepeating.isEmpty {
+                candidates = nonRepeating
+            }
+        }
+
+        let totalWeight = candidates.reduce(0) { $0 + remainingCounts[$1] }
+        var pick = Int.random(in: 0..<totalWeight)
+        let selectedIndex = candidates.first { index in
+            pick -= remainingCounts[index]
+            return pick < 0
+        } ?? candidates[0]
+
+        remainingCounts[selectedIndex] -= 1
+        let item = items[selectedIndex]
+        lastDrawn = item
         if let g = item.gender {
             lastGender = g
         }
@@ -25,7 +63,7 @@ class Pool {
 
 // MARK: - Gender & Pronoun Resolution
 
-enum Gender {
+enum Gender: Equatable {
     case female, male
 }
 

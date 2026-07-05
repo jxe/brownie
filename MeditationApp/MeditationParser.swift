@@ -29,15 +29,15 @@ struct MeditationParser {
             if trimmed.hasPrefix("~"),
                isPoolDefinitionHeader(trimmed) {
                 let poolName = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                var items: [(String, Gender?)] = []
+                var items: [(String, Gender?, Int)] = []
                 i += 1
                 while i < lines.count {
                     let itemLine = lines[i]
                     guard itemLine.hasPrefix("  ") || itemLine.hasPrefix("\t") else { break }
                     let itemTrimmed = itemLine.trimmingCharacters(in: .whitespaces)
                     if itemTrimmed.isEmpty || itemTrimmed.hasPrefix("#") { i += 1; continue }
-                    let (text, gender) = parsePoolItem(itemTrimmed)
-                    items.append((text, gender))
+                    let (text, gender, weight) = parsePoolItem(itemTrimmed)
+                    items.append((text, gender, weight))
                     i += 1
                 }
                 pools[poolName] = Pool(items: items)
@@ -168,16 +168,24 @@ struct MeditationParser {
 
     // MARK: - Pool Item Parsing
 
-    private static func parsePoolItem(_ text: String) -> (String, Gender?) {
-        if text.hasSuffix("\u{2640}") { // ♀
-            let name = text.dropLast().trimmingCharacters(in: .whitespaces)
-            return (name, .female)
+    private static func parsePoolItem(_ text: String) -> (String, Gender?, Int) {
+        let rock = "\u{1FAA8}"
+        let rockCount = text.filter { String($0) == rock }.count
+        var cleaned = text.replacingOccurrences(of: rock, with: "")
+            .trimmingCharacters(in: .whitespaces)
+
+        let gender: Gender?
+        if cleaned.hasSuffix("\u{2640}") { // ♀
+            cleaned = cleaned.dropLast().trimmingCharacters(in: .whitespaces)
+            gender = .female
+        } else if cleaned.hasSuffix("\u{2642}") { // ♂
+            cleaned = cleaned.dropLast().trimmingCharacters(in: .whitespaces)
+            gender = .male
+        } else {
+            gender = nil
         }
-        if text.hasSuffix("\u{2642}") { // ♂
-            let name = text.dropLast().trimmingCharacters(in: .whitespaces)
-            return (name, .male)
-        }
-        return (text, nil)
+
+        return (cleaned, gender, rockCount + 1)
     }
 
     /// Parses "28″", "28\"", "3′", "3'", or "28" -> 28.0 (or 180.0 for minutes)

@@ -175,6 +175,9 @@ struct CheckInView: View {
                     Text(formattedSessionTime)
                         .font(.subheadline)
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 58, alignment: .trailing)
                         .foregroundStyle(.secondary)
                         .onTapGesture {
                             stopAccruingAndShowCredit()
