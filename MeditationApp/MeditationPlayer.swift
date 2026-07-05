@@ -318,7 +318,7 @@ class MeditationPlayer: NSObject {
                 case .speak(let speakText):
                     text = speakText
                     do {
-                        base = try await renderer.renderSpeech(text: speakText, voice: voice, rate: rate)
+                        base = try await owner.renderSpeechWithRecovery(text: speakText, voice: voice, rate: rate)
                     } catch {
                         guard !Task.isCancelled else { return }
                         let shouldAbort = await MainActor.run { () -> Bool in
@@ -478,6 +478,7 @@ class MeditationPlayer: NSObject {
         playbackGeneration += 1
         renderTask?.cancel()
         renderTask = nil
+        renderer.cancelSpeechRendering()
         streamingPlayer?.stop()
         streamingPlayer = nil
 
@@ -523,5 +524,20 @@ class MeditationPlayer: NSObject {
         guard let meditation = currentMeditation else { return }
         let url = currentSourceURL
         play(meditation, sourceURL: url)
+    }
+
+    private func renderSpeechWithRecovery(
+        text: String,
+        voice: AVSpeechSynthesisVoice?,
+        rate: Float
+    ) async throws -> AVAudioPCMBuffer {
+        do {
+            return try await renderer.renderSpeech(text: text, voice: voice, rate: rate)
+        } catch let error as AudioRendererError {
+            guard case .speechTimedOut = error else { throw error }
+            print("Brownie speech render timed out; resetting synthesizer and retrying: \(error)")
+            await renderer.resetSpeechSynthesizer()
+            return try await renderer.renderSpeech(text: text, voice: voice, rate: rate)
+        }
     }
 }

@@ -41,7 +41,7 @@ class AudioRenderer {
     /// `AVSpeechSynthesizer` per utterance spawns and tears down a TTS daemon
     /// each time, flooding the console with plugin-interrupted / RBS-assertion
     /// churn. Render calls are awaited serially, so writes never overlap.
-    private let synthesizer = AVSpeechSynthesizer()
+    private var synthesizer = AVSpeechSynthesizer()
 
     init() {
         self.format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
@@ -77,6 +77,24 @@ class AudioRenderer {
         }
 
         return try concatenateAndConvert(buffers: buffers)
+    }
+
+    func cancelSpeechRendering() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.synthesizer.isSpeaking {
+                self.synthesizer.stopSpeaking(at: .immediate)
+            }
+        }
+    }
+
+    func resetSpeechSynthesizer() async {
+        await MainActor.run {
+            if self.synthesizer.isSpeaking {
+                self.synthesizer.stopSpeaking(at: .immediate)
+            }
+            self.synthesizer = AVSpeechSynthesizer()
+        }
     }
 
     // MARK: - Bell
