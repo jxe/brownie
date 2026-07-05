@@ -386,8 +386,7 @@ private struct SelectedEmotionChipView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(chipColor)
+                EmotionChipBackground(emotion: emotion, colorScheme: colorScheme)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -719,8 +718,7 @@ private struct FlightChipView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(emotion.chipColor(for: colorScheme))
+            EmotionChipBackground(emotion: emotion, colorScheme: colorScheme)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
@@ -728,5 +726,56 @@ private struct FlightChipView: View {
                 .opacity(emotion.category == .positive ? 1 : 0)
         )
         .foregroundStyle(colorScheme == .dark ? .white : .black)
+    }
+}
+
+private struct EmotionChipBackground: View {
+    let emotion: Emotion
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        GeometryReader { geo in
+            RoundedRectangle(cornerRadius: 10)
+                .fill(emotion.chipGradient(for: colorScheme, size: geo.size))
+        }
+    }
+}
+
+private extension Emotion {
+    func chipGradient(for colorScheme: ColorScheme, size: CGSize) -> LinearGradient {
+        let base = chipColor(for: colorScheme)
+        let points = UnitPoint.gradientEndpoints(angle: .degrees(62), in: size)
+
+        return LinearGradient(
+            colors: [
+                base.mix(with: .white, by: colorScheme == .dark ? 0.08 : 0.18),
+                base,
+                base.mix(with: .black, by: colorScheme == .dark ? 0.10 : 0.06),
+            ],
+            startPoint: points.start,
+            endPoint: points.end
+        )
+    }
+}
+
+private extension UnitPoint {
+    static func gradientEndpoints(angle: Angle, in size: CGSize) -> (start: UnitPoint, end: UnitPoint) {
+        let width = max(size.width, 1)
+        let height = max(size.height, 1)
+        let radians = angle.radians
+        let dx = cos(radians)
+        let dy = sin(radians)
+        let halfLength = (abs(width * dx) + abs(height * dy)) / 2
+
+        return (
+            UnitPoint(
+                x: 0.5 - (dx * halfLength / width),
+                y: 0.5 - (dy * halfLength / height)
+            ),
+            UnitPoint(
+                x: 0.5 + (dx * halfLength / width),
+                y: 0.5 + (dy * halfLength / height)
+            )
+        )
     }
 }
