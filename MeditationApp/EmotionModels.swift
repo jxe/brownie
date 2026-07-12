@@ -39,7 +39,6 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Humiliation", emoji: "🙈", question: "What way of living did you feel permanently incapable of?", category: .negative, color: Color(red: 0.78, green: 0.38, blue: 0.55)),
         Emotion(name: "Hurt", emoji: "🤕", question: "What way of living were you wrongly deprived of?", category: .negative, color: Color(red: 0.72, green: 0.42, blue: 0.35)),
         Emotion(name: "Inadequacy", emoji: "📉", question: "What way of living do you feel unequipped for?", category: .negative, color: Color(red: 0.55, green: 0.45, blue: 0.40)),
-        Emotion(name: "Jealousy", emoji: "💚", question: "What way of living do you see others enjoying?", category: .negative, color: Color(red: 0.35, green: 0.62, blue: 0.45)),
         Emotion(name: "Loneliness", emoji: "🕸️", question: "What way of living depends on others being near?", category: .negative, color: Color(red: 0.30, green: 0.45, blue: 0.70)),
         Emotion(name: "Lost", emoji: "🧭", question: "What way of living can you no longer find your way back to?", category: .negative, color: Color(red: 0.48, green: 0.52, blue: 0.58)),
         Emotion(name: "Numbness", emoji: "😶", question: "What way of living have you stopped being able to feel?", category: .negative, color: Color(red: 0.50, green: 0.50, blue: 0.52)),
@@ -50,11 +49,11 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Sadness", emoji: "😢", question: "What way of living was lost?", category: .negative, color: Color(red: 0.35, green: 0.55, blue: 0.82)),
         Emotion(name: "Scorn", emoji: "😒", question: "What way of living feels beneath what you can respect?", category: .negative, color: Color(red: 0.58, green: 0.45, blue: 0.28)),
         Emotion(name: "Shame", emoji: "😳", question: "What way of living did you not live up to?", category: .negative, color: Color(red: 0.85, green: 0.42, blue: 0.42)),
+        Emotion(name: "Yearning", emoji: "🥺", question: "What way of living are you longing for?", category: .negative, color: Color(red: 0.58, green: 0.45, blue: 0.72)),
     ]
 
     static let positive: [Emotion] = [
         Emotion(name: "Acceptance", emoji: "🧘", question: "What way of living can you embrace as it is?", category: .positive, color: Color(red: 0.55, green: 0.70, blue: 0.78)),
-        Emotion(name: "Awe", emoji: "🤩", question: "What way of living revealed something larger than yourself?", category: .positive, color: Color(red: 0.55, green: 0.40, blue: 0.82)),
         Emotion(name: "Belonging", emoji: "🤝", question: "What way of living makes you feel part of something?", category: .positive, color: Color(red: 0.62, green: 0.55, blue: 0.42)),
         Emotion(name: "Compassion", emoji: "💗", question: "What way of living opens your heart to others' experience?", category: .positive, color: Color(red: 0.75, green: 0.45, blue: 0.58)),
         Emotion(name: "Confidence", emoji: "💪", question: "What way of living do you feel ready for?", category: .positive, color: Color(red: 0.72, green: 0.55, blue: 0.30)),

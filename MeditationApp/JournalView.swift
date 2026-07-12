@@ -128,6 +128,12 @@ struct JournalView: View {
                 ReflectionView(emotion: emotion)
             }
             .toolbar {
+                NavigationLink {
+                    EmotionLeaderboardView()
+                } label: {
+                    Label("Emotion Leaderboard", systemImage: "chart.bar.xaxis")
+                }
+
                 if !store.journalEntries.isEmpty {
                     ShareLink(
                         item: markdownExport,
@@ -137,6 +143,132 @@ struct JournalView: View {
                 }
             }
         }
+    }
+}
+
+private struct EmotionLeaderboardView: View {
+    @Environment(EmotionStore.self) private var store
+    @State private var metric: Metric = .time
+    @State private var order: Order = .most
+
+    private enum Metric: String, CaseIterable, Identifiable {
+        case time = "Time"
+        case taps = "Taps"
+
+        var id: Self { self }
+    }
+
+    private enum Order: String, CaseIterable, Identifiable {
+        case most = "Most"
+        case least = "Least"
+
+        var id: Self { self }
+    }
+
+    private struct Standing: Identifiable {
+        let name: String
+        let emoji: String
+        let seconds: TimeInterval
+        let taps: Int
+
+        var id: String { name }
+    }
+
+    private var standings: [Standing] {
+        var totals: [String: (emoji: String, seconds: TimeInterval, taps: Int)] =
+            Dictionary(uniqueKeysWithValues: Emotion.all.map {
+                ($0.name, (emoji: $0.emoji, seconds: 0, taps: 0))
+            })
+
+        for entry in store.journalEntries {
+            guard case .checkInSession(let session) = entry.content else { continue }
+            for tally in session.emotions {
+                let previous = totals[tally.name] ?? (emoji: tally.emoji, seconds: 0, taps: 0)
+                totals[tally.name] = (
+                    emoji: tally.emoji,
+                    seconds: previous.seconds + (tally.engagementSeconds ?? 0),
+                    taps: previous.taps + tally.count
+                )
+            }
+        }
+
+        return totals.map { name, total in
+            Standing(name: name, emoji: total.emoji, seconds: total.seconds, taps: total.taps)
+        }
+        .sorted { lhs, rhs in
+            let lhsValue = metric == .time ? lhs.seconds : Double(lhs.taps)
+            let rhsValue = metric == .time ? rhs.seconds : Double(rhs.taps)
+            if lhsValue != rhsValue {
+                return order == .most ? lhsValue > rhsValue : lhsValue < rhsValue
+            }
+            return lhs.name < rhs.name
+        }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Picker("Measure", selection: $metric) {
+                    ForEach(Metric.allCases) { metric in
+                        Text(metric.rawValue).tag(metric)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Order", selection: $order) {
+                    ForEach(Order.allCases) { order in
+                        Text(order.rawValue).tag(order)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Section {
+                ForEach(Array(standings.enumerated()), id: \.element.id) { index, standing in
+                    HStack(spacing: 12) {
+                        Text("\(index + 1)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, alignment: .trailing)
+
+                        Text(standing.emoji)
+                            .font(.title3)
+
+                        Text(standing.name)
+
+                        Spacer()
+
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(primaryValue(for: standing))
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                            Text(secondaryValue(for: standing))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            } footer: {
+                Text("Totals from completed check-ins. Emotions not yet used appear with zero totals; historical emotions remain visible.")
+            }
+        }
+        .navigationTitle("Emotion Leaderboard")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func primaryValue(for standing: Standing) -> String {
+        if metric == .time {
+            return JournalTimeFormatter.string(from: standing.seconds)
+        }
+        return "\(standing.taps) taps"
+    }
+
+    private func secondaryValue(for standing: Standing) -> String {
+        if metric == .time {
+            return "\(standing.taps) taps"
+        }
+        return JournalTimeFormatter.string(from: standing.seconds)
     }
 }
 
