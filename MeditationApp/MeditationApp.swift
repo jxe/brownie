@@ -7,7 +7,7 @@ enum TabDestination: Int {
 }
 
 @main
-struct MeditationApp: App {
+struct BrownieApp: App {
     @State private var player = MeditationPlayer()
     @State private var emotionStore = EmotionStore()
     private let icloudWatcher = iCloudMeditationWatcher()

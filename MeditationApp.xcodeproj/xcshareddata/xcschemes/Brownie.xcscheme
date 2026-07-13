@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A60000010000000000000001"
-               BuildableName = "MeditationApp.app"
-               BlueprintName = "MeditationApp"
+               BuildableName = "Brownie.app"
+               BlueprintName = "Brownie"
                ReferencedContainer = "container:MeditationApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,8 +46,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A60000010000000000000001"
-            BuildableName = "MeditationApp.app"
-            BlueprintName = "MeditationApp"
+            BuildableName = "Brownie.app"
+            BlueprintName = "Brownie"
             ReferencedContainer = "container:MeditationApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -70,8 +70,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A60000010000000000000001"
-            BuildableName = "MeditationApp.app"
-            BlueprintName = "MeditationApp"
+            BuildableName = "Brownie.app"
+            BlueprintName = "Brownie"
             ReferencedContainer = "container:MeditationApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

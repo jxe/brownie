@@ -66,7 +66,7 @@
 		A200001B000000000000001B /* ArchivedMeditationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedMeditationsView.swift; sourceTree = "<group>"; };
 		A200001C000000000000001C /* MeditationMetadataWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationMetadataWriter.swift; sourceTree = "<group>"; };
 		A200001D000000000000001D /* TagEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorView.swift; sourceTree = "<group>"; };
-		A30000010000000000000001 /* MeditationApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeditationApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A30000010000000000000001 /* Brownie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Brownie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,7 +127,7 @@
 		A50000030000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A30000010000000000000001 /* MeditationApp.app */,
+				A30000010000000000000001 /* Brownie.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -135,9 +135,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A60000010000000000000001 /* MeditationApp */ = {
+		A60000010000000000000001 /* Brownie */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A80000010000000000000001 /* Build configuration list for PBXNativeTarget "MeditationApp" */;
+			buildConfigurationList = A80000010000000000000001 /* Build configuration list for PBXNativeTarget "Brownie" */;
 			buildPhases = (
 				A70000010000000000000001 /* Sources */,
 				A40000010000000000000001 /* Frameworks */,
@@ -147,9 +147,9 @@
 			);
 			dependencies = (
 			);
-			name = MeditationApp;
-			productName = MeditationApp;
-			productReference = A30000010000000000000001 /* MeditationApp.app */;
+			name = Brownie;
+			productName = Brownie;
+			productReference = A30000010000000000000001 /* Brownie.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -175,7 +175,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A60000010000000000000001 /* MeditationApp */,
+				A60000010000000000000001 /* Brownie */,
 			);
 		};
 /* End PBXProject section */
@@ -404,7 +404,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A80000010000000000000001 /* Build configuration list for PBXNativeTarget "MeditationApp" */ = {
+		A80000010000000000000001 /* Build configuration list for PBXNativeTarget "Brownie" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA0000010000000000000001 /* Debug */,
