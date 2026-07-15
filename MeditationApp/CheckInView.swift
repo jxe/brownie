@@ -583,49 +583,55 @@ private struct EmotionPickerSheet: View {
     ]
 
     private var unselectedEmotions: [Emotion] {
-        emotions.filter { !store.isSelected($0) && !justSelected.contains($0.id) }
+        emotions
+            .filter { !store.isSelected($0) && !justSelected.contains($0.id) }
+            .sorted { $0.name < $1.name }
+    }
+
+    private var groupedEmotions: (top: [Emotion], remaining: [Emotion])? {
+        let usage = store.historicalEmotionUsage()
+        let usedEmotions = emotions.filter {
+            let total = usage[$0.name]
+            return (total?.engagementSeconds ?? 0) > 0 || (total?.tapCount ?? 0) > 0
+        }
+        guard usedEmotions.count >= 10 else { return nil }
+
+        let topIDs = Set(usedEmotions.sorted { lhs, rhs in
+            let lhsUsage = usage[lhs.name] ?? .init()
+            let rhsUsage = usage[rhs.name] ?? .init()
+            if lhsUsage.engagementSeconds != rhsUsage.engagementSeconds {
+                return lhsUsage.engagementSeconds > rhsUsage.engagementSeconds
+            }
+            if lhsUsage.tapCount != rhsUsage.tapCount {
+                return lhsUsage.tapCount > rhsUsage.tapCount
+            }
+            return lhs.name < rhs.name
+        }.prefix(10).map(\.id))
+
+        return (
+            top: unselectedEmotions.filter { topIDs.contains($0.id) },
+            remaining: unselectedEmotions.filter { !topIDs.contains($0.id) }
+        )
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(unselectedEmotions) { emotion in
-                        Button {
-                            selectEmotion(emotion)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(emotion.emoji)
-                                    .font(.title3)
-                                Text(emotion.name)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color(.secondarySystemBackground))
-                            )
-                            .foregroundStyle(.primary)
+                VStack(spacing: 18) {
+                    if let groupedEmotions {
+                        if !groupedEmotions.top.isEmpty {
+                            emotionGrid(groupedEmotions.top)
                         }
-                        .buttonStyle(.plain)
-                        .overlay(
-                            GeometryReader { geo in
-                                Color.clear
-                                    .onAppear {
-                                        chipFrames[emotion.id] = geo.frame(in: .global)
-                                    }
-                                    .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                                        chipFrames[emotion.id] = newFrame
-                                    }
-                            }
-                        )
-                        .transition(.asymmetric(
-                            insertion: .opacity,
-                            removal: .scale(scale: 0.5).combined(with: .opacity)
-                        ))
+                        if !groupedEmotions.top.isEmpty && !groupedEmotions.remaining.isEmpty {
+                            Divider()
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 14)
+                        }
+                        if !groupedEmotions.remaining.isEmpty {
+                            emotionGrid(groupedEmotions.remaining)
+                        }
+                    } else {
+                        emotionGrid(unselectedEmotions)
                     }
                 }
                 .padding()
@@ -643,6 +649,48 @@ private struct EmotionPickerSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private func emotionGrid(_ emotions: [Emotion]) -> some View {
+        LazyVGrid(columns: columns, spacing: 10) {
+            ForEach(emotions) { emotion in
+                Button {
+                    selectEmotion(emotion)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(emotion.emoji)
+                            .font(.title3)
+                        Text(emotion.name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(.secondarySystemBackground))
+                    )
+                    .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .overlay(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                chipFrames[emotion.id] = geo.frame(in: .global)
+                            }
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                chipFrames[emotion.id] = newFrame
+                            }
+                    }
+                )
+                .transition(.asymmetric(
+                    insertion: .opacity,
+                    removal: .scale(scale: 0.5).combined(with: .opacity)
+                ))
+            }
+        }
     }
 
     private func selectEmotion(_ emotion: Emotion) {

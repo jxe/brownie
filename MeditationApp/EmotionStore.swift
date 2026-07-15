@@ -5,6 +5,11 @@ import Observation
 class EmotionStore {
     static let maxEmotionCreditDuration: TimeInterval = 20
 
+    struct HistoricalEmotionUsage {
+        var engagementSeconds: TimeInterval = 0
+        var tapCount: Int = 0
+    }
+
     struct TimeCredit {
         let emotionID: String
         let totalContribution: TimeInterval
@@ -126,6 +131,19 @@ class EmotionStore {
 
     func selectedEmotionsSorted() -> [Emotion] {
         selectedEmotionsSorted(asOf: nil)
+    }
+
+    func historicalEmotionUsage() -> [String: HistoricalEmotionUsage] {
+        var usage: [String: HistoricalEmotionUsage] = [:]
+        for entry in journalEntries {
+            guard case .checkInSession(let session) = entry.content else { continue }
+            for tally in session.emotions {
+                usage[tally.name, default: HistoricalEmotionUsage()].engagementSeconds +=
+                    tally.engagementSeconds ?? 0
+                usage[tally.name, default: HistoricalEmotionUsage()].tapCount += tally.count
+            }
+        }
+        return usage
     }
 
     func selectedEmotionsSorted(asOf date: Date) -> [Emotion] {

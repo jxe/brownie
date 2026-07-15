@@ -175,20 +175,23 @@ private struct EmotionLeaderboardView: View {
     }
 
     private var standings: [Standing] {
+        let historicalUsage = store.historicalEmotionUsage()
         var totals: [String: (emoji: String, seconds: TimeInterval, taps: Int)] =
             Dictionary(uniqueKeysWithValues: Emotion.all.map {
-                ($0.name, (emoji: $0.emoji, seconds: 0, taps: 0))
+                let usage = historicalUsage[$0.name] ?? .init()
+                return ($0.name, (
+                    emoji: $0.emoji,
+                    seconds: usage.engagementSeconds,
+                    taps: usage.tapCount
+                ))
             })
 
         for entry in store.journalEntries {
             guard case .checkInSession(let session) = entry.content else { continue }
             for tally in session.emotions {
-                let previous = totals[tally.name] ?? (emoji: tally.emoji, seconds: 0, taps: 0)
-                totals[tally.name] = (
-                    emoji: tally.emoji,
-                    seconds: previous.seconds + (tally.engagementSeconds ?? 0),
-                    taps: previous.taps + tally.count
-                )
+                guard totals[tally.name] == nil else { continue }
+                let usage = historicalUsage[tally.name] ?? .init()
+                totals[tally.name] = (tally.emoji, usage.engagementSeconds, usage.tapCount)
             }
         }
 
