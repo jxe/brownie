@@ -148,6 +148,7 @@ struct MeditationListView: View {
         let tags = fileTags[url] ?? []
         let showElapsedTime = isCurrent && !isPreparing && (player.isPlaying || player.elapsedSeconds > 0)
         let elapsedText = showElapsedTime ? formatTime(player.elapsedSeconds) : "0:00"
+        let endTime = isCurrent ? player.estimatedEndTime : nil
         let showTags = !showElapsedTime && !isPreparing && !tags.isEmpty
         let activeFill = Color.yellow.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.62)
         let inactiveFill = Color("HighlightColor").opacity(0.3)
@@ -178,10 +179,16 @@ struct MeditationListView: View {
                         .animation(.easeOut(duration: 0.2), value: isEngaged)
                     }
                     ZStack(alignment: .leading) {
-                        Text(elapsedText)
-                            .font(.caption)
-                            .foregroundStyle(Color.accentColor)
-                            .opacity(showElapsedTime ? 1 : 0)
+                        HStack(spacing: 6) {
+                            Text(elapsedText)
+                            if let endTime {
+                                Text("·")
+                                Text("Ends \(endTime.formatted(date: .omitted, time: .shortened))")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                        .opacity(showElapsedTime ? 1 : 0)
                         if !tags.isEmpty {
                             HStack(spacing: 4) {
                                 ForEach(tags, id: \.self) { tag in

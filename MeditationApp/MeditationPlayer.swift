@@ -21,6 +21,7 @@ class MeditationPlayer: NSObject {
     var totalSteps = 0
     var currentSourceURL: URL?
     var elapsedSeconds: Int = 0
+    private(set) var estimatedEndTime: Date?
 
     var selectedVoiceID: String {
         didSet { UserDefaults.standard.set(selectedVoiceID, forKey: "selectedVoiceID") }
@@ -229,10 +230,16 @@ class MeditationPlayer: NSObject {
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
 
         if let player = streamingPlayer {
+            let elapsed = player.currentTime() ?? TimeInterval(elapsedSeconds)
+            if isPlaying {
+                estimatedEndTime = Date.now.addingTimeInterval(
+                    max(0, player.totalDuration - elapsed)
+                )
+            }
             info[MPMediaItemPropertyPlaybackDuration] = player.totalDuration
             if state == .finished {
                 info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0
-            } else if let elapsed = player.currentTime() {
+            } else {
                 info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
             }
         }
@@ -394,8 +401,11 @@ class MeditationPlayer: NSObject {
                         owner.playbackStarted = true
                         owner.state = .playing
                         player.play()
-                        owner.updateNowPlayingInfo()
                     }
+
+                    // The total duration grows as each rendered buffer is
+                    // scheduled, so keep the lock-screen timeline in sync.
+                    owner.updateNowPlayingInfo()
                 }
             }
 
@@ -428,6 +438,7 @@ class MeditationPlayer: NSObject {
                     await MainActor.run {
                         guard owner.playbackGeneration == generation else { return }
                         player.scheduleFinalBuffer(drain, marker: drainMarker)
+                        owner.updateNowPlayingInfo()
                     }
                 }
             }
@@ -491,6 +502,7 @@ class MeditationPlayer: NSObject {
         currentTitle = ""
         playbackStarted = false
         elapsedSeconds = 0
+        estimatedEndTime = nil
         clearNowPlayingInfo()
 
         do {
@@ -507,6 +519,7 @@ class MeditationPlayer: NSObject {
         state = .finished
         currentText = ""
         elapsedSeconds = 0
+        estimatedEndTime = nil
         renderTask?.cancel()
         renderTask = nil
         streamingPlayer?.stop()
