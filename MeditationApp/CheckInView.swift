@@ -69,6 +69,7 @@ struct CheckInView: View {
                             SelectedEmotionChipView(
                                 emotion: emotion,
                                 isAccruing: store.accruingEmotionID == emotion.id,
+                                hasReflection: store.hasReflectionInCurrentSession(for: emotion),
                                 timeContribution: store.timeContribution(for: emotion, asOf: liveNow),
                                 floatingTimes: floatingTimeEvents[emotion.id, default: []],
                                 onTap: { tapSelectedEmotion(emotion) },
@@ -199,13 +200,13 @@ struct CheckInView: View {
             }
         }
         .onAppear {
-            store.clearSessionIfStale()
+            clearStaleSessionWithoutAnimation()
             liveNow = Date()
             scheduleAutoStopAccruing()
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                store.clearSessionIfStale()
+                clearStaleSessionWithoutAnimation()
                 liveNow = Date()
                 scheduleAutoStopAccruing()
             } else {
@@ -241,6 +242,14 @@ struct CheckInView: View {
                 onTimeCredit: showFloatingTime,
                 onAccruingChanged: scheduleAutoStopAccruing
             )
+        }
+    }
+
+    private func clearStaleSessionWithoutAnimation() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            store.clearSessionIfStale()
         }
     }
 
@@ -356,6 +365,7 @@ private struct FloatingTimeEvent: Identifiable {
 private struct SelectedEmotionChipView: View {
     let emotion: Emotion
     let isAccruing: Bool
+    let hasReflection: Bool
     let timeContribution: TimeInterval
     let floatingTimes: [FloatingTimeEvent]
     var onTap: () -> Void
@@ -388,6 +398,15 @@ private struct SelectedEmotionChipView: View {
             .background(
                 EmotionChipBackground(emotion: emotion, colorScheme: colorScheme)
             )
+            .overlay(alignment: .topTrailing) {
+                if hasReflection {
+                    ReflectionCornerMarker()
+                        .fill(Color.accentColor)
+                        .frame(width: 16, height: 16)
+                        .accessibilityHidden(true)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.25)
@@ -411,6 +430,7 @@ private struct SelectedEmotionChipView: View {
             }
             .foregroundStyle(colorScheme == .dark ? .white : .black)
         }
+        .accessibilityValue(hasReflection ? "Reflected" : "")
         .buttonStyle(ScaleButtonStyle())
         .overlay(alignment: .trailing) {
             ZStack {
@@ -441,6 +461,17 @@ private struct SelectedEmotionChipView: View {
             }
         } preview: {
             ReflectionPreview(emotion: emotion)
+        }
+    }
+}
+
+private struct ReflectionCornerMarker: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.closeSubpath()
         }
     }
 }

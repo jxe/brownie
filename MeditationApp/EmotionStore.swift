@@ -146,6 +146,14 @@ class EmotionStore {
         return usage
     }
 
+    func hasReflectionInCurrentSession(for emotion: Emotion) -> Bool {
+        guard let sessionStartTime else { return false }
+        return journalEntries.contains { entry in
+            guard case .reflection(let reflection) = entry.content else { return false }
+            return entry.timestamp >= sessionStartTime && reflection.emotionName == emotion.name
+        }
+    }
+
     func selectedEmotionsSorted(asOf date: Date) -> [Emotion] {
         selectedEmotionsSorted(asOf: date as Date?)
     }
