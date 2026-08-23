@@ -54,7 +54,7 @@ struct CheckInView: View {
     }
 
     private var selectedEmotions: [Emotion] {
-        store.selectedEmotionsSorted(asOf: liveNow)
+        store.selectedEmotionsRankedForCheckIn()
     }
 
     var body: some View {
@@ -377,7 +377,29 @@ private struct SelectedEmotionChipView: View {
         emotion.chipColor(for: colorScheme)
     }
     private var counterColor: Color {
-        .white
+        colorScheme == .dark ? .white : .black
+    }
+    private var activeChipShadowColor: Color {
+        if colorScheme == .dark {
+            return chipColor.opacity(0.95)
+        }
+        return .black.opacity(0.18)
+    }
+    private var activeChipOuterGlowColor: Color {
+        colorScheme == .dark ? chipColor.opacity(0.55) : .clear
+    }
+    private var counterGlowColor: Color {
+        colorScheme == .dark ? .black : .white
+    }
+    private var accessibilityValue: String {
+        var values: [String] = []
+        if isAccruing {
+            values.append("Timing, \(ChipTimeFormatter.string(from: timeContribution))")
+        }
+        if hasReflection {
+            values.append("Reflected")
+        }
+        return values.joined(separator: ", ")
     }
 
     var body: some View {
@@ -412,33 +434,54 @@ private struct SelectedEmotionChipView: View {
                     .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.25)
                     .opacity(emotion.category == .positive ? 1 : 0)
             )
-            .overlay(alignment: .trailing) {
+            .foregroundStyle(colorScheme == .dark ? .white : .black)
+        }
+        .accessibilityValue(accessibilityValue)
+        .buttonStyle(ScaleButtonStyle(isEmphasized: isAccruing))
+        .overlay(alignment: .trailing) {
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            stops: [
+                                .init(color: counterGlowColor.opacity(0.50), location: 0),
+                                .init(color: counterGlowColor.opacity(0.40), location: 0.28),
+                                .init(color: counterGlowColor.opacity(0.24), location: 0.62),
+                                .init(color: counterGlowColor.opacity(0.08), location: 0.86),
+                                .init(color: .clear, location: 1),
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 26
+                        )
+                    )
+                    .frame(width: 52, height: 52)
+                    .scaleEffect(y: 0.75)
+                    .opacity(isAccruing ? 1 : 0)
+                    .animation(.easeOut(duration: 0.12), value: isAccruing)
+
                 if isAccruing {
                     Text(ChipTimeFormatter.string(from: timeContribution))
                         .font(.caption2)
                         .fontWeight(.semibold)
                         .monospacedDigit()
                         .foregroundStyle(counterColor)
-                        .shadow(color: counterColor.opacity(0.95), radius: 5)
-                        .shadow(color: counterColor.opacity(0.65), radius: 10)
-                        .padding(.leading, 6)
-                        .background(chipColor)
-                        .padding(.trailing, 12)
-                        .transition(.scale.combined(with: .opacity))
+                        .shadow(
+                            color: colorScheme == .dark ? .black.opacity(0.7) : .clear,
+                            radius: 1
+                        )
+                        .lineLimit(1)
                         .accessibilityHidden(true)
+                        .transition(.scale.combined(with: .opacity))
                 }
-            }
-            .foregroundStyle(colorScheme == .dark ? .white : .black)
-        }
-        .accessibilityValue(hasReflection ? "Reflected" : "")
-        .buttonStyle(ScaleButtonStyle())
-        .overlay(alignment: .trailing) {
-            ZStack {
+
                 ForEach(floatingTimes) { entry in
                     FloatingTimeContributionView(seconds: entry.seconds)
                 }
             }
-            .padding(.trailing, 12)
+            .frame(width: 60, height: 60)
+            .offset(x: 4)
+            .allowsHitTesting(false)
         }
         .overlay(
             GeometryReader { geo in
@@ -462,6 +505,16 @@ private struct SelectedEmotionChipView: View {
         } preview: {
             ReflectionPreview(emotion: emotion)
         }
+        .shadow(
+            color: isAccruing ? activeChipShadowColor : .clear,
+            radius: colorScheme == .dark ? 8 : 7,
+            y: colorScheme == .dark ? 0 : 3
+        )
+        .shadow(
+            color: isAccruing ? activeChipOuterGlowColor : .clear,
+            radius: 16
+        )
+        .zIndex(isAccruing ? 1 : 0)
     }
 }
 
@@ -489,20 +542,35 @@ private struct GlassPressStyle: ButtonStyle {
 }
 
 private struct ScaleButtonStyle: ButtonStyle {
+    let isEmphasized: Bool
+
     func makeBody(configuration: Configuration) -> some View {
-        ScaleButtonContent(isPressed: configuration.isPressed, label: configuration.label)
+        ScaleButtonContent(
+            isPressed: configuration.isPressed,
+            isEmphasized: isEmphasized,
+            label: configuration.label
+        )
     }
 }
 
 private struct ScaleButtonContent: View {
     let isPressed: Bool
+    let isEmphasized: Bool
     let label: ButtonStyleConfiguration.Label
     @State private var showScaled = false
 
+    private var scale: CGFloat {
+        if showScaled {
+            return isEmphasized ? 1.07 : 1.05
+        }
+        return isEmphasized ? 1.04 : 1.0
+    }
+
     var body: some View {
         label
-            .scaleEffect(showScaled ? 1.05 : 1.0)
+            .scaleEffect(scale)
             .animation(showScaled ? .interpolatingSpring(stiffness: 1200, damping: 15) : .spring(duration: 0.25, bounce: 0.4), value: showScaled)
+            .animation(.spring(duration: 0.3, bounce: 0.25), value: isEmphasized)
             .onChange(of: isPressed) { _, pressed in
                 if pressed {
                     showScaled = true
