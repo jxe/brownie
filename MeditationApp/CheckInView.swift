@@ -379,6 +379,12 @@ private struct SelectedEmotionChipView: View {
     private var counterColor: Color {
         colorScheme == .dark ? .white : .black
     }
+    private var counterBackgroundColor: Color {
+        if colorScheme == .dark {
+            return chipColor.mix(with: .black, by: 0.35)
+        }
+        return chipColor.mix(with: .white, by: 0.45)
+    }
     private var activeChipShadowColor: Color {
         if colorScheme == .dark {
             return chipColor.opacity(0.95)
@@ -387,9 +393,6 @@ private struct SelectedEmotionChipView: View {
     }
     private var activeChipOuterGlowColor: Color {
         colorScheme == .dark ? chipColor.opacity(0.55) : .clear
-    }
-    private var counterGlowColor: Color {
-        colorScheme == .dark ? .black : .white
     }
     private var accessibilityValue: String {
         var values: [String] = []
@@ -444,19 +447,28 @@ private struct SelectedEmotionChipView: View {
                     .fill(
                         RadialGradient(
                             stops: [
-                                .init(color: counterGlowColor.opacity(0.50), location: 0),
-                                .init(color: counterGlowColor.opacity(0.40), location: 0.28),
-                                .init(color: counterGlowColor.opacity(0.24), location: 0.62),
-                                .init(color: counterGlowColor.opacity(0.08), location: 0.86),
+                                .init(color: counterBackgroundColor.opacity(0.60), location: 0),
+                                .init(color: counterBackgroundColor.opacity(0.52), location: 0.30),
+                                .init(color: counterBackgroundColor.opacity(0.32), location: 0.62),
+                                .init(color: counterBackgroundColor.opacity(0.12), location: 0.85),
+                                .init(color: counterBackgroundColor.opacity(0.04), location: 0.95),
                                 .init(color: .clear, location: 1),
                             ],
                             center: .center,
                             startRadius: 0,
-                            endRadius: 26
+                            endRadius: 34
                         )
                     )
-                    .frame(width: 52, height: 52)
+                    .frame(width: 68, height: 68)
                     .scaleEffect(y: 0.75)
+                    .opacity(isAccruing ? 1 : 0)
+                    .animation(.easeOut(duration: 0.12), value: isAccruing)
+
+                Circle()
+                    .fill(counterBackgroundColor.opacity(0.72))
+                    .frame(width: 44, height: 44)
+                    .scaleEffect(y: 0.75)
+                    .blur(radius: 3)
                     .opacity(isAccruing ? 1 : 0)
                     .animation(.easeOut(duration: 0.12), value: isAccruing)
 
