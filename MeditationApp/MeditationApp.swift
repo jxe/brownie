@@ -13,8 +13,8 @@ struct BrownieApp: App {
     private let icloudWatcher = iCloudMeditationWatcher()
 
     init() {
+        FileManager.default.configureInitialMeditationStorageIfNeeded()
         SampleMeditations.installIfNeeded()
-        FileManager.default.migrateToiCloud()
         icloudWatcher.start()
     }
 
