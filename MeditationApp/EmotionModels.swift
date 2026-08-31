@@ -26,12 +26,10 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Despair", emoji: "🕳️", question: "What way of living feels permanently out of reach?", category: .negative, color: Color(red: 0.32, green: 0.29, blue: 0.35)),
         Emotion(name: "Disappointment", emoji: "😕", question: "What way of living did you hope for?", category: .negative, color: Color(red: 0.49, green: 0.51, blue: 0.56)),
         Emotion(name: "Disgust", emoji: "🤢", question: "What way of living is being violated?", category: .negative, color: Color(red: 0.25, green: 0.40, blue: 0.16)),
-        Emotion(name: "Dread", emoji: "😱", question: "What way of living do you fear losing to what's coming?", category: .negative, color: Color(red: 0.46, green: 0.40, blue: 0.17)),
         Emotion(name: "Envy", emoji: "👀", question: "What way of living do you wish you could have?", category: .negative, color: Color(red: 0.38, green: 0.50, blue: 0.24)),
         Emotion(name: "Exhaustion", emoji: "🪫", question: "What way of living is on the other side of what's draining you?", category: .negative, color: Color(red: 0.46, green: 0.43, blue: 0.40)),
         Emotion(name: "Fear", emoji: "😨", question: "What way of living is threatened?", category: .negative, color: Color(red: 0.82, green: 0.73, blue: 0.16)),
         Emotion(name: "Fed Up", emoji: "🙅", question: "What way of living are you no longer willing to compromise?", category: .negative, color: Color(red: 0.68, green: 0.36, blue: 0.30)),
-        Emotion(name: "Frustration", emoji: "😩", question: "What way of living keeps slipping out of reach?", category: .negative, color: Color(red: 0.82, green: 0.48, blue: 0.28)),
         Emotion(name: "Grief", emoji: "🖤", question: "What way of living has ended permanently?", category: .negative, color: Color(red: 0.27, green: 0.26, blue: 0.30)),
         Emotion(name: "Guilt", emoji: "😞", question: "What way of living did you compromise for someone else?", category: .negative, color: Color(red: 0.53, green: 0.42, blue: 0.48)),
         Emotion(name: "Hatred", emoji: "💢", question: "What way of living is being destroyed by someone or something you want gone?", category: .negative, color: Color(red: 0.72, green: 0.15, blue: 0.22)),
@@ -41,6 +39,7 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Inadequacy", emoji: "📉", question: "What way of living do you feel unequipped for?", category: .negative, color: Color(red: 0.46, green: 0.41, blue: 0.46)),
         Emotion(name: "Loneliness", emoji: "🕸️", question: "What way of living depends on others being near?", category: .negative, color: Color(red: 0.27, green: 0.39, blue: 0.55)),
         Emotion(name: "Lost", emoji: "🧭", question: "What way of living can you no longer find your way back to?", category: .negative, color: Color(red: 0.44, green: 0.49, blue: 0.54)),
+        Emotion(name: "Misgiving", emoji: "🤨", question: "What way of living might this choice put at risk?", category: .negative, color: Color(red: 0.82, green: 0.48, blue: 0.28)),
         Emotion(name: "Numbness", emoji: "😶", question: "What way of living have you stopped being able to feel?", category: .negative, color: Color(red: 0.46, green: 0.47, blue: 0.48)),
         Emotion(name: "Overwhelm", emoji: "🌊", question: "What ways of living are all demanding attention at once?", category: .negative, color: Color(red: 0.29, green: 0.49, blue: 0.62)),
         Emotion(name: "Rage", emoji: "🤬", question: "What way of living has been so blocked that you want to destroy the obstacle?", category: .negative, color: Color(red: 0.82, green: 0.18, blue: 0.18)),
@@ -49,6 +48,7 @@ struct Emotion: Identifiable, Hashable {
         Emotion(name: "Sadness", emoji: "😢", question: "What way of living was lost?", category: .negative, color: Color(red: 0.33, green: 0.49, blue: 0.68)),
         Emotion(name: "Scorn", emoji: "😒", question: "What way of living feels beneath what you can respect?", category: .negative, color: Color(red: 0.53, green: 0.43, blue: 0.18)),
         Emotion(name: "Shame", emoji: "😳", question: "What way of living did you not live up to?", category: .negative, color: Color(red: 0.45, green: 0.23, blue: 0.31)),
+        Emotion(name: "Unease", emoji: "😟", question: "What way of living feels unsettled or uncertain?", category: .negative, color: Color(red: 0.46, green: 0.40, blue: 0.17)),
         Emotion(name: "Yearning", emoji: "🥺", question: "What way of living are you longing for?", category: .negative, color: Color(red: 0.58, green: 0.45, blue: 0.72)),
     ]
 
