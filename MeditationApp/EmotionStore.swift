@@ -4,9 +4,7 @@ import Observation
 @Observable
 class EmotionStore {
     static let maxEmotionCreditDuration: TimeInterval = 20
-    private static let recentContributionHalfLife: TimeInterval = 10 * 60
-    private static let recentContributionBonus = 1.0
-    private static let rankingBandDuration: TimeInterval = 10
+    private static let rankingScoreHalfLife: TimeInterval = 10 * 60
 
     struct HistoricalEmotionUsage {
         var engagementSeconds: TimeInterval = 0
@@ -28,8 +26,7 @@ class EmotionStore {
     private var lastTapTime: Date?
     private var lastTappedEmotionName: String?
     private var emotionSelectionOrdinals: [String: Int] = [:]
-    private var emotionRecentContributions: [String: TimeInterval] = [:]
-    private var recentContributionsUpdatedAt: Date?
+    private var emotionRankingScores: [String: Double] = [:]
     private var nextSelectionOrdinal = 0
     var accruingEmotionID: String? { lastTappedEmotionName }
     var accruingStartedAt: Date? { lastTapTime }
@@ -45,12 +42,13 @@ class EmotionStore {
         static let lastTap = "checkin_lastTapTime"
         static let lastTappedEmotion = "checkin_lastTappedEmotion"
         static let emotionSelectionOrdinals = "checkin_emotionSelectionOrdinals"
-        static let emotionRecentContributions = "checkin_emotionRecentContributions"
-        static let recentContributionsUpdatedAt = "checkin_recentContributionsUpdatedAt"
+        static let emotionRankingScores = "checkin_emotionRankingScores"
         static let nextSelectionOrdinal = "checkin_nextSelectionOrdinal"
         static let lastInteraction = "checkin_lastInteractionTime"
         static let sessionStart = "checkin_sessionStartTime"
         static let recentMeditationPlays = "recentMeditationPlays"
+        static let deprecatedEmotionRecentContributions = "checkin_emotionRecentContributions"
+        static let deprecatedRecentContributionsUpdatedAt = "checkin_recentContributionsUpdatedAt"
         static let deprecatedEmotionLastTapOrdinals = "checkin_emotionLastTapOrdinals"
         static let deprecatedNextTapOrdinal = "checkin_nextTapOrdinal"
     }
@@ -104,11 +102,9 @@ class EmotionStore {
         guard let emotionName = lastTappedEmotionName,
               emotionCounts[emotionName, default: 0] > 0 else { return nil }
 
-        decayRecentContributions(at: now)
         sessionTime += credit
         emotionTimeContributions[emotionName, default: 0] += credit
-        emotionRecentContributions[emotionName, default: 0] += credit
-        recentContributionsUpdatedAt = now
+        addRankingCredit(to: emotionName, duration: credit)
         return TimeCredit(
             emotionID: emotionName,
             totalContribution: emotionTimeContributions[emotionName, default: 0]
@@ -120,16 +116,16 @@ class EmotionStore {
             nextSelectionOrdinal += 1
             emotionSelectionOrdinals[emotion.name] = nextSelectionOrdinal
         }
+        if emotionRankingScores[emotion.name] == nil {
+            emotionRankingScores[emotion.name] = 0
+        }
     }
 
     func deselect(_ emotion: Emotion) {
         emotionCounts.removeValue(forKey: emotion.name)
         emotionTimeContributions.removeValue(forKey: emotion.name)
         emotionSelectionOrdinals.removeValue(forKey: emotion.name)
-        emotionRecentContributions.removeValue(forKey: emotion.name)
-        if emotionRecentContributions.isEmpty {
-            recentContributionsUpdatedAt = nil
-        }
+        emotionRankingScores.removeValue(forKey: emotion.name)
         if lastTappedEmotionName == emotion.name {
             lastTappedEmotionName = nil
             lastTapTime = nil
@@ -162,61 +158,27 @@ class EmotionStore {
         selectedEmotionsSorted(asOf: nil)
     }
 
-    /// Selected emotions for the main check-in grid. Recently committed seconds
-    /// count twice through an exponentially decaying bonus. Scores are rounded
-    /// into ten-second bands so tiny differences do not continuously rearrange
-    /// the grid, and live accrual is deliberately excluded until it is committed.
+    /// Selected emotions for the main check-in grid. The hidden ranking score is
+    /// an exponential moving share of committed feeling time with a ten-minute
+    /// half-life. This is equivalent to making each new second worth twice as
+    /// much after every ten minutes of total credited time. Live accrual is
+    /// deliberately excluded until it is committed.
     func selectedEmotionsRankedForCheckIn() -> [Emotion] {
         let selected = Emotion.all.filter { isSelected($0) }
         guard selected.count > 1 else { return selected }
 
-        let highestTime = selected.map { timeContribution(for: $0) }.max() ?? 0
-        if highestTime < Self.rankingBandDuration {
-            return selected.sorted(by: selectionOrder)
-        }
-
         return selected.sorted { lhs, rhs in
-            let lhsBand = rankingBand(for: lhs)
-            let rhsBand = rankingBand(for: rhs)
-            if lhsBand != rhsBand { return lhsBand > rhsBand }
+            let lhsScore = emotionRankingScores[lhs.name, default: 0]
+            let rhsScore = emotionRankingScores[rhs.name, default: 0]
+            if lhsScore != rhsScore { return lhsScore > rhsScore }
             return selectionOrder(lhs, rhs)
         }
     }
 
-    private func rankingBand(for emotion: Emotion) -> Int {
-        let total = timeContribution(for: emotion)
-        let recent = emotionRecentContributions[emotion.name, default: 0]
-        let effectiveTime = total + recent * Self.recentContributionBonus
-        return Int((effectiveTime / Self.rankingBandDuration).rounded())
-    }
-
-    @discardableResult
-    private func decayRecentContributions(at now: Date) -> Bool {
-        guard !emotionRecentContributions.isEmpty else {
-            recentContributionsUpdatedAt = nil
-            return false
-        }
-        guard let updatedAt = recentContributionsUpdatedAt else {
-            recentContributionsUpdatedAt = now
-            return true
-        }
-
-        let elapsed = now.timeIntervalSince(updatedAt)
-        guard elapsed > 0 else {
-            if elapsed < 0 {
-                recentContributionsUpdatedAt = now
-                return true
-            }
-            return false
-        }
-
-        let decayFactor = pow(0.5, elapsed / Self.recentContributionHalfLife)
-        emotionRecentContributions = emotionRecentContributions.compactMapValues { value in
-            let decayed = value * decayFactor
-            return decayed >= 0.01 ? decayed : nil
-        }
-        recentContributionsUpdatedAt = emotionRecentContributions.isEmpty ? nil : now
-        return true
+    private func addRankingCredit(to emotionName: String, duration: TimeInterval) {
+        let retainedShare = pow(0.5, duration / Self.rankingScoreHalfLife)
+        emotionRankingScores = emotionRankingScores.mapValues { $0 * retainedShare }
+        emotionRankingScores[emotionName, default: 0] += 1 - retainedShare
     }
 
     private func selectionOrder(_ lhs: Emotion, _ rhs: Emotion) -> Bool {
@@ -440,8 +402,7 @@ class EmotionStore {
         emotionCounts = [:]
         emotionTimeContributions = [:]
         emotionSelectionOrdinals = [:]
-        emotionRecentContributions = [:]
-        recentContributionsUpdatedAt = nil
+        emotionRankingScores = [:]
         nextSelectionOrdinal = 0
         sessionTime = 0
         lastTapTime = nil
@@ -456,13 +417,10 @@ class EmotionStore {
         defaults.set(emotionCounts, forKey: SessionKeys.emotionCounts)
         defaults.set(emotionTimeContributions, forKey: SessionKeys.emotionTimeContributions)
         defaults.set(emotionSelectionOrdinals, forKey: SessionKeys.emotionSelectionOrdinals)
-        defaults.set(emotionRecentContributions, forKey: SessionKeys.emotionRecentContributions)
+        defaults.set(emotionRankingScores, forKey: SessionKeys.emotionRankingScores)
         defaults.set(nextSelectionOrdinal, forKey: SessionKeys.nextSelectionOrdinal)
-        if let updatedAt = recentContributionsUpdatedAt {
-            defaults.set(updatedAt.timeIntervalSince1970, forKey: SessionKeys.recentContributionsUpdatedAt)
-        } else {
-            defaults.removeObject(forKey: SessionKeys.recentContributionsUpdatedAt)
-        }
+        defaults.removeObject(forKey: SessionKeys.deprecatedEmotionRecentContributions)
+        defaults.removeObject(forKey: SessionKeys.deprecatedRecentContributionsUpdatedAt)
         defaults.removeObject(forKey: SessionKeys.deprecatedEmotionLastTapOrdinals)
         defaults.removeObject(forKey: SessionKeys.deprecatedNextTapOrdinal)
         defaults.set(sessionTime, forKey: SessionKeys.sessionTime)
@@ -499,14 +457,14 @@ class EmotionStore {
         if let ordinals = defaults.dictionary(forKey: SessionKeys.emotionSelectionOrdinals) as? [String: Int] {
             emotionSelectionOrdinals = ordinals
         }
-        if let contributions = defaults.dictionary(forKey: SessionKeys.emotionRecentContributions) as? [String: Double] {
-            emotionRecentContributions = contributions
+        let loadedRankingScores: Bool
+        if let scores = defaults.dictionary(forKey: SessionKeys.emotionRankingScores) as? [String: Double] {
+            emotionRankingScores = scores
+            loadedRankingScores = true
+        } else {
+            loadedRankingScores = false
         }
         nextSelectionOrdinal = defaults.integer(forKey: SessionKeys.nextSelectionOrdinal)
-        let recentStamp = defaults.double(forKey: SessionKeys.recentContributionsUpdatedAt)
-        if recentStamp > 0 {
-            recentContributionsUpdatedAt = Date(timeIntervalSince1970: recentStamp)
-        }
         let time = defaults.double(forKey: SessionKeys.sessionTime)
         if time > 0 { sessionTime = time }
         let tapStamp = defaults.double(forKey: SessionKeys.lastTap)
@@ -521,18 +479,19 @@ class EmotionStore {
             sessionStartTime = lastInteractionTime ?? Date()
         }
         let rankingMetadataChanged = backfillRankingMetadataIfNeeded()
-        let recentContributionsChanged = decayRecentContributions(at: Date())
-        if rankingMetadataChanged || recentContributionsChanged {
+        let rankingScoresChanged = repairRankingScores(backfillFromTime: !loadedRankingScores)
+        if rankingMetadataChanged || rankingScoresChanged {
             saveSession()
         } else {
+            defaults.removeObject(forKey: SessionKeys.deprecatedEmotionRecentContributions)
+            defaults.removeObject(forKey: SessionKeys.deprecatedRecentContributionsUpdatedAt)
             defaults.removeObject(forKey: SessionKeys.deprecatedEmotionLastTapOrdinals)
             defaults.removeObject(forKey: SessionKeys.deprecatedNextTapOrdinal)
         }
     }
 
-    /// Sessions saved before ranking metadata existed retain their prior
-    /// deterministic time order. Their existing seconds begin as old rather
-    /// than receiving an artificial recency boost.
+    /// Sessions saved before selection metadata existed retain their prior
+    /// deterministic time order.
     private func backfillRankingMetadataIfNeeded() -> Bool {
         let selected = selectedEmotionsSorted()
         let selectedIDs = Set(selected.map(\.id))
@@ -551,6 +510,31 @@ class EmotionStore {
         }
         nextSelectionOrdinal = selected.count
         return true
+    }
+
+    /// Existing sessions predate the hidden score, so preserve their ordering by
+    /// treating each emotion's committed-time share as its initial score. Future
+    /// credits then converge naturally to the new exponential weighting.
+    private func repairRankingScores(backfillFromTime: Bool) -> Bool {
+        let selectedIDs = Set(Emotion.all.filter { isSelected($0) }.map(\.id))
+        let previousScores = emotionRankingScores
+
+        emotionRankingScores = emotionRankingScores.filter { selectedIDs.contains($0.key) }
+        if backfillFromTime {
+            let committedTime = emotionTimeContributions.values.reduce(0, +)
+            emotionRankingScores = Dictionary(uniqueKeysWithValues: selectedIDs.map { emotionID in
+                let score = committedTime > 0
+                    ? emotionTimeContributions[emotionID, default: 0] / committedTime
+                    : 0
+                return (emotionID, score)
+            })
+        } else {
+            for emotionID in selectedIDs where emotionRankingScores[emotionID] == nil {
+                emotionRankingScores[emotionID] = 0
+            }
+        }
+
+        return emotionRankingScores != previousScores
     }
 
     // MARK: - Journal Persistence
