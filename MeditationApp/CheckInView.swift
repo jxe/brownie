@@ -779,10 +779,15 @@ private struct EmotionPickerSheet: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(.secondarySystemBackground))
+                        EmotionChipBackground(emotion: emotion, colorScheme: colorScheme)
                     )
-                    .foregroundStyle(.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.25)
+                            .opacity(emotion.category == .positive ? 1 : 0)
+                    )
+                    .foregroundStyle(colorScheme == .dark ? .white : .black)
                 }
                 .buttonStyle(.plain)
                 .overlay(
