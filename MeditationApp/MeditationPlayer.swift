@@ -254,8 +254,9 @@ class MeditationPlayer: NSObject {
     // MARK: - Controls
 
     func play(_ meditation: Meditation, sourceURL: URL? = nil) {
-        stop()
-        playbackGeneration += 1
+        // Keep the audio session active while replacing playback. Deactivating it here
+        // only to reactivate it below adds avoidable latency to every row tap.
+        resetPlayback(deactivateAudioSession: false)
         let generation = playbackGeneration
         configureAudioSession()
         currentSourceURL = sourceURL
@@ -486,6 +487,10 @@ class MeditationPlayer: NSObject {
     }
 
     func stop() {
+        resetPlayback(deactivateAudioSession: true)
+    }
+
+    private func resetPlayback(deactivateAudioSession: Bool) {
         playbackGeneration += 1
         renderTask?.cancel()
         renderTask = nil
@@ -505,10 +510,12 @@ class MeditationPlayer: NSObject {
         estimatedEndTime = nil
         clearNowPlayingInfo()
 
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("Audio session deactivation error: \(error)")
+        if deactivateAudioSession {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            } catch {
+                print("Audio session deactivation error: \(error)")
+            }
         }
     }
 

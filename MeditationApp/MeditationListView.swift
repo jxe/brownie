@@ -6,6 +6,7 @@ struct MeditationListView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @State private var files: [URL] = []
+    @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
     @State private var allTags: [String] = []
@@ -106,6 +107,7 @@ struct MeditationListView: View {
                     filename: $editorFilename,
                     isNew: $isNewFile
                 ) { savedFilename, savedContent in
+                    player.stop()
                     _ = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
                     refreshFiles()
                 }
@@ -315,15 +317,24 @@ struct MeditationListView: View {
 
     private func refreshFiles() {
         files = FileManager.default.meditationFiles()
+        var contentMap: [URL: String] = [:]
         var titleMap: [URL: String] = [:]
         var tagMap: [URL: [String]] = [:]
         var tagSet: Set<String> = []
         for url in files {
-            let (title, tags) = metadataFor(url)
+            let loadedContent = FileManager.default.readMeditation(at: url)
+            let content = loadedContent ?? ""
+            if let loadedContent {
+                contentMap[url] = loadedContent
+            }
+            let meta = MeditationParser.parseMetadata(content)
+            let title = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
+            let tags = meta.tags
             titleMap[url] = title
             tagMap[url] = tags
             tagSet.formUnion(tags)
         }
+        fileContents = contentMap
         fileTitles = titleMap
         fileTags = tagMap
         allTags = sortedTags(tagSet)
@@ -344,7 +355,7 @@ struct MeditationListView: View {
     }
 
     private func metadataFor(_ url: URL) -> (title: String, tags: [String]) {
-        let content = FileManager.default.readMeditation(at: url) ?? ""
+        let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) ?? ""
         let meta = MeditationParser.parseMetadata(content)
         let title = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
         return (title, meta.tags)
@@ -355,24 +366,23 @@ struct MeditationListView: View {
     }
 
     private func playFile(_ url: URL) {
-        guard let content = FileManager.default.readMeditation(at: url) else { return }
+        guard let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) else { return }
         let meditation = MeditationParser.parse(content)
         store.markMeditationPlayed(filename: url.deletingPathExtension().lastPathComponent)
         player.play(meditation, sourceURL: url)
     }
 
     private func editFile(_ url: URL) {
-        if player.currentSourceURL == url {
-            player.stop()
-        }
-        editorContent = FileManager.default.readMeditation(at: url) ?? ""
+        player.stop()
+        editorContent = fileContents[url] ?? FileManager.default.readMeditation(at: url) ?? ""
         editorFilename = url.deletingPathExtension().lastPathComponent
         isNewFile = false
         showingEditor = true
     }
 
     private func editCopy(_ url: URL) {
-        guard let content = FileManager.default.readMeditation(at: url) else { return }
+        player.stop()
+        guard let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) else { return }
         let baseName = url.deletingPathExtension().lastPathComponent
 
         let dateFormatter = DateFormatter()
@@ -466,21 +476,34 @@ private struct TagEditTarget: Identifiable {
 
 private struct DisableScrollTouchDelay: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
+        let view = ScrollTouchDelayDisablingView(frame: .zero)
         view.isUserInteractionEnabled = false
-        DispatchQueue.main.async {
-            var current: UIView? = view.superview
-            while let parent = current {
-                if let scrollView = parent as? UIScrollView {
-                    scrollView.delaysContentTouches = false
-                    break
-                }
-                current = parent.superview
-            }
-        }
         return view
     }
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {
+        (uiView as? ScrollTouchDelayDisablingView)?.disableNearestScrollViewDelay()
+    }
+}
+
+private final class ScrollTouchDelayDisablingView: UIView {
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        disableNearestScrollViewDelay()
+        DispatchQueue.main.async { [weak self] in
+            self?.disableNearestScrollViewDelay()
+        }
+    }
+
+    func disableNearestScrollViewDelay() {
+        var current = superview
+        while let parent = current {
+            if let scrollView = parent as? UIScrollView {
+                scrollView.delaysContentTouches = false
+                return
+            }
+            current = parent.superview
+        }
+    }
 }
 
 private struct MeditationRowPressStyle: ButtonStyle {

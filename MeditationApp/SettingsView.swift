@@ -102,18 +102,20 @@ struct SettingsView: View {
             }
 
             Section {
-                HStack {
-                    Label("Current Folder", systemImage: "folder")
-                    Spacer()
-                    Text(storageDisplayName)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                }
-
                 Button {
                     showingFolderImporter = true
                 } label: {
-                    Label("Choose iCloud Drive Folder…", systemImage: "folder.badge.plus")
+                    HStack {
+                        Label("Folder", systemImage: "folder")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(storageDisplayName)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
 
                 if storageMode != .local {
@@ -122,6 +124,22 @@ struct SettingsView: View {
                     } label: {
                         Label("Use On This iPhone", systemImage: "iphone")
                     }
+                }
+
+                if FileManager.default.meditationStorageIsCloudBacked,
+                   FileManager.default.meditationStorageIsAvailable {
+                    Button {
+                        refreshFolder()
+                    } label: {
+                        HStack {
+                            Label("Refresh Folder", systemImage: "arrow.clockwise.icloud")
+                            if isRefreshing {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isRefreshing)
                 }
             } header: {
                 Text("Meditation Folder")
@@ -137,23 +155,6 @@ struct SettingsView: View {
                 }
             }
 
-            if FileManager.default.meditationStorageIsCloudBacked,
-               FileManager.default.meditationStorageIsAvailable {
-                Section {
-                    Button {
-                        refreshFolder()
-                    } label: {
-                        HStack {
-                            Label("Refresh Folder", systemImage: "arrow.clockwise.icloud")
-                            if isRefreshing {
-                                Spacer()
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(isRefreshing)
-                }
-            }
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
@@ -314,6 +315,7 @@ struct SettingsView: View {
 
     private func refreshFolder() {
         guard !isRefreshing else { return }
+        player.stop()
 
         guard FileManager.default.meditationStorageIsCloudBacked else {
             NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
