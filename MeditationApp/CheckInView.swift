@@ -432,11 +432,6 @@ private struct SelectedEmotionChipView: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.25)
-                    .opacity(emotion.category == .positive ? 1 : 0)
-            )
             .foregroundStyle(colorScheme == .dark ? .white : .black)
         }
         .accessibilityValue(accessibilityValue)
@@ -782,11 +777,6 @@ private struct EmotionPickerSheet: View {
                         EmotionChipBackground(emotion: emotion, colorScheme: colorScheme)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.25)
-                            .opacity(emotion.category == .positive ? 1 : 0)
-                    )
                     .foregroundStyle(colorScheme == .dark ? .white : .black)
                 }
                 .buttonStyle(.plain)
@@ -884,11 +874,6 @@ private struct FlightChipView: View {
         .background(
             EmotionChipBackground(emotion: emotion, colorScheme: colorScheme)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0), lineWidth: colorScheme == .dark ? 0.75 : 1.5)
-                .opacity(emotion.category == .positive ? 1 : 0)
-        )
         .foregroundStyle(colorScheme == .dark ? .white : .black)
     }
 }
@@ -899,9 +884,39 @@ private struct EmotionChipBackground: View {
 
     var body: some View {
         GeometryReader { geo in
-            RoundedRectangle(cornerRadius: 10)
-                .fill(emotion.chipGradient(for: colorScheme, size: geo.size))
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(emotion.chipGradient(for: colorScheme, size: geo.size))
+                if emotion.category == .positive {
+                    DiagonalStripes(spacing: 16, lineWidth: 4)
+                        .stroke(
+                            (colorScheme == .dark ? Color.black : Color.white).opacity(0.10),
+                            style: StrokeStyle(lineWidth: 4, lineCap: .butt)
+                        )
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
+    }
+}
+
+/// Parallel 45° lines running bottom-left to top-right, covering the whole rect.
+private struct DiagonalStripes: Shape {
+    var spacing: CGFloat
+    var lineWidth: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        // Perpendicular spacing → horizontal step for a 45° line.
+        let step = spacing * sqrt(2)
+        let overshoot = rect.height
+        var x = rect.minX - overshoot
+        while x < rect.maxX + overshoot {
+            path.move(to: CGPoint(x: x, y: rect.maxY))
+            path.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
+            x += step
+        }
+        return path
     }
 }
 
