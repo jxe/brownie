@@ -1,5 +1,6 @@
 import AVFoundation
 import MediaPlayer
+import UIKit
 
 @Observable
 class MeditationPlayer: NSObject {
@@ -21,7 +22,8 @@ class MeditationPlayer: NSObject {
     var totalSteps = 0
     var currentSourceURL: URL?
     var elapsedSeconds: Int = 0
-    private(set) var estimatedEndTime: Date?
+    /// Total length of the current meditation, set once every step has been rendered.
+    private(set) var totalSeconds: Int?
 
     var selectedVoiceID: String {
         didSet { UserDefaults.standard.set(selectedVoiceID, forKey: "selectedVoiceID") }
@@ -96,6 +98,7 @@ class MeditationPlayer: NSObject {
     @ObservationIgnored private var currentTitle = ""
     @ObservationIgnored private var playbackStarted = false
     @ObservationIgnored private var playbackGeneration = 0
+    @ObservationIgnored private var isAppInForeground = true
 
     override init() {
         if let saved = UserDefaults.standard.string(forKey: "selectedVoiceID"),
@@ -110,6 +113,37 @@ class MeditationPlayer: NSObject {
         super.init()
         setupRemoteCommands()
         observeInterruptions()
+        observeAppLifecycle()
+    }
+
+    // MARK: - App Lifecycle
+
+    /// Nothing can see playback position while the app is backgrounded (e.g. the phone is
+    /// locked), so stop the position timer then; the lock screen extrapolates from Now Playing info.
+    private func observeAppLifecycle() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc private func appDidEnterBackground() {
+        isAppInForeground = false
+        streamingPlayer?.isPositionTrackingEnabled = false
+    }
+
+    @objc private func appWillEnterForeground() {
+        isAppInForeground = true
+        streamingPlayer?.isPositionTrackingEnabled = true
+        updateNowPlayingInfo()
     }
 
     // MARK: - Audio Session
@@ -231,11 +265,6 @@ class MeditationPlayer: NSObject {
 
         if let player = streamingPlayer {
             let elapsed = player.currentTime() ?? TimeInterval(elapsedSeconds)
-            if isPlaying {
-                estimatedEndTime = Date.now.addingTimeInterval(
-                    max(0, player.totalDuration - elapsed)
-                )
-            }
             info[MPMediaItemPropertyPlaybackDuration] = player.totalDuration
             if state == .finished {
                 info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0
@@ -258,7 +287,6 @@ class MeditationPlayer: NSObject {
         // only to reactivate it below adds avoidable latency to every row tap.
         resetPlayback(deactivateAudioSession: false)
         let generation = playbackGeneration
-        configureAudioSession()
         currentSourceURL = sourceURL
         currentMeditation = meditation
         currentTitle = meditation.title
@@ -284,6 +312,7 @@ class MeditationPlayer: NSObject {
         playbackStarted = false
 
         let player = StreamingPlayer(format: renderer.format)
+        player.isPositionTrackingEnabled = isAppInForeground
         self.streamingPlayer = player
 
         player.onPlaybackFinished = { [weak self] in
@@ -296,22 +325,43 @@ class MeditationPlayer: NSObject {
             if self.elapsedSeconds != elapsed { self.elapsedSeconds = elapsed }
         }
 
-        do {
-            try player.setup()
-        } catch {
-            print("StreamingPlayer setup error: \(error)")
-            stop()
-            return
-        }
-
-        updateNowPlayingInfo()
-
         // Render and schedule buffers in background
         let voice = self.voice
         let rate = self.speakingRate
 
         renderTask = Task { [weak self, renderer] in
             guard let owner = self else { return }
+
+            // Activating the audio session and starting the engine can each block for tens of
+            // milliseconds. Doing them off the main thread keeps the row's tap animation smooth.
+            let setupError: Error?
+            do {
+                owner.configureAudioSession()
+                try player.setup()
+                setupError = nil
+            } catch {
+                setupError = error
+            }
+            let shouldContinue = await MainActor.run { () -> Bool in
+                guard owner.playbackGeneration == generation else {
+                    // Replaced or stopped while we were starting up; don't leave this engine
+                    // (or the audio session) running behind it.
+                    player.stop()
+                    if owner.state == .idle {
+                        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                    }
+                    return false
+                }
+                if let setupError {
+                    print("StreamingPlayer setup error: \(setupError)")
+                    owner.stop()
+                    return false
+                }
+                owner.updateNowPlayingInfo()
+                return true
+            }
+            guard shouldContinue else { return }
+
             struct ActiveTail { let buffer: AVAudioPCMBuffer; var frame: Int }
             var activeTails: [ActiveTail] = []
             var didReportRenderFailure = false
@@ -445,8 +495,12 @@ class MeditationPlayer: NSObject {
             }
 
             await MainActor.run {
-                guard owner.playbackGeneration == generation, !owner.playbackStarted else { return }
-                owner.stop()
+                guard owner.playbackGeneration == generation else { return }
+                if !owner.playbackStarted {
+                    owner.stop()
+                } else if owner.state != .finished {
+                    owner.totalSeconds = Int(player.totalDuration.rounded())
+                }
             }
         }
     }
@@ -507,7 +561,7 @@ class MeditationPlayer: NSObject {
         currentTitle = ""
         playbackStarted = false
         elapsedSeconds = 0
-        estimatedEndTime = nil
+        totalSeconds = nil
         clearNowPlayingInfo()
 
         if deactivateAudioSession {
@@ -526,7 +580,7 @@ class MeditationPlayer: NSObject {
         state = .finished
         currentText = ""
         elapsedSeconds = 0
-        estimatedEndTime = nil
+        totalSeconds = nil
         renderTask?.cancel()
         renderTask = nil
         streamingPlayer?.stop()

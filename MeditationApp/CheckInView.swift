@@ -42,15 +42,14 @@ struct CheckInView: View {
     @State private var destinationFrameUpdateScheduled = false
     @State private var floatingTimeEvents: [String: [FloatingTimeEvent]] = [:]
     @State private var autoStopAccruingWorkItem: DispatchWorkItem?
-    @State private var liveNow = Date()
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10),
     ]
 
-    private var formattedSessionTime: String {
-        ChipTimeFormatter.string(from: store.sessionTime(asOf: liveNow))
+    private var isAccruingOnScreen: Bool {
+        isActive && scenePhase == .active && store.accruingEmotionID != nil
     }
 
     private var selectedEmotions: [Emotion] {
@@ -70,7 +69,6 @@ struct CheckInView: View {
                                 emotion: emotion,
                                 isAccruing: store.accruingEmotionID == emotion.id,
                                 hasReflection: store.hasReflectionInCurrentSession(for: emotion),
-                                timeContribution: store.timeContribution(for: emotion, asOf: liveNow),
                                 floatingTimes: floatingTimeEvents[emotion.id, default: []],
                                 onTap: { tapSelectedEmotion(emotion) },
                                 onReflect: { navigationPath.append(emotion) }
@@ -173,7 +171,7 @@ struct CheckInView: View {
             .navigationTitle("Feelings")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Text(formattedSessionTime)
+                    LiveTimeText(isLive: isAccruingOnScreen) { store.sessionTime(asOf: $0) }
                         .font(.subheadline)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -201,13 +199,11 @@ struct CheckInView: View {
         }
         .onAppear {
             clearStaleSessionWithoutAnimation()
-            liveNow = Date()
             scheduleAutoStopAccruing()
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 clearStaleSessionWithoutAnimation()
-                liveNow = Date()
                 scheduleAutoStopAccruing()
             } else {
                 stopAccruingWithoutAnimation()
@@ -215,15 +211,10 @@ struct CheckInView: View {
         }
         .onChange(of: isActive) { _, active in
             if active {
-                liveNow = Date()
                 scheduleAutoStopAccruing()
             } else {
                 stopAccruingWithoutAnimation()
             }
-        }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
-            guard isActive, scenePhase == .active, store.accruingEmotionID != nil else { return }
-            liveNow = now
         }
         .sheet(isPresented: $showingNegativeSheet) {
             EmotionPickerSheet(
@@ -276,7 +267,6 @@ struct CheckInView: View {
         if let creditedEmotion = store.tap(emotion) {
             showFloatingTime(creditedEmotion)
         }
-        liveNow = Date()
         scheduleAutoStopAccruing()
     }
 
@@ -306,13 +296,11 @@ struct CheckInView: View {
         if let creditedEmotion = store.stopAccruing() {
             showFloatingTime(creditedEmotion)
         }
-        liveNow = Date()
     }
 
     private func stopAccruingWithoutAnimation() {
         cancelAutoStopAccruing()
         store.stopAccruing()
-        liveNow = Date()
     }
 
     private func scheduleAutoStopAccruing() {
@@ -366,7 +354,6 @@ private struct SelectedEmotionChipView: View {
     let emotion: Emotion
     let isAccruing: Bool
     let hasReflection: Bool
-    let timeContribution: TimeInterval
     let floatingTimes: [FloatingTimeEvent]
     var onTap: () -> Void
     var onReflect: () -> Void
@@ -397,7 +384,7 @@ private struct SelectedEmotionChipView: View {
     private var accessibilityValue: String {
         var values: [String] = []
         if isAccruing {
-            values.append("Timing, \(ChipTimeFormatter.string(from: timeContribution))")
+            values.append("Timing, \(ChipTimeFormatter.string(from: store.timeContribution(for: emotion, asOf: Date())))")
         }
         if hasReflection {
             values.append("Reflected")
@@ -468,7 +455,7 @@ private struct SelectedEmotionChipView: View {
                     .animation(.easeOut(duration: 0.12), value: isAccruing)
 
                 if isAccruing {
-                    Text(ChipTimeFormatter.string(from: timeContribution))
+                    LiveTimeText(isLive: true) { store.timeContribution(for: emotion, asOf: $0) }
                         .font(.caption2)
                         .fontWeight(.semibold)
                         .monospacedDigit()
@@ -611,6 +598,30 @@ private struct FloatingTimeContributionView: View {
                     isVisible = true
                 }
             }
+    }
+}
+
+/// A session/emotion time total that counts up live while an emotion is accruing. Only this
+/// text re-renders each second; the rest of the Check In screen stays idle.
+private struct LiveTimeText: View {
+    let isLive: Bool
+    let seconds: (Date) -> TimeInterval
+    @Environment(EmotionStore.self) private var store
+
+    init(isLive: Bool, seconds: @escaping (Date) -> TimeInterval) {
+        self.isLive = isLive
+        self.seconds = seconds
+    }
+
+    var body: some View {
+        if isLive, let startedAt = store.accruingStartedAt {
+            // Anchored to the tap so the displayed seconds roll over on time.
+            TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                Text(ChipTimeFormatter.string(from: seconds(context.date)))
+            }
+        } else {
+            Text(ChipTimeFormatter.string(from: seconds(Date())))
+        }
     }
 }
 

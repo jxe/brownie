@@ -148,9 +148,8 @@ struct MeditationListView: View {
             || hasLogToday
             || store.wasRecentlyPlayed(filename: filename)
         let tags = fileTags[url] ?? []
-        let showElapsedTime = isCurrent && !isPreparing && (player.isPlaying || player.elapsedSeconds > 0)
-        let elapsedText = showElapsedTime ? formatTime(player.elapsedSeconds) : "0:00"
-        let endTime = isCurrent ? player.estimatedEndTime : nil
+        // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
+        let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
         let showTags = !showElapsedTime && !isPreparing && !tags.isEmpty
         let activeFill = Color.yellow.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.62)
         let inactiveFill = Color("HighlightColor").opacity(0.3)
@@ -172,25 +171,16 @@ struct MeditationListView: View {
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.6))
-                        ZStack {
-                            PlayingPulseDot(isPulsing: isActive)
-                                .opacity(isEngaged ? 1 : 0)
-                        }
-                        .frame(width: 12, height: 12)
-                        .clipped()
-                        .animation(.easeOut(duration: 0.2), value: isEngaged)
+                        PlayingPulseDot(isPulsing: isActive)
+                            .frame(width: 12, height: 12)
+                            .opacity(isEngaged ? 1 : 0)
+                            .scaleEffect(isEngaged ? 1 : 0.4)
                     }
                     ZStack(alignment: .leading) {
-                        HStack(spacing: 6) {
-                            Text(elapsedText)
-                            if let endTime {
-                                Text("·")
-                                Text("Ends \(endTime.formatted(date: .omitted, time: .shortened))")
-                            }
+                        if showElapsedTime {
+                            PlaybackTimeLabel()
+                                .transition(.opacity.combined(with: .offset(y: 4)))
                         }
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
-                        .opacity(showElapsedTime ? 1 : 0)
                         if !tags.isEmpty {
                             HStack(spacing: 4) {
                                 ForEach(tags, id: \.self) { tag in
@@ -206,8 +196,6 @@ struct MeditationListView: View {
                         }
                     }
                     .frame(minHeight: 17, alignment: .leading)
-                    .animation(.easeInOut(duration: 0.18), value: showElapsedTime)
-                    .animation(.easeInOut(duration: 0.18), value: showTags)
                 }
 
                 Spacer()
@@ -227,9 +215,13 @@ struct MeditationListView: View {
                         .opacity(isEngaged ? 1 : 0)
                 }
                     .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .animation(.easeInOut(duration: 0.2), value: isEngaged)
             )
             .shadow(color: .black.opacity(isEngaged ? 0.08 : 0.0), radius: isEngaged ? 6 : 0, y: isEngaged ? 3 : 0)
+            // One snappy transaction for every piece of the state change, so fill, rim, shadow,
+            // title, dot, and time label move together instead of on separate slow curves.
+            .animation(.snappy(duration: 0.22), value: isEngaged)
+            .animation(.snappy(duration: 0.22), value: showElapsedTime)
+            .animation(.snappy(duration: 0.22), value: showTags)
             .contentShape(RoundedRectangle(cornerRadius: 14))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
@@ -307,12 +299,6 @@ struct MeditationListView: View {
                 Label("Archive", systemImage: "archivebox")
             }
         }
-    }
-
-    private func formatTime(_ totalSeconds: Int) -> String {
-        let m = totalSeconds / 60
-        let s = totalSeconds % 60
-        return String(format: "%d:%02d", m, s)
     }
 
     private func refreshFiles() {
@@ -519,40 +505,130 @@ private struct MeditationRowPressContent: View {
 
     var body: some View {
         label
-            .scaleEffect(reduceMotion || !isPressed ? 1.0 : 0.985)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isPressed)
+            .scaleEffect(reduceMotion || !isPressed ? 1.0 : 0.965)
+            .brightness(isPressed ? -0.03 : 0)
+            // Press down immediately; spring back with a little life on release.
+            .animation(
+                reduceMotion ? nil : (isPressed ? .easeOut(duration: 0.08) : .spring(duration: 0.35, bounce: 0.45)),
+                value: isPressed
+            )
     }
 }
 
-private struct PlayingPulseDot: View {
+/// Elapsed time and total length of the current meditation. Kept in its own view so the
+/// once-a-second elapsedSeconds tick only re-renders this label, not the list.
+private struct PlaybackTimeLabel: View {
+    @Environment(MeditationPlayer.self) private var player
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(Self.formatTime(player.elapsedSeconds))
+            if let total = player.totalSeconds {
+                Text("/")
+                Text(Self.formatTime(total))
+            }
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .foregroundStyle(Color.accentColor)
+    }
+
+    private static func formatTime(_ totalSeconds: Int) -> String {
+        String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+/// Pulsing "now playing" dot. The pulse is a Core Animation layer animation, so it runs in the
+/// render server with no per-frame work in the app, and exists only while actually pulsing.
+private struct PlayingPulseDot: UIViewRepresentable {
     let isPulsing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-            let progress = pulseProgress(at: timeline.date)
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 8, height: 8)
-                .scaleEffect(pulseScale(progress))
-                .opacity(pulseOpacity(progress))
-                .allowsHitTesting(false)
+    func makeUIView(context: Context) -> PulseDotView {
+        let view = PulseDotView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: PulseDotView, context: Context) {
+        view.isPulsing = isPulsing && !reduceMotion
+    }
+}
+
+private final class PulseDotView: UIView {
+    private static let animationKey = "pulse"
+    private let dot = CALayer()
+
+    var isPulsing = false {
+        didSet {
+            guard isPulsing != oldValue else { return }
+            updateAnimation()
         }
     }
 
-    private func pulseProgress(at date: Date) -> Double {
-        guard isPulsing, !reduceMotion else { return 0 }
-        let cycle = 1.8
-        let elapsed = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
-        return 0.5 - 0.5 * cos((elapsed / cycle) * 2 * .pi)
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        layer.addSublayer(dot)
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: PulseDotView, _) in
+            view.updateColor()
+        }
     }
 
-    private func pulseScale(_ progress: Double) -> CGFloat {
-        0.9 + (0.4 * progress)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        dot.bounds = CGRect(x: 0, y: 0, width: 8, height: 8)
+        dot.cornerRadius = 4
+        dot.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+        updateColor()
     }
 
-    private func pulseOpacity(_ progress: Double) -> Double {
-        1.0 - (0.4 * progress)
+    override func tintColorDidChange() {
+        super.tintColorDidChange()
+        updateColor()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateAnimation()
+    }
+
+    private func updateColor() {
+        let color = UIColor(named: "AccentColor") ?? tintColor ?? .systemBlue
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        dot.backgroundColor = color.resolvedColor(with: traitCollection).cgColor
+        CATransaction.commit()
+    }
+
+    private func updateAnimation() {
+        guard isPulsing, window != nil else {
+            dot.removeAnimation(forKey: Self.animationKey)
+            return
+        }
+        guard dot.animation(forKey: Self.animationKey) == nil else { return }
+
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 0.9
+        scale.toValue = 1.3
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = 1.0
+        opacity.toValue = 0.6
+
+        let group = CAAnimationGroup()
+        group.animations = [scale, opacity]
+        group.duration = 0.9
+        group.autoreverses = true
+        group.repeatCount = .infinity
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // Survive the app backgrounding and returning.
+        group.isRemovedOnCompletion = false
+        dot.add(group, forKey: Self.animationKey)
     }
 }
 

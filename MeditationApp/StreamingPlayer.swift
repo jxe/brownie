@@ -31,6 +31,19 @@ class StreamingPlayer {
     var onPositionUpdate: ((_ stepIndex: Int, _ displayText: String, _ elapsedSeconds: Int) -> Void)?
 
     private var positionTimer: Timer?
+    private var isPlaying = false
+    /// Serializes engine setup (which may run off the main thread) against stop().
+    private let engineLock = NSLock()
+
+    /// When false the position timer stays off even while audio plays, e.g. while the app is
+    /// backgrounded and there is no UI to update. Re-enabling reports the position immediately.
+    var isPositionTrackingEnabled = true {
+        didSet {
+            guard isPositionTrackingEnabled != oldValue else { return }
+            updatePositionTracking()
+            if isPositionTrackingEnabled && isPlaying { tickPosition() }
+        }
+    }
 
     init(format: AVAudioFormat) {
         self.format = format
@@ -39,8 +52,12 @@ class StreamingPlayer {
     // MARK: - Setup
 
     func setup() throws {
-        engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: format)
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        if !engine.attachedNodes.contains(playerNode) {
+            engine.attach(playerNode)
+            engine.connect(playerNode, to: engine.mainMixerNode, format: format)
+        }
         try engine.start()
     }
 
@@ -68,19 +85,22 @@ class StreamingPlayer {
 
     func play() {
         playerNode.play()
-        startPositionTracking()
+        isPlaying = true
+        updatePositionTracking()
     }
 
     func pause() {
         playerNode.pause()
         engine.pause()
-        stopPositionTracking()
+        isPlaying = false
+        updatePositionTracking()
     }
 
     func resume() throws {
         try ensureRunning()
         playerNode.play()
-        startPositionTracking()
+        isPlaying = true
+        updatePositionTracking()
     }
 
     /// Restart the audio engine if iOS stopped it (e.g. after interruption or long background pause).
@@ -95,7 +115,10 @@ class StreamingPlayer {
     }
 
     func stop() {
-        stopPositionTracking()
+        isPlaying = false
+        updatePositionTracking()
+        engineLock.lock()
+        defer { engineLock.unlock() }
         playerNode.stop()
         engine.stop()
         engine.reset()
@@ -112,16 +135,20 @@ class StreamingPlayer {
 
     // MARK: - Position Tracking Timer
 
-    private func startPositionTracking() {
-        guard positionTimer == nil else { return }
-        positionTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.tickPosition()
+    private func updatePositionTracking() {
+        if isPlaying && isPositionTrackingEnabled {
+            guard positionTimer == nil else { return }
+            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.tickPosition()
+            }
+            // Let the system coalesce wakeups; the UI only shows whole seconds.
+            timer.tolerance = 0.05
+            RunLoop.main.add(timer, forMode: .common)
+            positionTimer = timer
+        } else {
+            positionTimer?.invalidate()
+            positionTimer = nil
         }
-    }
-
-    private func stopPositionTracking() {
-        positionTimer?.invalidate()
-        positionTimer = nil
     }
 
     private func tickPosition() {
