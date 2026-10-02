@@ -1,6 +1,6 @@
 import Foundation
 
-/// Watches the iCloud Documents container for `.med` file changes and posts
+/// Watches the iCloud Documents container for `.med` and `eras.json` changes and posts
 /// `.meditationsDidChange` whenever files are added, removed, or updated.
 /// Also triggers downloads for any non-current items so list views can read them.
 final class iCloudMeditationWatcher {
@@ -34,7 +34,10 @@ final class iCloudMeditationWatcher {
               FileManager.default.meditationStorageIsAvailable else { return }
 
         let q = NSMetadataQuery()
-        q.predicate = NSPredicate(format: "%K LIKE '*.med'", NSMetadataItemFSNameKey)
+        q.predicate = NSPredicate(
+            format: "(%K LIKE '*.med') OR (%K == %@)",
+            NSMetadataItemFSNameKey, NSMetadataItemFSNameKey, EraIndex.filename
+        )
         switch FileManager.default.meditationStorageMode {
         case .local:
             return

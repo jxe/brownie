@@ -9,8 +9,9 @@ struct MeditationListView: View {
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
-    @State private var allTags: [String] = []
-    @State private var selectedTag: String? = nil
+    @State private var eraIndex = EraIndex()
+    /// nil means the current era, so starting a new era moves the view along with it.
+    @State private var selectedEraOverride: EraSelection? = nil
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
@@ -18,49 +19,108 @@ struct MeditationListView: View {
     @State private var showingSettings = false
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
     @State private var helpfulConfirmURL: URL? = nil
-    @State private var tagEditTarget: TagEditTarget? = nil
+    @State private var eraEditTarget: EraEditTarget? = nil
+    @State private var showingNewEra = false
+    @AppStorage("timelessCollapsed") private var timelessCollapsed = false
 
-    private var filteredFiles: [URL] {
-        guard let tag = selectedTag else { return files }
-        return files.filter { fileTags[$0]?.contains(tag) == true }
+    private var hasEras: Bool { !eraIndex.eras.isEmpty }
+
+    private var selectedEra: EraSelection {
+        if let selectedEraOverride { return selectedEraOverride }
+        if let current = eraIndex.current { return .era(current.tag) }
+        return .older
     }
+
+    private var selectedEraBinding: Binding<EraSelection> {
+        Binding(
+            get: { selectedEra },
+            set: { newValue in
+                selectedEraOverride = newValue == .era(eraIndex.current?.tag ?? "") ? nil : newValue
+            }
+        )
+    }
+
+    private var selectedEraTag: String? {
+        if case .era(let tag) = selectedEra { return tag }
+        return nil
+    }
+
+    private func isTimeless(_ url: URL) -> Bool {
+        fileTags[url]?.contains(EraIndex.timelessTag) == true
+    }
+
+    /// The file's era tags, newest era first.
+    private func eraTags(of url: URL) -> [String] {
+        let tags = fileTags[url] ?? []
+        return eraIndex.eras.map(\.tag).filter { tags.contains($0) }
+    }
+
+    /// Files with no era tag made since the current era started (e.g. created straight in
+    /// iCloud) count as part of the current era.
+    private func isUnassignedNew(_ url: URL) -> Bool {
+        guard let current = eraIndex.current, eraTags(of: url).isEmpty else { return false }
+        return EraIndex.dateString(for: url) >= current.started
+    }
+
+    private var timelessFiles: [URL] {
+        hasEras ? files.filter(isTimeless) : []
+    }
+
+    private var eraFiles: [URL] {
+        guard hasEras else { return files }
+        let rest = files.filter { !isTimeless($0) }
+        switch selectedEra {
+        case .older:
+            return rest.filter { eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
+        case .era(let tag):
+            let isCurrent = tag == eraIndex.current?.tag
+            return rest.filter { fileTags[$0]?.contains(tag) == true || (isCurrent && isUnassignedNew($0)) }
+        }
+    }
+
+    private var eraTitle: String {
+        guard hasEras else { return "Meditations" }
+        switch selectedEra {
+        case .older: return "Older"
+        case .era(let tag): return tag
+        }
+    }
+
     var body: some View {
             List {
-                if !allTags.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(allTags, id: \.self) { tag in
-                                Text(tag)
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(selectedTag == tag ? Color.accentColor : Color.accentColor.opacity(0.18))
-                                    .foregroundStyle(selectedTag == tag ? .white : .primary)
-                                    .clipShape(Capsule())
-                                    .onTapGesture {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            selectedTag = selectedTag == tag ? nil : tag
-                                        }
-                                    }
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
+                if !timelessFiles.isEmpty {
+                    timelessHeader
+                    // Collapsed still shows whatever's playing, so it can be paused.
+                    ForEach(timelessFiles.filter { !timelessCollapsed || player.currentSourceURL == $0 }, id: \.self) { url in
+                        listRow(for: url)
                     }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    sectionCaption(eraTitle)
                 }
-                ForEach(filteredFiles, id: \.self) { url in
-                    rowView(for: url)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                ForEach(eraFiles, id: \.self) { url in
+                    listRow(for: url)
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .navigationTitle("Meditations")
+            .navigationTitle(eraTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleMenu {
+                if hasEras {
+                    Picker("Era", selection: selectedEraBinding) {
+                        ForEach(eraIndex.eras, id: \.tag) { era in
+                            Text(era.tag == eraIndex.current?.tag ? "\(era.tag)  Current" : era.tag)
+                                .tag(EraSelection.era(era.tag))
+                        }
+                        Text("Older").tag(EraSelection.older)
+                    }
+                    Divider()
+                }
+                Button {
+                    showingNewEra = true
+                } label: {
+                    Label("Start New Era…", systemImage: "sparkles")
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -112,13 +172,23 @@ struct MeditationListView: View {
                     refreshFiles()
                 }
             }
-            .sheet(item: $tagEditTarget) { target in
-                TagEditorView(
+            .sheet(item: $eraEditTarget) { target in
+                EraEditorView(
                     title: target.title,
-                    initialTags: target.tags,
-                    suggestions: allTags.filter { !target.tags.contains($0) }
-                ) { newTags in
-                    saveTags(newTags, for: target.url)
+                    eras: eraIndex.eras,
+                    initialSelection: Set(target.tags)
+                ) { selection in
+                    saveEras(selection, for: target.url)
+                }
+            }
+            .sheet(isPresented: $showingNewEra) {
+                NewEraView(
+                    candidates: newEraCandidates,
+                    titles: fileTitles,
+                    existingTags: Set(eraIndex.eras.map(\.tag)),
+                    preselected: Set(eraIndex.current == nil ? [] : eraFilesFor(eraIndex.current!.tag))
+                ) { tag, members in
+                    startEra(tag, members: members)
                 }
             }
             .background(Color("BackgroundColor"))
@@ -131,9 +201,64 @@ struct MeditationListView: View {
             .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { _ in
                 // Watcher only drives list refresh. The player is intentionally not invalidated
                 // here — sync churn must never tear down in-flight playback. User-initiated edit,
-                // archive, and tag-save paths call player.stop() explicitly.
+                // and archive paths call player.stop() explicitly.
                 refreshFiles()
             }
+    }
+
+    private func sectionCaption(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+            .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
+    private var timelessHeader: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) {
+                timelessCollapsed.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("Timeless")
+                if timelessCollapsed {
+                    Text("\(timelessFiles.count)")
+                        .foregroundStyle(.tertiary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(timelessCollapsed ? 0 : 90))
+                Spacer()
+            }
+            .font(.footnote)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 8)
+        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .accessibilityLabel(timelessCollapsed ? "Show timeless meditations" : "Hide timeless meditations")
+    }
+
+    private func listRow(for url: URL) -> some View {
+        rowView(for: url)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    }
+
+    /// Chips for a row: its other eras when eras exist, otherwise every tag as before.
+    private func chipTags(for url: URL) -> [String] {
+        guard hasEras else { return fileTags[url] ?? [] }
+        if isTimeless(url) { return [] }
+        return eraTags(of: url).filter { $0 != selectedEraTag }
     }
 
     @ViewBuilder
@@ -147,7 +272,7 @@ struct MeditationListView: View {
         let showHelpfulToggle = isCurrent
             || hasLogToday
             || store.wasRecentlyPlayed(filename: filename)
-        let tags = fileTags[url] ?? []
+        let tags = chipTags(for: url)
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
         let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
         let showTags = !showElapsedTime && !isPreparing && !tags.isEmpty
@@ -275,8 +400,8 @@ struct MeditationListView: View {
             .tint(.orange)
         }
         .swipeActions(edge: .leading) {
-            Button { editTags(url) } label: {
-                Label("Tags", systemImage: "tag")
+            Button { editEras(url) } label: {
+                Label("Eras", systemImage: "sparkles")
             }
             .tint(.accentColor)
         }
@@ -291,8 +416,8 @@ struct MeditationListView: View {
             Button { editCopy(url) } label: {
                 Label("Edit a Copy", systemImage: "doc.badge.plus")
             }
-            Button { editTags(url) } label: {
-                Label("Edit Tags", systemImage: "tag")
+            Button { editEras(url) } label: {
+                Label("Eras…", systemImage: "sparkles")
             }
             Divider()
             Button { archiveFile(url) } label: {
@@ -306,7 +431,6 @@ struct MeditationListView: View {
         var contentMap: [URL: String] = [:]
         var titleMap: [URL: String] = [:]
         var tagMap: [URL: [String]] = [:]
-        var tagSet: Set<String> = []
         for url in files {
             let loadedContent = FileManager.default.readMeditation(at: url)
             let content = loadedContent ?? ""
@@ -318,25 +442,13 @@ struct MeditationListView: View {
             let tags = meta.tags
             titleMap[url] = title
             tagMap[url] = tags
-            tagSet.formUnion(tags)
         }
         fileContents = contentMap
         fileTitles = titleMap
         fileTags = tagMap
-        allTags = sortedTags(tagSet)
-        if let sel = selectedTag, !tagSet.contains(sel) {
-            selectedTag = nil
-        }
-    }
-
-    private func sortedTags(_ tags: Set<String>) -> [String] {
-        tags.sorted { lhs, rhs in
-            let lhsEmoji = lhs.startsWithEmoji
-            let rhsEmoji = rhs.startsWithEmoji
-            if lhsEmoji != rhsEmoji {
-                return lhsEmoji
-            }
-            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+        eraIndex = EraIndex.load()
+        if case .era(let tag) = selectedEraOverride, !eraIndex.isEraTag(tag) {
+            selectedEraOverride = nil
         }
     }
 
@@ -403,18 +515,26 @@ struct MeditationListView: View {
             candidate = "\(today)-v\(counter)-\(suffix)"
         }
 
-        _ = FileManager.default.saveMeditation(content, filename: candidate)
+        // The copy joins the current era.
+        var copyContent = content
+        let (title, tags) = metadataFor(url)
+        if let current = eraIndex.current, !tags.contains(current.tag) {
+            copyContent = MeditationMetadataWriter.rewrite(source: content, title: title, tags: tags + [current.tag])
+        }
+
+        _ = FileManager.default.saveMeditation(copyContent, filename: candidate)
         refreshFiles()
 
         // Open the editor on the new copy
-        editorContent = content
+        editorContent = copyContent
         editorFilename = candidate
         isNewFile = false
         showingEditor = true
     }
 
     private func newFile() {
-        editorContent = "# New Meditation\n\n"
+        let eraSuffix = eraIndex.current.map { " #\($0.tag)" } ?? ""
+        editorContent = "# New Meditation\(eraSuffix)\n\n"
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         editorFilename = dateFormatter.string(from: Date())
@@ -435,25 +555,71 @@ struct MeditationListView: View {
         refreshFiles()
     }
 
-    private func editTags(_ url: URL) {
+    private func editEras(_ url: URL) {
         let (title, tags) = metadataFor(url)
-        tagEditTarget = TagEditTarget(url: url, title: title, tags: tags)
+        let selectable = tags.filter { eraIndex.isEraTag($0) || $0 == EraIndex.timelessTag }
+        eraEditTarget = EraEditTarget(url: url, title: title, tags: selectable)
     }
 
-    private func saveTags(_ newTags: [String], for url: URL) {
+    /// Rewrites the file's era and timeless tags, keeping its other tags in place.
+    /// Doesn't stop playback: only the header changes.
+    private func saveEras(_ selection: Set<String>, for url: URL) {
+        let (_, tags) = metadataFor(url)
+        let isManaged = { (tag: String) in eraIndex.isEraTag(tag) || tag == EraIndex.timelessTag }
+        var newTags = tags.filter { !isManaged($0) || selection.contains($0) }
+        // Added eras go oldest first, matching how tags accumulate over time.
+        for tag in eraIndex.eras.map(\.tag).reversed() + [EraIndex.timelessTag]
+        where selection.contains(tag) && !newTags.contains(tag) {
+            newTags.append(tag)
+        }
+        guard newTags != tags else { return }
+        writeTags(newTags, for: url)
+        refreshFiles()
+    }
+
+    private func writeTags(_ newTags: [String], for url: URL) {
         guard let content = FileManager.default.readMeditation(at: url) else { return }
         let (title, _) = metadataFor(url)
         let updated = MeditationMetadataWriter.rewrite(source: content, title: title, tags: newTags)
         let basename = url.deletingPathExtension().lastPathComponent
-        let savedURL = FileManager.default.saveMeditation(updated, filename: basename)
-        refreshFiles()
-        if let savedURL, player.currentSourceURL == savedURL {
-            player.stop()
+        _ = FileManager.default.saveMeditation(updated, filename: basename)
+    }
+
+    private func eraFilesFor(_ tag: String) -> [URL] {
+        let isCurrent = tag == eraIndex.current?.tag
+        return files.filter {
+            !isTimeless($0) && (fileTags[$0]?.contains(tag) == true || (isCurrent && isUnassignedNew($0)))
         }
+    }
+
+    /// Everything except timeless meditations: current-era members first, then the rest newest first.
+    private var newEraCandidates: [URL] {
+        let current = eraIndex.current.map { Set(eraFilesFor($0.tag)) } ?? []
+        let rest = files.filter { !isTimeless($0) }
+        return rest.filter { current.contains($0) } + rest.filter { !current.contains($0) }
+    }
+
+    private func startEra(_ tag: String, members: Set<URL>) {
+        var index = EraIndex.load()
+        index.eras.insert(Era(tag: tag, started: EraIndex.todayString()), at: 0)
+        index.save()
+        for url in files where members.contains(url) {
+            let (_, tags) = metadataFor(url)
+            if !tags.contains(tag) {
+                writeTags(tags + [tag], for: url)
+            }
+        }
+        selectedEraOverride = nil
+        refreshFiles()
     }
 }
 
-private struct TagEditTarget: Identifiable {
+private enum EraSelection: Hashable {
+    case era(String)
+    case older
+}
+
+private struct EraEditTarget: Identifiable {
     let id = UUID()
     let url: URL
     let title: String
@@ -629,23 +795,5 @@ private final class PulseDotView: UIView {
         // Survive the app backgrounding and returning.
         group.isRemovedOnCompletion = false
         dot.add(group, forKey: Self.animationKey)
-    }
-}
-
-private extension String {
-    var startsWithEmoji: Bool {
-        guard let first = trimmingCharacters(in: .whitespacesAndNewlines).first else {
-            return false
-        }
-        return first.isEmojiLike
-    }
-}
-
-private extension Character {
-    var isEmojiLike: Bool {
-        unicodeScalars.contains { scalar in
-            scalar.properties.isEmojiPresentation
-                || (scalar.properties.isEmoji && scalar.properties.generalCategory == .otherSymbol)
-        }
     }
 }
