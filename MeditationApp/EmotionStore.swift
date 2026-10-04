@@ -335,9 +335,9 @@ class EmotionStore {
         saveRecentPlays()
     }
 
-    func wasRecentlyPlayed(filename: String?, within hours: Double = 24) -> Bool {
-        guard let filename, let last = recentPlays[filename] else { return false }
-        return Date().timeIntervalSince(last) < hours * 3600
+    func lastPlayed(filename: String?) -> Date? {
+        guard let filename else { return nil }
+        return recentPlays[filename]
     }
 
     private func saveRecentPlays() {

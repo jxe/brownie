@@ -18,7 +18,6 @@ struct MeditationListView: View {
     @State private var isNewFile = false
     @State private var showingSettings = false
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
-    @State private var helpfulConfirmURL: URL? = nil
     @State private var eraEditTarget: EraEditTarget? = nil
     @State private var showingNewEra = false
     @AppStorage("timelessCollapsed") private var timelessCollapsed = false
@@ -269,9 +268,7 @@ struct MeditationListView: View {
         let isPreparing = isCurrent && player.isPreparing
         let isEngaged = isActive || isPreparing
         let hasLogToday = store.hasMeditationLogToday(filename: filename)
-        let showHelpfulToggle = isCurrent
-            || hasLogToday
-            || store.wasRecentlyPlayed(filename: filename)
+        let lastPlayed = store.lastPlayed(filename: filename)
         let tags = chipTags(for: url)
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
         let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
@@ -324,6 +321,8 @@ struct MeditationListView: View {
                 }
 
                 Spacer()
+
+                LastPlayedLabel(date: lastPlayed, helpedToday: hasLogToday)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -351,47 +350,6 @@ struct MeditationListView: View {
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(MeditationRowPressStyle())
-        .overlay(alignment: .trailing) {
-            if showHelpfulToggle {
-                Button {
-                    helpfulConfirmURL = url
-                } label: {
-                    Image(systemName: hasLogToday ? "heart.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(hasLogToday ? Color("HeartColor") : Color.secondary)
-                        .frame(width: 22, alignment: .center)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(hasLogToday ? "Marked as helpful today" : "Rate this meditation")
-                .confirmationDialog(
-                    titleFor(url),
-                    isPresented: Binding(
-                        get: { helpfulConfirmURL == url },
-                        set: { if !$0 { helpfulConfirmURL = nil } }
-                    ),
-                    titleVisibility: .hidden
-                ) {
-                    if hasLogToday {
-                        Button("Remove helpful mark", role: .destructive) {
-                            store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
-                        }
-                    } else {
-                        Button("Yes, it helped") {
-                            store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
-                        }
-                    }
-                } message: {
-                    if hasLogToday {
-                        Text("Remove today's helpful mark?")
-                    } else {
-                        Text("Did this meditation help you?")
-                    }
-                }
-            }
-        }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
             Button { archiveFile(url) } label: {
@@ -418,6 +376,18 @@ struct MeditationListView: View {
             }
             Button { editEras(url) } label: {
                 Label("Eras…", systemImage: "sparkles")
+            }
+            // Only offered for something played today; an existing mark can always be removed.
+            if hasLogToday || lastPlayed.map(Calendar.current.isDateInToday) == true {
+                Button {
+                    store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                } label: {
+                    if hasLogToday {
+                        Label("Remove Helpful Mark", systemImage: "heart.slash")
+                    } else {
+                        Label("It Helped Today", systemImage: "heart")
+                    }
+                }
             }
             Divider()
             Button { archiveFile(url) } label: {
@@ -678,6 +648,75 @@ private struct MeditationRowPressContent: View {
                 reduceMotion ? nil : (isPressed ? .easeOut(duration: 0.08) : .spring(duration: 0.35, bounce: 0.45)),
                 value: isPressed
             )
+    }
+}
+
+/// How long ago a meditation was last played. Today and yesterday count in hours ("now",
+/// "3h", "26h") and stand out a little; older plays fade to days, weeks, months ("3d", "2w",
+/// "4mo"). A small heart marks one logged as helpful today. Blank if never played on this device.
+private struct LastPlayedLabel: View {
+    let date: Date?
+    let helpedToday: Bool
+
+    private enum Recency { case today, yesterday, older }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if helpedToday {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color("HeartColor"))
+            }
+            if let date {
+                let recency = Self.recency(of: date)
+                Text(Self.format(date))
+                    .fontWeight(recency == .older ? .regular : .semibold)
+                    .foregroundStyle(style(for: recency))
+            }
+        }
+        .font(.caption2)
+        .monospacedDigit()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private func style(for recency: Recency) -> AnyShapeStyle {
+        switch recency {
+        case .today: AnyShapeStyle(Color.accentColor)
+        case .yesterday: AnyShapeStyle(.secondary)
+        case .older: AnyShapeStyle(.tertiary)
+        }
+    }
+
+    private var accessibilityText: String {
+        var parts: [String] = []
+        if let date {
+            parts.append("Last played \(date.formatted(.relative(presentation: .named)))")
+        }
+        if helpedToday { parts.append("helped today") }
+        return parts.joined(separator: ", ")
+    }
+
+    private static func recency(of date: Date) -> Recency {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return .today }
+        if cal.isDateInYesterday(date) { return .yesterday }
+        return .older
+    }
+
+    static func format(_ date: Date) -> String {
+        if recency(of: date) != .older {
+            let hours = Int(Date().timeIntervalSince(date) / 3600)
+            return hours < 1 ? "now" : "\(hours)h"
+        }
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: date), to: cal.startOfDay(for: Date())).day ?? 0
+        switch days {
+        case ..<14: return "\(days)d"
+        case ..<60: return "\(days / 7)w"
+        case ..<365: return "\(days / 30)mo"
+        default: return "\(days / 365)y"
+        }
     }
 }
 
