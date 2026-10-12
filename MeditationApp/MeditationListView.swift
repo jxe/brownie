@@ -9,58 +9,117 @@ struct MeditationListView: View {
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
-    @State private var allTags: [String] = []
-    @State private var selectedTag: String? = nil
+    @State private var eraIndex = EraIndex()
+    /// nil means the current era, so starting a new era moves the view along with it.
+    @State private var selectedEraOverride: EraSelection? = nil
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
     @State private var isNewFile = false
     @State private var showingSettings = false
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
-    @State private var helpfulConfirmURL: URL? = nil
-    @State private var tagEditTarget: TagEditTarget? = nil
+    @State private var eraEditTarget: EraEditTarget? = nil
+    @State private var showingNewEra = false
+    @AppStorage("timelessCollapsed") private var timelessCollapsed = false
 
-    private var filteredFiles: [URL] {
-        guard let tag = selectedTag else { return files }
-        return files.filter { fileTags[$0]?.contains(tag) == true }
+    private var hasEras: Bool { !eraIndex.eras.isEmpty }
+
+    private var selectedEra: EraSelection {
+        if let selectedEraOverride { return selectedEraOverride }
+        if let current = eraIndex.current { return .era(current.tag) }
+        return .older
     }
+
+    private var selectedEraBinding: Binding<EraSelection> {
+        Binding(
+            get: { selectedEra },
+            set: { newValue in
+                selectedEraOverride = newValue == .era(eraIndex.current?.tag ?? "") ? nil : newValue
+            }
+        )
+    }
+
+    private var selectedEraTag: String? {
+        if case .era(let tag) = selectedEra { return tag }
+        return nil
+    }
+
+    private func isTimeless(_ url: URL) -> Bool {
+        fileTags[url]?.contains(EraIndex.timelessTag) == true
+    }
+
+    /// The file's era tags, newest era first.
+    private func eraTags(of url: URL) -> [String] {
+        let tags = fileTags[url] ?? []
+        return eraIndex.eras.map(\.tag).filter { tags.contains($0) }
+    }
+
+    /// Files with no era tag made since the current era started (e.g. created straight in
+    /// iCloud) count as part of the current era.
+    private func isUnassignedNew(_ url: URL) -> Bool {
+        guard let current = eraIndex.current, eraTags(of: url).isEmpty else { return false }
+        return EraIndex.dateString(for: url) >= current.started
+    }
+
+    private var timelessFiles: [URL] {
+        hasEras ? files.filter(isTimeless) : []
+    }
+
+    private var eraFiles: [URL] {
+        guard hasEras else { return files }
+        let rest = files.filter { !isTimeless($0) }
+        switch selectedEra {
+        case .older:
+            return rest.filter { eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
+        case .era(let tag):
+            let isCurrent = tag == eraIndex.current?.tag
+            return rest.filter { fileTags[$0]?.contains(tag) == true || (isCurrent && isUnassignedNew($0)) }
+        }
+    }
+
+    private var eraTitle: String {
+        guard hasEras else { return "Meditations" }
+        switch selectedEra {
+        case .older: return "Older"
+        case .era(let tag): return tag
+        }
+    }
+
     var body: some View {
             List {
-                if !allTags.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(allTags, id: \.self) { tag in
-                                Text(tag)
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(selectedTag == tag ? Color.accentColor : Color.accentColor.opacity(0.18))
-                                    .foregroundStyle(selectedTag == tag ? .white : .primary)
-                                    .clipShape(Capsule())
-                                    .onTapGesture {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            selectedTag = selectedTag == tag ? nil : tag
-                                        }
-                                    }
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
+                if !timelessFiles.isEmpty {
+                    timelessHeader
+                    // Collapsed still shows whatever's playing, so it can be paused.
+                    ForEach(timelessFiles.filter { !timelessCollapsed || player.currentSourceURL == $0 }, id: \.self) { url in
+                        listRow(for: url)
                     }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    sectionCaption(eraTitle)
                 }
-                ForEach(filteredFiles, id: \.self) { url in
-                    rowView(for: url)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                ForEach(eraFiles, id: \.self) { url in
+                    listRow(for: url)
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .navigationTitle("Meditations")
+            .navigationTitle(eraTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleMenu {
+                if hasEras {
+                    Picker("Era", selection: selectedEraBinding) {
+                        ForEach(eraIndex.eras, id: \.tag) { era in
+                            Text(era.tag == eraIndex.current?.tag ? "\(era.tag)  Current" : era.tag)
+                                .tag(EraSelection.era(era.tag))
+                        }
+                        Text("Older").tag(EraSelection.older)
+                    }
+                    Divider()
+                }
+                Button {
+                    showingNewEra = true
+                } label: {
+                    Label("Start New Era…", systemImage: "sparkles")
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -112,13 +171,23 @@ struct MeditationListView: View {
                     refreshFiles()
                 }
             }
-            .sheet(item: $tagEditTarget) { target in
-                TagEditorView(
+            .sheet(item: $eraEditTarget) { target in
+                EraEditorView(
                     title: target.title,
-                    initialTags: target.tags,
-                    suggestions: allTags.filter { !target.tags.contains($0) }
-                ) { newTags in
-                    saveTags(newTags, for: target.url)
+                    eras: eraIndex.eras,
+                    initialSelection: Set(target.tags)
+                ) { selection in
+                    saveEras(selection, for: target.url)
+                }
+            }
+            .sheet(isPresented: $showingNewEra) {
+                NewEraView(
+                    candidates: newEraCandidates,
+                    titles: fileTitles,
+                    existingTags: Set(eraIndex.eras.map(\.tag)),
+                    preselected: Set(eraIndex.current == nil ? [] : eraFilesFor(eraIndex.current!.tag))
+                ) { tag, members in
+                    startEra(tag, members: members)
                 }
             }
             .background(Color("BackgroundColor"))
@@ -131,9 +200,64 @@ struct MeditationListView: View {
             .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { _ in
                 // Watcher only drives list refresh. The player is intentionally not invalidated
                 // here — sync churn must never tear down in-flight playback. User-initiated edit,
-                // archive, and tag-save paths call player.stop() explicitly.
+                // and archive paths call player.stop() explicitly.
                 refreshFiles()
             }
+    }
+
+    private func sectionCaption(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+            .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
+    private var timelessHeader: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) {
+                timelessCollapsed.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("Timeless")
+                if timelessCollapsed {
+                    Text("\(timelessFiles.count)")
+                        .foregroundStyle(.tertiary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(timelessCollapsed ? 0 : 90))
+                Spacer()
+            }
+            .font(.footnote)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 8)
+        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .accessibilityLabel(timelessCollapsed ? "Show timeless meditations" : "Hide timeless meditations")
+    }
+
+    private func listRow(for url: URL) -> some View {
+        rowView(for: url)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    }
+
+    /// Chips for a row: its other eras when eras exist, otherwise every tag as before.
+    private func chipTags(for url: URL) -> [String] {
+        guard hasEras else { return fileTags[url] ?? [] }
+        if isTimeless(url) { return [] }
+        return eraTags(of: url).filter { $0 != selectedEraTag }
     }
 
     @ViewBuilder
@@ -144,13 +268,10 @@ struct MeditationListView: View {
         let isPreparing = isCurrent && player.isPreparing
         let isEngaged = isActive || isPreparing
         let hasLogToday = store.hasMeditationLogToday(filename: filename)
-        let showHelpfulToggle = isCurrent
-            || hasLogToday
-            || store.wasRecentlyPlayed(filename: filename)
-        let tags = fileTags[url] ?? []
-        let showElapsedTime = isCurrent && !isPreparing && (player.isPlaying || player.elapsedSeconds > 0)
-        let elapsedText = showElapsedTime ? formatTime(player.elapsedSeconds) : "0:00"
-        let endTime = isCurrent ? player.estimatedEndTime : nil
+        let lastPlayed = store.lastPlayed(filename: filename)
+        let tags = chipTags(for: url)
+        // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
+        let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
         let showTags = !showElapsedTime && !isPreparing && !tags.isEmpty
         let activeFill = Color.yellow.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.62)
         let inactiveFill = Color("HighlightColor").opacity(0.3)
@@ -172,25 +293,16 @@ struct MeditationListView: View {
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.6))
-                        ZStack {
-                            PlayingPulseDot(isPulsing: isActive)
-                                .opacity(isEngaged ? 1 : 0)
-                        }
-                        .frame(width: 12, height: 12)
-                        .clipped()
-                        .animation(.easeOut(duration: 0.2), value: isEngaged)
+                        PlayingPulseDot(isPulsing: isActive)
+                            .frame(width: 12, height: 12)
+                            .opacity(isEngaged ? 1 : 0)
+                            .scaleEffect(isEngaged ? 1 : 0.4)
                     }
                     ZStack(alignment: .leading) {
-                        HStack(spacing: 6) {
-                            Text(elapsedText)
-                            if let endTime {
-                                Text("·")
-                                Text("Ends \(endTime.formatted(date: .omitted, time: .shortened))")
-                            }
+                        if showElapsedTime {
+                            PlaybackTimeLabel()
+                                .transition(.opacity.combined(with: .offset(y: 4)))
                         }
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
-                        .opacity(showElapsedTime ? 1 : 0)
                         if !tags.isEmpty {
                             HStack(spacing: 4) {
                                 ForEach(tags, id: \.self) { tag in
@@ -206,11 +318,11 @@ struct MeditationListView: View {
                         }
                     }
                     .frame(minHeight: 17, alignment: .leading)
-                    .animation(.easeInOut(duration: 0.18), value: showElapsedTime)
-                    .animation(.easeInOut(duration: 0.18), value: showTags)
                 }
 
                 Spacer()
+
+                LastPlayedLabel(date: lastPlayed, helpedToday: hasLogToday)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -227,54 +339,17 @@ struct MeditationListView: View {
                         .opacity(isEngaged ? 1 : 0)
                 }
                     .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .animation(.easeInOut(duration: 0.2), value: isEngaged)
             )
             .shadow(color: .black.opacity(isEngaged ? 0.08 : 0.0), radius: isEngaged ? 6 : 0, y: isEngaged ? 3 : 0)
+            // One snappy transaction for every piece of the state change, so fill, rim, shadow,
+            // title, dot, and time label move together instead of on separate slow curves.
+            .animation(.snappy(duration: 0.22), value: isEngaged)
+            .animation(.snappy(duration: 0.22), value: showElapsedTime)
+            .animation(.snappy(duration: 0.22), value: showTags)
             .contentShape(RoundedRectangle(cornerRadius: 14))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(MeditationRowPressStyle())
-        .overlay(alignment: .trailing) {
-            if showHelpfulToggle {
-                Button {
-                    helpfulConfirmURL = url
-                } label: {
-                    Image(systemName: hasLogToday ? "heart.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(hasLogToday ? Color("HeartColor") : Color.secondary)
-                        .frame(width: 22, alignment: .center)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(hasLogToday ? "Marked as helpful today" : "Rate this meditation")
-                .confirmationDialog(
-                    titleFor(url),
-                    isPresented: Binding(
-                        get: { helpfulConfirmURL == url },
-                        set: { if !$0 { helpfulConfirmURL = nil } }
-                    ),
-                    titleVisibility: .hidden
-                ) {
-                    if hasLogToday {
-                        Button("Remove helpful mark", role: .destructive) {
-                            store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
-                        }
-                    } else {
-                        Button("Yes, it helped") {
-                            store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
-                        }
-                    }
-                } message: {
-                    if hasLogToday {
-                        Text("Remove today's helpful mark?")
-                    } else {
-                        Text("Did this meditation help you?")
-                    }
-                }
-            }
-        }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
             Button { archiveFile(url) } label: {
@@ -283,8 +358,8 @@ struct MeditationListView: View {
             .tint(.orange)
         }
         .swipeActions(edge: .leading) {
-            Button { editTags(url) } label: {
-                Label("Tags", systemImage: "tag")
+            Button { editEras(url) } label: {
+                Label("Eras", systemImage: "sparkles")
             }
             .tint(.accentColor)
         }
@@ -299,8 +374,20 @@ struct MeditationListView: View {
             Button { editCopy(url) } label: {
                 Label("Edit a Copy", systemImage: "doc.badge.plus")
             }
-            Button { editTags(url) } label: {
-                Label("Edit Tags", systemImage: "tag")
+            Button { editEras(url) } label: {
+                Label("Eras…", systemImage: "sparkles")
+            }
+            // Only offered for something played today; an existing mark can always be removed.
+            if hasLogToday || lastPlayed.map(Calendar.current.isDateInToday) == true {
+                Button {
+                    store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
+                } label: {
+                    if hasLogToday {
+                        Label("Remove Helpful Mark", systemImage: "heart.slash")
+                    } else {
+                        Label("It Helped Today", systemImage: "heart")
+                    }
+                }
             }
             Divider()
             Button { archiveFile(url) } label: {
@@ -309,18 +396,11 @@ struct MeditationListView: View {
         }
     }
 
-    private func formatTime(_ totalSeconds: Int) -> String {
-        let m = totalSeconds / 60
-        let s = totalSeconds % 60
-        return String(format: "%d:%02d", m, s)
-    }
-
     private func refreshFiles() {
         files = FileManager.default.meditationFiles()
         var contentMap: [URL: String] = [:]
         var titleMap: [URL: String] = [:]
         var tagMap: [URL: [String]] = [:]
-        var tagSet: Set<String> = []
         for url in files {
             let loadedContent = FileManager.default.readMeditation(at: url)
             let content = loadedContent ?? ""
@@ -332,25 +412,13 @@ struct MeditationListView: View {
             let tags = meta.tags
             titleMap[url] = title
             tagMap[url] = tags
-            tagSet.formUnion(tags)
         }
         fileContents = contentMap
         fileTitles = titleMap
         fileTags = tagMap
-        allTags = sortedTags(tagSet)
-        if let sel = selectedTag, !tagSet.contains(sel) {
-            selectedTag = nil
-        }
-    }
-
-    private func sortedTags(_ tags: Set<String>) -> [String] {
-        tags.sorted { lhs, rhs in
-            let lhsEmoji = lhs.startsWithEmoji
-            let rhsEmoji = rhs.startsWithEmoji
-            if lhsEmoji != rhsEmoji {
-                return lhsEmoji
-            }
-            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+        eraIndex = EraIndex.load()
+        if case .era(let tag) = selectedEraOverride, !eraIndex.isEraTag(tag) {
+            selectedEraOverride = nil
         }
     }
 
@@ -417,18 +485,26 @@ struct MeditationListView: View {
             candidate = "\(today)-v\(counter)-\(suffix)"
         }
 
-        _ = FileManager.default.saveMeditation(content, filename: candidate)
+        // The copy joins the current era.
+        var copyContent = content
+        let (title, tags) = metadataFor(url)
+        if let current = eraIndex.current, !tags.contains(current.tag) {
+            copyContent = MeditationMetadataWriter.rewrite(source: content, title: title, tags: tags + [current.tag])
+        }
+
+        _ = FileManager.default.saveMeditation(copyContent, filename: candidate)
         refreshFiles()
 
         // Open the editor on the new copy
-        editorContent = content
+        editorContent = copyContent
         editorFilename = candidate
         isNewFile = false
         showingEditor = true
     }
 
     private func newFile() {
-        editorContent = "# New Meditation\n\n"
+        let eraSuffix = eraIndex.current.map { " #\($0.tag)" } ?? ""
+        editorContent = "# New Meditation\(eraSuffix)\n\n"
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         editorFilename = dateFormatter.string(from: Date())
@@ -449,25 +525,71 @@ struct MeditationListView: View {
         refreshFiles()
     }
 
-    private func editTags(_ url: URL) {
+    private func editEras(_ url: URL) {
         let (title, tags) = metadataFor(url)
-        tagEditTarget = TagEditTarget(url: url, title: title, tags: tags)
+        let selectable = tags.filter { eraIndex.isEraTag($0) || $0 == EraIndex.timelessTag }
+        eraEditTarget = EraEditTarget(url: url, title: title, tags: selectable)
     }
 
-    private func saveTags(_ newTags: [String], for url: URL) {
+    /// Rewrites the file's era and timeless tags, keeping its other tags in place.
+    /// Doesn't stop playback: only the header changes.
+    private func saveEras(_ selection: Set<String>, for url: URL) {
+        let (_, tags) = metadataFor(url)
+        let isManaged = { (tag: String) in eraIndex.isEraTag(tag) || tag == EraIndex.timelessTag }
+        var newTags = tags.filter { !isManaged($0) || selection.contains($0) }
+        // Added eras go oldest first, matching how tags accumulate over time.
+        for tag in eraIndex.eras.map(\.tag).reversed() + [EraIndex.timelessTag]
+        where selection.contains(tag) && !newTags.contains(tag) {
+            newTags.append(tag)
+        }
+        guard newTags != tags else { return }
+        writeTags(newTags, for: url)
+        refreshFiles()
+    }
+
+    private func writeTags(_ newTags: [String], for url: URL) {
         guard let content = FileManager.default.readMeditation(at: url) else { return }
         let (title, _) = metadataFor(url)
         let updated = MeditationMetadataWriter.rewrite(source: content, title: title, tags: newTags)
         let basename = url.deletingPathExtension().lastPathComponent
-        let savedURL = FileManager.default.saveMeditation(updated, filename: basename)
-        refreshFiles()
-        if let savedURL, player.currentSourceURL == savedURL {
-            player.stop()
+        _ = FileManager.default.saveMeditation(updated, filename: basename)
+    }
+
+    private func eraFilesFor(_ tag: String) -> [URL] {
+        let isCurrent = tag == eraIndex.current?.tag
+        return files.filter {
+            !isTimeless($0) && (fileTags[$0]?.contains(tag) == true || (isCurrent && isUnassignedNew($0)))
         }
+    }
+
+    /// Everything except timeless meditations: current-era members first, then the rest newest first.
+    private var newEraCandidates: [URL] {
+        let current = eraIndex.current.map { Set(eraFilesFor($0.tag)) } ?? []
+        let rest = files.filter { !isTimeless($0) }
+        return rest.filter { current.contains($0) } + rest.filter { !current.contains($0) }
+    }
+
+    private func startEra(_ tag: String, members: Set<URL>) {
+        var index = EraIndex.load()
+        index.eras.insert(Era(tag: tag, started: EraIndex.todayString()), at: 0)
+        index.save()
+        for url in files where members.contains(url) {
+            let (_, tags) = metadataFor(url)
+            if !tags.contains(tag) {
+                writeTags(tags + [tag], for: url)
+            }
+        }
+        selectedEraOverride = nil
+        refreshFiles()
     }
 }
 
-private struct TagEditTarget: Identifiable {
+private enum EraSelection: Hashable {
+    case era(String)
+    case older
+}
+
+private struct EraEditTarget: Identifiable {
     let id = UUID()
     let url: URL
     let title: String
@@ -519,57 +641,198 @@ private struct MeditationRowPressContent: View {
 
     var body: some View {
         label
-            .scaleEffect(reduceMotion || !isPressed ? 1.0 : 0.985)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isPressed)
+            .scaleEffect(reduceMotion || !isPressed ? 1.0 : 0.965)
+            .brightness(isPressed ? -0.03 : 0)
+            // Press down immediately; spring back with a little life on release.
+            .animation(
+                reduceMotion ? nil : (isPressed ? .easeOut(duration: 0.08) : .spring(duration: 0.35, bounce: 0.45)),
+                value: isPressed
+            )
     }
 }
 
-private struct PlayingPulseDot: View {
+/// How long ago a meditation was last played. Today and yesterday count in hours ("now",
+/// "3h", "26h") and stand out a little; older plays fade to days, weeks, months ("3d", "2w",
+/// "4mo"). A small heart marks one logged as helpful today. Blank if never played on this device.
+private struct LastPlayedLabel: View {
+    let date: Date?
+    let helpedToday: Bool
+
+    private enum Recency { case today, yesterday, older }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if helpedToday {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color("HeartColor"))
+            }
+            if let date {
+                let recency = Self.recency(of: date)
+                Text(Self.format(date))
+                    .fontWeight(recency == .older ? .regular : .semibold)
+                    .foregroundStyle(style(for: recency))
+            }
+        }
+        .font(.caption2)
+        .monospacedDigit()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private func style(for recency: Recency) -> AnyShapeStyle {
+        switch recency {
+        case .today: AnyShapeStyle(Color.accentColor)
+        case .yesterday: AnyShapeStyle(.secondary)
+        case .older: AnyShapeStyle(.tertiary)
+        }
+    }
+
+    private var accessibilityText: String {
+        var parts: [String] = []
+        if let date {
+            parts.append("Last played \(date.formatted(.relative(presentation: .named)))")
+        }
+        if helpedToday { parts.append("helped today") }
+        return parts.joined(separator: ", ")
+    }
+
+    private static func recency(of date: Date) -> Recency {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return .today }
+        if cal.isDateInYesterday(date) { return .yesterday }
+        return .older
+    }
+
+    static func format(_ date: Date) -> String {
+        if recency(of: date) != .older {
+            let hours = Int(Date().timeIntervalSince(date) / 3600)
+            return hours < 1 ? "now" : "\(hours)h"
+        }
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: date), to: cal.startOfDay(for: Date())).day ?? 0
+        switch days {
+        case ..<14: return "\(days)d"
+        case ..<60: return "\(days / 7)w"
+        case ..<365: return "\(days / 30)mo"
+        default: return "\(days / 365)y"
+        }
+    }
+}
+
+/// Elapsed time and total length of the current meditation. Kept in its own view so the
+/// once-a-second elapsedSeconds tick only re-renders this label, not the list.
+private struct PlaybackTimeLabel: View {
+    @Environment(MeditationPlayer.self) private var player
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(Self.formatTime(player.elapsedSeconds))
+            if let total = player.totalSeconds {
+                Text("/")
+                Text(Self.formatTime(total))
+            }
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .foregroundStyle(Color.accentColor)
+    }
+
+    private static func formatTime(_ totalSeconds: Int) -> String {
+        String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+/// Pulsing "now playing" dot. The pulse is a Core Animation layer animation, so it runs in the
+/// render server with no per-frame work in the app, and exists only while actually pulsing.
+private struct PlayingPulseDot: UIViewRepresentable {
     let isPulsing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-            let progress = pulseProgress(at: timeline.date)
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 8, height: 8)
-                .scaleEffect(pulseScale(progress))
-                .opacity(pulseOpacity(progress))
-                .allowsHitTesting(false)
-        }
+    func makeUIView(context: Context) -> PulseDotView {
+        let view = PulseDotView()
+        view.isUserInteractionEnabled = false
+        return view
     }
 
-    private func pulseProgress(at date: Date) -> Double {
-        guard isPulsing, !reduceMotion else { return 0 }
-        let cycle = 1.8
-        let elapsed = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
-        return 0.5 - 0.5 * cos((elapsed / cycle) * 2 * .pi)
-    }
-
-    private func pulseScale(_ progress: Double) -> CGFloat {
-        0.9 + (0.4 * progress)
-    }
-
-    private func pulseOpacity(_ progress: Double) -> Double {
-        1.0 - (0.4 * progress)
+    func updateUIView(_ view: PulseDotView, context: Context) {
+        view.isPulsing = isPulsing && !reduceMotion
     }
 }
 
-private extension String {
-    var startsWithEmoji: Bool {
-        guard let first = trimmingCharacters(in: .whitespacesAndNewlines).first else {
-            return false
-        }
-        return first.isEmojiLike
-    }
-}
+private final class PulseDotView: UIView {
+    private static let animationKey = "pulse"
+    private let dot = CALayer()
 
-private extension Character {
-    var isEmojiLike: Bool {
-        unicodeScalars.contains { scalar in
-            scalar.properties.isEmojiPresentation
-                || (scalar.properties.isEmoji && scalar.properties.generalCategory == .otherSymbol)
+    var isPulsing = false {
+        didSet {
+            guard isPulsing != oldValue else { return }
+            updateAnimation()
         }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        layer.addSublayer(dot)
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: PulseDotView, _) in
+            view.updateColor()
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        dot.bounds = CGRect(x: 0, y: 0, width: 8, height: 8)
+        dot.cornerRadius = 4
+        dot.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+        updateColor()
+    }
+
+    override func tintColorDidChange() {
+        super.tintColorDidChange()
+        updateColor()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateAnimation()
+    }
+
+    private func updateColor() {
+        let color = UIColor(named: "AccentColor") ?? tintColor ?? .systemBlue
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        dot.backgroundColor = color.resolvedColor(with: traitCollection).cgColor
+        CATransaction.commit()
+    }
+
+    private func updateAnimation() {
+        guard isPulsing, window != nil else {
+            dot.removeAnimation(forKey: Self.animationKey)
+            return
+        }
+        guard dot.animation(forKey: Self.animationKey) == nil else { return }
+
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 0.9
+        scale.toValue = 1.3
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = 1.0
+        opacity.toValue = 0.6
+
+        let group = CAAnimationGroup()
+        group.animations = [scale, opacity]
+        group.duration = 0.9
+        group.autoreverses = true
+        group.repeatCount = .infinity
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // Survive the app backgrounding and returning.
+        group.isRemovedOnCompletion = false
+        dot.add(group, forKey: Self.animationKey)
     }
 }

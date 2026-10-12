@@ -29,6 +29,16 @@ Or on a separate `#` line immediately after the title (the line must contain onl
 
 Tags are used by the meditation list to filter and group meditations.
 
+### Eras
+
+Some tags are **eras**: periods of practice, usually named with an emoji (`#🎸`, `#🔥🔥`). A meditation can belong to several eras. `eras.json`, next to the `.med` files, lists which tags are eras, newest first; the first one is the current era:
+
+```json
+[{"tag": "🎸", "started": "2026-09-19"}, {"tag": "🔥🔥", "started": "2026-06-21"}]
+```
+
+`#timeless` marks meditations that are always shown, whatever era is selected. The list shows only era tags; other tags stay in the file but are hidden.
+
 ## Spoken Text
 
 Any line that isn't a special construct is spoken aloud by the TTS engine.
