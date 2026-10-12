@@ -19,6 +19,30 @@ struct MeditationEditorView: View {
                 }
 
                 MedTextEditor(text: $content)
+
+                let diagnostics = MeditationParser.diagnose(content)
+                if !diagnostics.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(diagnostics.prefix(3)) { diagnostic in
+                            Label {
+                                Text("Line \(diagnostic.line): \(diagnostic.message)")
+                            } icon: {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if diagnostics.count > 3 {
+                            Text("and \(diagnostics.count - 3) more")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.bar)
+                }
             }
             .navigationTitle(isNew ? "New Meditation" : "Edit")
             .navigationBarTitleDisplayMode(.inline)

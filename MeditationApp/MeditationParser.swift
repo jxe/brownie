@@ -1,5 +1,13 @@
 import Foundation
 
+/// A likely mistake in a meditation script, located for display in the editor.
+struct MeditationDiagnostic: Identifiable {
+    let line: Int
+    let range: NSRange      // UTF-16 range in the script source
+    let message: String
+    var id: String { "\(range.location):\(message)" }
+}
+
 struct MeditationParser {
 
     // MARK: - Public
@@ -157,6 +165,123 @@ struct MeditationParser {
         }
         return (title ?? "", tags)
     }
+
+    // MARK: - Diagnostics
+
+    /// Finds the script problems most likely to go unnoticed until playback, such as a
+    /// `~ref` that would be spoken literally because no pool by that name exists yet.
+    static func diagnose(_ source: String) -> [MeditationDiagnostic] {
+        let ns = source as NSString
+        var lines: [(text: String, range: NSRange)] = []
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: .byLines) { sub, range, _, _ in
+            lines.append((sub ?? "", range))
+        }
+
+        // Pool items are drawn later, so refs inside them may name a pool defined anywhere.
+        let allPools = Set(lines.compactMap { line -> String? in
+            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
+            guard isPoolDefinitionHeader(trimmed) else { return nil }
+            return trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+        })
+
+        var diagnostics: [MeditationDiagnostic] = []
+        var definedPools: Set<String> = []
+        var boundNames: Set<String> = []
+        var openPool: (name: String, line: Int, range: NSRange, items: Int)? = nil
+
+        func closeOpenPool() {
+            if let pool = openPool, pool.items == 0 {
+                diagnostics.append(MeditationDiagnostic(line: pool.line, range: pool.range,
+                                                        message: "Pool ~\(pool.name) has no indented items under it."))
+            }
+            openPool = nil
+        }
+
+        for (index, line) in lines.enumerated() {
+            let lineNumber = index + 1
+            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
+            let isIndented = line.text.hasPrefix("  ") || line.text.hasPrefix("\t")
+            let isPoolItem = openPool != nil && isIndented
+
+            if !isPoolItem { closeOpenPool() }
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+
+            if isPoolDefinitionHeader(trimmed) {
+                let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                definedPools.insert(name)
+                openPool = (name, lineNumber, line.range, 0)
+                continue
+            }
+            if isPoolItem { openPool?.items += 1 }
+
+            if let first = trimmed.first, first == "X", trimmed.dropFirst().first?.isNumber == true {
+                let start = (line.text as NSString).range(of: "X")
+                diagnostics.append(MeditationDiagnostic(
+                    line: lineNumber,
+                    range: NSRange(location: line.range.location + start.location, length: 1),
+                    message: "Capital X isn't a repeat marker. Use x or ×."))
+            }
+
+            let lineNS = line.text as NSString
+            let matches = refRegex.matches(in: line.text, range: NSRange(location: 0, length: lineNS.length))
+            for match in matches {
+                let name = lineNS.substring(with: match.range(at: 1))
+                let range = NSRange(location: line.range.location + match.range.location, length: match.range.length)
+                let poolRange = match.range(at: 2)
+                if poolRange.location != NSNotFound {
+                    // ~name=pool
+                    let poolName = lineNS.substring(with: poolRange)
+                    let known = isPoolItem ? allPools.contains(poolName) : definedPools.contains(poolName)
+                    if !known {
+                        diagnostics.append(MeditationDiagnostic(line: lineNumber, range: range,
+                                                                message: missingPoolMessage(poolName, definedLater: allPools.contains(poolName))))
+                    }
+                    boundNames.insert(name)
+                    continue
+                }
+                if boundNames.contains(name) { continue }
+                let known = isPoolItem ? allPools.contains(name) : definedPools.contains(name)
+                if !known {
+                    diagnostics.append(MeditationDiagnostic(line: lineNumber, range: range,
+                                                            message: missingPoolMessage(name, definedLater: allPools.contains(name))))
+                }
+            }
+        }
+        closeOpenPool()
+        return diagnostics
+    }
+
+    /// Names a script defines, for offering as `~name` insertions: pools, then remembered picks.
+    static func referenceableNames(in source: String) -> (pools: [String], picks: [String]) {
+        var pools: [String] = []
+        var picks: [String] = []
+        for line in source.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") { continue }
+            if isPoolDefinitionHeader(trimmed) {
+                let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                if !pools.contains(name) { pools.append(name) }
+                continue
+            }
+            let ns = line as NSString
+            for match in refRegex.matches(in: line, range: NSRange(location: 0, length: ns.length))
+            where match.range(at: 2).location != NSNotFound {
+                let name = ns.substring(with: match.range(at: 1))
+                if !picks.contains(name) { picks.append(name) }
+            }
+        }
+        return (pools, picks)
+    }
+
+    private static func missingPoolMessage(_ name: String, definedLater: Bool) -> String {
+        definedLater
+            ? "~\(name) is used before its pool is defined. Move the pool above this line."
+            : "There's no pool named ~\(name), so it would be read out as text."
+    }
+
+    /// Matches `~name` and `~name=pool` the way the tokenizer reads them.
+    private static let refRegex = try! NSRegularExpression(
+        pattern: #"~([\p{L}_][\p{L}\p{N}_]*)(?:=([\p{L}_][\p{L}\p{N}_]*))?"#)
 
     // MARK: - Pool Definition Header
 

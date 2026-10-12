@@ -59,6 +59,34 @@ struct MedTextEditor: UIViewRepresentable {
         }
     }
 
+    /// A button listing the pools (and remembered picks) defined in the script; tapping one inserts `~name`.
+    private func makePoolMenuButton(textView: UITextView) -> UIButton {
+        let btn = SymbolButton(label: "~…", accessibilityLabel: "Insert a pool reference") {}
+        btn.showsMenuAsPrimaryAction = true
+        btn.menu = UIMenu(children: [
+            UIDeferredMenuElement.uncached { [weak textView] completion in
+                let names = MeditationParser.referenceableNames(in: textView?.text ?? "")
+                func insertAction(_ name: String) -> UIAction {
+                    UIAction(title: "~\(name)") { _ in textView?.insertText("~\(name)") }
+                }
+                var sections: [UIMenuElement] = []
+                if !names.pools.isEmpty {
+                    sections.append(UIMenu(title: "Pools", options: .displayInline,
+                                           children: names.pools.map(insertAction)))
+                }
+                if !names.picks.isEmpty {
+                    sections.append(UIMenu(title: "Remembered picks", options: .displayInline,
+                                           children: names.picks.map(insertAction)))
+                }
+                if sections.isEmpty {
+                    sections.append(UIAction(title: "No pools defined yet", attributes: .disabled) { _ in })
+                }
+                completion(sections)
+            }
+        ])
+        return btn
+    }
+
     private func makeToolbar(textView: UITextView) -> UIView {
         let bar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
         bar.backgroundColor = .systemBackground.withAlphaComponent(0.55)
@@ -81,6 +109,9 @@ struct MedTextEditor: UIViewRepresentable {
         for (groupIndex, group) in Self.symbolGroups.enumerated() {
             if groupIndex > 0 {
                 stack.addArrangedSubview(AccessoryGap(width: 12))
+            }
+            if groupIndex == 0 {
+                stack.addArrangedSubview(makePoolMenuButton(textView: textView))
             }
             for symbol in group {
                 let btn = SymbolButton(label: symbol.label, accessibilityLabel: symbol.accessibilityLabel) { [weak textView] in
@@ -343,6 +374,13 @@ private func applyMedHighlights(to textView: UITextView) {
                 storage.addAttribute(.foregroundColor, value: color, range: r)
             }
         }
+    }
+    for diagnostic in MeditationParser.diagnose(text)
+    where NSMaxRange(diagnostic.range) <= storage.length {
+        storage.addAttributes([
+            .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
+            .underlineColor: UIColor.systemRed,
+        ], range: diagnostic.range)
     }
     storage.endEditing()
     textView.selectedRange = savedSelection
