@@ -39,7 +39,7 @@ struct MedTextEditor: UIViewRepresentable {
         let textView = UITextView()
         textView.font = medMonoFont
         textView.autocorrectionType = .no
-        textView.autocapitalizationType = .sentences
+        textView.autocapitalizationType = .none
         textView.smartQuotesType = .no
         textView.smartDashesType = .no
         textView.delegate = context.coordinator
@@ -313,8 +313,8 @@ private let medSyntaxRules: [MedSyntaxRule] = {
                       groupColors: [1: count, 2: count]),
         MedSyntaxRule(regex: rx(#"·+"#),
                       groupColors: [0: pause]),
-        MedSyntaxRule(regex: rx(#"(~)([A-Za-z_][A-Za-z0-9_]*)"#),
-                      groupColors: [1: pool, 2: pool]),
+        MedSyntaxRule(regex: rx(#"(~)([A-Za-z_][A-Za-z0-9_]*)(?:(=)([A-Za-z_][A-Za-z0-9_]*))?"#),
+                      groupColors: [1: pool, 2: pool, 3: pool, 4: pool]),
         MedSyntaxRule(regex: rx(#"[♀♂]"#),
                       groupColors: [0: gender]),
         MedSyntaxRule(regex: rx(#"🪨"#),

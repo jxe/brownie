@@ -17,7 +17,7 @@ Or press **F5** in VS Code with this folder open to launch an Extension Developm
 - **Tag lines** (pure `#tag #tag` lines): each word as a tag
 - **Comments** (later `#` lines): standard comment
 - **Pool definitions**: `~person` at line start
-- **Pool references**: inline `~person`, `~why`
+- **Pool references**: inline `~person`, `~why`, and bindings like `~x=fears`
 - **Pool weight markers**: `🪨`
 - **Gender markers**: `♀` `♂`
 - **Gender-neutral pronouns** rewritten at runtime: `they`/`them`/`their`/`theirs`/`themselves`

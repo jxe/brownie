@@ -61,11 +61,13 @@
       }
     },
     "pool-ref": {
-      "match": "(~)([A-Za-z_][A-Za-z0-9_]*)",
+      "match": "(~)([A-Za-z_][A-Za-z0-9_]*)(?:(=)([A-Za-z_][A-Za-z0-9_]*))?",
       "name": "entity.name.function.pool-ref.med",
       "captures": {
         "1": { "name": "punctuation.definition.pool.med" },
-        "2": { "name": "entity.name.function.pool-ref.med" }
+        "2": { "name": "entity.name.function.pool-ref.med" },
+        "3": { "name": "punctuation.definition.pool.med" },
+        "4": { "name": "entity.name.function.pool-ref.med" }
       }
     },
     "repeat": {

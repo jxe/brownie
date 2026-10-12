@@ -88,6 +88,27 @@ A pool is a named list of items. Each time the pool is referenced, a random item
 
 Pool items themselves can reference other pools — references are resolved recursively when the item is drawn.
 
+### Remembered Picks
+
+To use the same pick more than once, bind it to a name with `~name=pool`. That draws from `pool` and speaks it like a normal reference, and every later `~name` repeats the same item instead of drawing again:
+
+```
+~ fears
+  being alone
+  being judged
+
+I take 30 seconds to feel my fear of ~x=fears. 30″ I try ~x.
+# If "being judged" is drawn: "...my fear of being judged. ... I try being judged."
+```
+
+Each `~x=fears` draws fresh and replaces the old pick, so inside a repeat every repetition gets its own pick, reused within that repetition:
+
+```
+×3 I feel ~f=fears. 20″ I breathe with ~f. 10″
+```
+
+A binding lasts from where it is made until it is rebound, across lines. It takes precedence over a pool with the same name, and a pick's gender marker carries over to pronouns wherever it is reused.
+
 ### Gendered Pools
 
 Pool items can have a gender marker (`♀` or `♂`). When a gendered item is drawn, pronouns in subsequent text on the same line are resolved (they/them/their become she/her/hers or he/him/his):
@@ -235,7 +256,8 @@ Done!
 | `′` | Prime (U+2032) | Minutes unit (e.g. `3′`) | `'` (e.g. `3'`) |
 | `⏳` | Hourglass (U+23F3) | Countdown timer | — |
 | `~name` (line start) | Tilde + name | Pool definition (followed by indented items). Space after `~` optional. | — |
-| `~name` (inline) | Tilde + name | Pool reference | — |
+| `~name` (inline) | Tilde + name | Pool reference (or a remembered pick, if `name` was bound) | — |
+| `~name=pool` | Tilde + name = pool | Draw from `pool` and remember it as `name` | — |
 | `×` | Multiplication (U+00D7) | Repeat count (`×5 text` or `×5𝄐28″`) | `x` (e.g. `x5`) |
 | `𝄐` | Fermata (U+1D110) | Rest between stanzas (`×5𝄐28″`) | `\|` (e.g. `x5\|28"`) |
 | `♀` | Female sign (U+2640) | Female gender on pool item | — |

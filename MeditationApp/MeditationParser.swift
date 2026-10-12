@@ -9,6 +9,7 @@ struct MeditationParser {
         let meta = parseMetadata(source)
         let title = meta.title.isEmpty ? "Untitled" : meta.title
         var pools: [String: Pool] = [:]
+        var bindings: [String: Pick] = [:]
         var steps: [MeditationStep] = []
         var i = 0
 
@@ -65,14 +66,15 @@ struct MeditationParser {
                         bodyLines: expandedBody,
                         outerCount: outerCount,
                         outerRest: outerRest,
-                        pools: pools
+                        pools: pools,
+                        bindings: &bindings
                     )
                     steps.append(contentsOf: sectionSteps)
 
                 case .inlineRepeat(let count, let text):
                     // ×N text... — simple repeat
                     for _ in 0..<count {
-                        steps.append(contentsOf: expandSpeakLine(text, pools: pools))
+                        steps.append(contentsOf: expandSpeakLine(text, pools: pools, bindings: &bindings))
                     }
                     i += 1
 
@@ -81,7 +83,7 @@ struct MeditationParser {
                     let bodyLines = collectIndentedBody(lines: lines, index: &i)
                     for _ in 0..<count {
                         for bodyLine in bodyLines {
-                            steps.append(contentsOf: expandSpeakLine(bodyLine, pools: pools))
+                            steps.append(contentsOf: expandSpeakLine(bodyLine, pools: pools, bindings: &bindings))
                         }
                     }
                 }
@@ -89,7 +91,7 @@ struct MeditationParser {
             }
 
             // Bare speak line
-            let lineSteps = expandSpeakLine(trimmed, pools: pools)
+            let lineSteps = expandSpeakLine(trimmed, pools: pools, bindings: &bindings)
             steps.append(contentsOf: lineSteps)
             i += 1
         }
@@ -327,13 +329,14 @@ struct MeditationParser {
         bodyLines: [String],
         outerCount: Int,
         outerRest: TimeInterval,
-        pools: [String: Pool]
+        pools: [String: Pool],
+        bindings: inout [String: Pick]
     ) -> [MeditationStep] {
         var steps: [MeditationStep] = []
 
         for stanza in 0..<outerCount {
             for line in bodyLines {
-                steps.append(contentsOf: expandSpeakLine(line, pools: pools))
+                steps.append(contentsOf: expandSpeakLine(line, pools: pools, bindings: &bindings))
             }
 
             // Rest between stanzas
@@ -356,8 +359,38 @@ struct MeditationParser {
 
     // MARK: - Speak Line Expansion
 
+    /// A remembered pool draw, bound with `~name=pool` and replayed by later `~name` references.
+    private struct Pick {
+        let expansion: Expansion
+        let gender: Gender?
+    }
+
+    /// What a pool draw expands to: plain text that joins the surrounding sentence,
+    /// or separate steps when the drawn item carries its own timing or bells.
+    private enum Expansion {
+        case text(String)
+        case steps([MeditationStep])
+    }
+
+    /// Draws from a pool and expands the item, resolving nested pool refs, pauses, etc.
+    private static func drawPick(from pool: Pool, pools: [String: Pool], bindings: inout [String: Pick]) -> Pick {
+        let drawn = pool.draw()
+        let gender = pool.lastGender
+        // Re-tokenize drawn text to resolve nested pool refs, pauses, etc.
+        let innerTokens = tokenize(drawn)
+        let hasNestedSpecials = innerTokens.contains(where: {
+            if case .text = $0 { return false }; return true
+        })
+        guard hasNestedSpecials else { return Pick(expansion: .text(drawn), gender: gender) }
+        let nestedSteps = expandSpeakLine(drawn, pools: pools, bindings: &bindings)
+        if nestedSteps.count == 1, case .speak(let nestedText) = nestedSteps[0] {
+            return Pick(expansion: .text(nestedText), gender: gender)
+        }
+        return Pick(expansion: .steps(nestedSteps), gender: gender)
+    }
+
     /// Expands a single speak line into steps, resolving pools, pauses, countdowns, and pronouns.
-    private static func expandSpeakLine(_ line: String, pools: [String: Pool]) -> [MeditationStep] {
+    private static func expandSpeakLine(_ line: String, pools: [String: Pool], bindings: inout [String: Pick]) -> [MeditationStep] {
         var steps: [MeditationStep] = []
         var currentGender: Gender? = nil
 
@@ -366,40 +399,46 @@ struct MeditationParser {
 
         var textBuffer = ""
 
+        func insert(_ pick: Pick) {
+            if let g = pick.gender {
+                currentGender = g
+            }
+            switch pick.expansion {
+            case .text(let t):
+                textBuffer += t
+            case .steps(let nestedSteps):
+                // Flush current text buffer before inserting nested content
+                if !textBuffer.trimmingCharacters(in: .whitespaces).isEmpty {
+                    let resolved = PronounResolver.resolve(textBuffer.trimmingCharacters(in: .whitespaces), gender: currentGender)
+                    steps.append(.speak(resolved))
+                    textBuffer = ""
+                }
+                // Recursively expanded content contains timing or bells, so keep it as separate steps.
+                steps.append(contentsOf: nestedSteps)
+            }
+        }
+
         for segment in segments {
             switch segment {
             case .text(let t):
                 textBuffer += t
             case .poolRef(let name):
-                if let pool = pools[name] {
-                    let drawn = pool.draw()
-                    if let g = pool.lastGender {
-                        currentGender = g
-                    }
-                    // Re-tokenize drawn text to resolve nested pool refs, pauses, etc.
-                    let innerTokens = tokenize(drawn)
-                    let hasNestedSpecials = innerTokens.contains(where: {
-                        if case .text = $0 { return false }; return true
-                    })
-                    if hasNestedSpecials {
-                        let nestedSteps = expandSpeakLine(drawn, pools: pools)
-                        if nestedSteps.count == 1, case .speak(let nestedText) = nestedSteps[0] {
-                            textBuffer += nestedText
-                        } else {
-                            // Flush current text buffer before inserting nested content
-                            if !textBuffer.trimmingCharacters(in: .whitespaces).isEmpty {
-                                let resolved = PronounResolver.resolve(textBuffer.trimmingCharacters(in: .whitespaces), gender: currentGender)
-                                steps.append(.speak(resolved))
-                                textBuffer = ""
-                            }
-                            // Recursively expanded content contains timing or bells, so keep it as separate steps.
-                            steps.append(contentsOf: nestedSteps)
-                        }
-                    } else {
-                        textBuffer += drawn
-                    }
+                // A bound pick takes precedence over a pool of the same name.
+                if let pick = bindings[name] {
+                    insert(pick)
+                } else if let pool = pools[name] {
+                    insert(drawPick(from: pool, pools: pools, bindings: &bindings))
                 } else {
                     textBuffer += "~\(name)"
+                }
+            case .bind(let name, let poolName):
+                // ~name=pool draws fresh, speaks it, and remembers it for later ~name refs.
+                if let pool = pools[poolName] {
+                    let pick = drawPick(from: pool, pools: pools, bindings: &bindings)
+                    bindings[name] = pick
+                    insert(pick)
+                } else {
+                    textBuffer += "~\(name)=\(poolName)"
                 }
             case .dots(let count):
                 // Flush text buffer, then pause
@@ -447,6 +486,7 @@ struct MeditationParser {
     private enum Token {
         case text(String)
         case poolRef(String)
+        case bind(String, String)   // ~name=pool
         case dots(Int)
         case seconds(TimeInterval)
         case countdown(TimeInterval)
@@ -516,6 +556,17 @@ struct MeditationParser {
                 while i < chars.count && (chars[i].isLetter || chars[i].isNumber || chars[i] == "_") {
                     name.append(chars[i])
                     i += 1
+                }
+                // Binding: ~name=pool (pool name must start with a letter or underscore)
+                if i + 1 < chars.count && chars[i] == "=" && (chars[i+1].isLetter || chars[i+1] == "_") {
+                    i += 1 // skip =
+                    var poolName = ""
+                    while i < chars.count && (chars[i].isLetter || chars[i].isNumber || chars[i] == "_") {
+                        poolName.append(chars[i])
+                        i += 1
+                    }
+                    tokens.append(.bind(name, poolName))
+                    continue
                 }
                 tokens.append(.poolRef(name))
                 continue
