@@ -5,6 +5,7 @@ struct MeditationDiagnostic: Identifiable {
     let line: Int
     let range: NSRange      // UTF-16 range in the script source
     let message: String
+    var isDeprecation = false   // old syntax that still plays, rather than a likely mistake
     var id: String { "\(range.location):\(message)" }
 }
 
@@ -19,6 +20,7 @@ struct MeditationParser {
         var pools: [String: Pool] = [:]
         var bindings: [String: Pick] = [:]
         var steps: [MeditationStep] = []
+        var builder = NodeBuilder()
         var i = 0
 
         while i < lines.count {
@@ -53,56 +55,27 @@ struct MeditationParser {
                 continue
             }
 
-            // Repeat block: ×N𝄐REST or ×N text... (× and x are interchangeable)
+            // Old prefix repeats (×N text, ×N𝄐REST, ×N alone over an indented body) are
+            // deprecated but still play; they become the same nodes as the postfix forms.
+            builder.beginLine()
             if isRepeatLineStart(trimmed) {
-                let parsed = parseRepeatLine(trimmed)
-                switch parsed {
-                case .stanzaBlock(let outerCount, let outerRest, let inlineBody):
-                    // ×N𝄐REST [inline body] — stanza block
-                    let bodyLines: [String]
-                    if let inlineBody = inlineBody {
-                        // One-liner: ×5𝄐28″ ×4 text... — inline body on same line
-                        bodyLines = [inlineBody]
-                        i += 1
-                    } else {
-                        // Block form: read indented body lines
-                        bodyLines = collectIndentedBody(lines: lines, index: &i)
-                    }
-                    // Expand inner ×N repeats within body lines
-                    let expandedBody = expandInnerRepeats(bodyLines)
-                    let sectionSteps = expandStanzaBlock(
-                        bodyLines: expandedBody,
-                        outerCount: outerCount,
-                        outerRest: outerRest,
-                        pools: pools,
-                        bindings: &bindings
-                    )
-                    steps.append(contentsOf: sectionSteps)
-
-                case .inlineRepeat(let count, let text):
-                    // ×N text... — simple repeat
-                    for _ in 0..<count {
-                        steps.append(contentsOf: expandSpeakLine(text, pools: pools, bindings: &bindings))
-                    }
-                    i += 1
-
-                case .blockRepeat(let count):
-                    // ×N (alone) — read indented body, repeat N times
-                    let bodyLines = collectIndentedBody(lines: lines, index: &i)
-                    for _ in 0..<count {
-                        for bodyLine in bodyLines {
-                            steps.append(contentsOf: expandSpeakLine(bodyLine, pools: pools, bindings: &bindings))
-                        }
-                    }
+                for node in legacyRepeatNodes(lines: lines, index: &i) {
+                    builder.append(node)
                 }
-                continue
+            } else {
+                parseLine(trimmed, into: &builder)
+                i += 1
             }
 
-            // Bare speak line
-            let lineSteps = expandSpeakLine(trimmed, pools: pools, bindings: &bindings)
-            steps.append(contentsOf: lineSteps)
-            i += 1
+            // Expand as soon as no [ group is open, so pools defined further down
+            // aren't visible to lines above them.
+            if builder.isAtTopLevel {
+                steps.append(contentsOf: expand(builder.takeAll(), round: nil, pools: pools, bindings: &bindings))
+            }
         }
+
+        // A [ left open runs to the end of the script.
+        steps.append(contentsOf: expand(builder.finish(), round: nil, pools: pools, bindings: &bindings))
 
         return Meditation(title: title, steps: steps)
     }
@@ -188,6 +161,7 @@ struct MeditationParser {
         var definedPools: Set<String> = []
         var boundNames: Set<String> = []
         var openPool: (name: String, line: Int, range: NSRange, items: Int)? = nil
+        var openBrackets: [(line: Int, range: NSRange)] = []
 
         func closeOpenPool() {
             if let pool = openPool, pool.items == 0 {
@@ -214,15 +188,46 @@ struct MeditationParser {
             }
             if isPoolItem { openPool?.items += 1 }
 
-            if let first = trimmed.first, first == "X", trimmed.dropFirst().first?.isNumber == true {
-                let start = (line.text as NSString).range(of: "X")
+            let lineNS = line.text as NSString
+            let lineLength = NSRange(location: 0, length: lineNS.length)
+
+            for match in capitalXRegex.matches(in: line.text, range: lineLength) {
                 diagnostics.append(MeditationDiagnostic(
                     line: lineNumber,
-                    range: NSRange(location: line.range.location + start.location, length: 1),
+                    range: NSRange(location: line.range.location + match.range.location, length: 1),
                     message: "Capital X isn't a repeat marker. Use x or ×."))
             }
 
-            let lineNS = line.text as NSString
+            if !isPoolItem, let match = legacyRepeatRegex.firstMatch(in: line.text, range: lineLength) {
+                let marker = lineNS.substring(with: match.range(at: 1))
+                let count = marker.dropFirst()
+                let fermata = match.range(at: 2)
+                let message: String
+                if fermata.location != NSNotFound {
+                    let rest = match.range(at: 3).location != NSNotFound ? lineNS.substring(with: match.range(at: 3)) : "28″"
+                    message = "Old stanza syntax. Write the body, then ‖\(rest) ×\(count) at the end of the line, or wrap a block in [ ] ‖\(rest) ×\(count)."
+                } else {
+                    message = "Old prefix repeat. Put ×\(count) after what it repeats: at the end of the line, or after a [ ] block."
+                }
+                diagnostics.append(MeditationDiagnostic(
+                    line: lineNumber,
+                    range: NSRange(location: line.range.location + match.range.location, length: match.range.length),
+                    message: message,
+                    isDeprecation: true))
+            }
+
+            if !isPoolItem {
+                for (offset, ch) in line.text.utf16.enumerated() where ch == 0x5B || ch == 0x5D {
+                    let range = NSRange(location: line.range.location + offset, length: 1)
+                    if ch == 0x5B {
+                        openBrackets.append((lineNumber, range))
+                    } else if openBrackets.popLast() == nil {
+                        diagnostics.append(MeditationDiagnostic(line: lineNumber, range: range,
+                                                                message: "This ] has no [ before it, so it would be read out."))
+                    }
+                }
+            }
+
             let matches = refRegex.matches(in: line.text, range: NSRange(location: 0, length: lineNS.length))
             for match in matches {
                 let name = lineNS.substring(with: match.range(at: 1))
@@ -248,7 +253,11 @@ struct MeditationParser {
             }
         }
         closeOpenPool()
-        return diagnostics
+        for bracket in openBrackets {
+            diagnostics.append(MeditationDiagnostic(line: bracket.line, range: bracket.range,
+                                                    message: "This [ is never closed, so it runs to the end. Add ] ×N after what it repeats."))
+        }
+        return diagnostics.sorted { $0.range.location < $1.range.location }
     }
 
     /// Names a script defines, for offering as `~name` insertions: pools, then remembered picks.
@@ -278,6 +287,13 @@ struct MeditationParser {
             ? "~\(name) is used before its pool is defined. Move the pool above this line."
             : "There's no pool named ~\(name), so it would be read out as text."
     }
+
+    /// A capital X where a repeat marker would go.
+    private static let capitalXRegex = try! NSRegularExpression(pattern: #"(?:^|(?<=[\s\]]))X\d+(?=$|[\s\[\]])"#)
+
+    /// An old prefix repeat at line start: `×5`, `×5𝄐28″` or `x5|28"` (but not the `||` break).
+    private static let legacyRepeatRegex = try! NSRegularExpression(
+        pattern: #"^[ \t]*([×x]\d+)(?:(𝄐|\|(?!\|))[ \t]*(\d+(?:\.\d+)?[″"′'])?)?"#)
 
     /// Matches `~name` and `~name=pool` the way the tokenizer reads them.
     private static let refRegex = try! NSRegularExpression(
@@ -333,7 +349,7 @@ struct MeditationParser {
         return ch == "\u{2033}" || ch == "\u{2032}" || ch == "\"" || ch == "'"
     }
 
-    /// True if char is the fermata symbol (𝄐 or its ASCII alternative |).
+    /// True if char is the old fermata symbol (𝄐 or its ASCII alternative |).
     private static func isFermata(_ ch: Character) -> Bool {
         return ch == "\u{1D110}" || ch == "|"
     }
@@ -344,74 +360,271 @@ struct MeditationParser {
     }
 
     /// Returns true if line begins with a repeat marker: × or x followed by a digit.
+    /// That is the old prefix form; postfix repeats come after what they repeat.
     private static func isRepeatLineStart(_ line: String) -> Bool {
-        guard let first = line.first else { return false }
-        if first == "\u{00D7}" {
-            // × is always a repeat marker
-            return line.count > 1 && line.dropFirst().first?.isNumber == true
-        }
-        if first == "x" {
-            // x is only a repeat marker if followed by a digit (avoids "xenophobia" etc.)
-            return line.count > 1 && line.dropFirst().first?.isNumber == true
-        }
-        return false
+        guard let first = line.first, isMultSign(first) else { return false }
+        // x is only a repeat marker if followed by a digit (avoids "xenophobia" etc.)
+        return line.dropFirst().first?.isNumber == true
     }
 
-    // MARK: - Repeat Notation (× syntax)
-
-    private enum RepeatParsed {
-        case stanzaBlock(outerCount: Int, outerRest: TimeInterval, inlineBody: String?)  // ×5𝄐28″ [inline body]
-        case inlineRepeat(count: Int, text: String)                  // ×4 text...
-        case blockRepeat(count: Int)                                 // ×4 (alone, body follows indented)
-    }
-
-    /// Parses a line starting with × or x into one of the repeat forms.
-    private static func parseRepeatLine(_ line: String) -> RepeatParsed {
-        let after = String(line.dropFirst()) // drop × or x
-
-        // Check for fermata (𝄐 or |) — stanza block form: ×5𝄐28″ [optional inline body]
-        if let fermataIdx = after.firstIndex(where: { isFermata($0) }) {
-            let countStr = String(after[..<fermataIdx])
-            let count = Int(countStr) ?? 5
-            let afterFermata = String(after[after.index(after: fermataIdx)...])
-                .trimmingCharacters(in: .whitespaces)
-            // Extract the rest duration (leading number + unit), then any remaining inline body
-            var restStr = ""
-            var ri = afterFermata.startIndex
-            while ri < afterFermata.endIndex {
-                let ch = afterFermata[ri]
-                if ch.isNumber || ch == "." || isDurationUnit(ch) {
-                    restStr.append(ch)
-                    ri = afterFermata.index(after: ri)
-                } else {
-                    break
-                }
-            }
-            let rest = restStr.isEmpty ? 28.0 : parseSeconds(restStr)
-            let inlineBody = String(afterFermata[ri...]).trimmingCharacters(in: .whitespaces)
-            return .stanzaBlock(outerCount: count, outerRest: rest,
-                                inlineBody: inlineBody.isEmpty ? nil : inlineBody)
-        }
-
-        // Extract count (leading digits)
+    /// Reads a duration like `28″`, `1.5′` or `28"` starting at `i`, returning seconds and the index after it.
+    private static func readDuration(_ chars: [Character], at i: Int) -> (seconds: TimeInterval, next: Int)? {
+        var j = i
         var numStr = ""
-        var idx = after.startIndex
-        while idx < after.endIndex && after[idx].isNumber {
-            numStr.append(after[idx])
-            idx = after.index(after: idx)
+        while j < chars.count && (chars[j].isNumber || chars[j] == ".") {
+            numStr.append(chars[j])
+            j += 1
         }
-        let count = Int(numStr) ?? 1
+        guard !numStr.isEmpty, j < chars.count, isDurationUnit(chars[j]) else { return nil }
+        numStr.append(chars[j])
+        return (parseSeconds(numStr), j + 1)
+    }
 
-        // Remaining text after count
-        let remaining = String(after[idx...]).trimmingCharacters(in: .whitespaces)
-        if remaining.isEmpty {
-            return .blockRepeat(count: count)
-        } else {
-            return .inlineRepeat(count: count, text: remaining)
+    // MARK: - Repeats, groups and breaks
+
+    /// A script's playable structure. Repeats are kept unexpanded so each round draws pools afresh.
+    private indirect enum Node {
+        case text(String)               // spoken text with inline pauses, pool refs, countdowns and bells
+        case group([Node])              // [ … ]
+        case repeated(Int, [Node])      // … ×N
+        case rest(TimeInterval)         // ‖28″ — a break between rounds of the enclosing repeat
+    }
+
+    /// Collects nodes line by line, keeping `[` groups open across lines.
+    private struct NodeBuilder {
+        private struct Scope {
+            var nodes: [Node] = []
+            var lineStart = 0           // where the current line's nodes begin
         }
+        private var stack: [Scope] = [Scope()]
+
+        var isAtTopLevel: Bool { stack.count == 1 }
+
+        mutating func beginLine() {
+            stack[stack.count - 1].lineStart = stack[stack.count - 1].nodes.count
+        }
+
+        mutating func append(_ node: Node) {
+            stack[stack.count - 1].nodes.append(node)
+        }
+
+        mutating func open() {
+            stack.append(Scope())
+        }
+
+        /// Closes the innermost `[`. Returns false if none is open.
+        @discardableResult
+        mutating func close() -> Bool {
+            guard stack.count > 1 else { return false }
+            let scope = stack.removeLast()
+            append(.group(scope.nodes))
+            return true
+        }
+
+        /// Postfix `×N`: wraps the group just closed, or else everything to its left on this line.
+        mutating func repeatTail(_ count: Int, groupOnly: Bool) {
+            var scope = stack[stack.count - 1]
+            let start = groupOnly ? scope.nodes.count - 1 : scope.lineStart
+            guard start >= 0, start < scope.nodes.count else { return }
+            let body = Array(scope.nodes[start...])
+            scope.nodes.replaceSubrange(start..., with: [.repeated(count, body)])
+            stack[stack.count - 1] = scope
+        }
+
+        mutating func takeAll() -> [Node] {
+            let nodes = stack[0].nodes
+            stack[0] = Scope()
+            return nodes
+        }
+
+        mutating func finish() -> [Node] {
+            while close() {}
+            return takeAll()
+        }
+    }
+
+    /// Reads a postfix `×N` / `xN` at `i`: it must stand alone, after a space, line start or `]`.
+    private static func readRepeatMarker(_ chars: [Character], at i: Int) -> (count: Int, next: Int)? {
+        guard isMultSign(chars[i]) else { return nil }
+        if i > 0 && !(chars[i - 1].isWhitespace || chars[i - 1] == "]") { return nil }
+        var j = i + 1
+        var numStr = ""
+        while j < chars.count && chars[j].isNumber {
+            numStr.append(chars[j])
+            j += 1
+        }
+        guard let count = Int(numStr) else { return nil }
+        if j < chars.count && !(chars[j].isWhitespace || "[]‖|".contains(chars[j])) { return nil }
+        return (count, j)
+    }
+
+    /// Reads a break `‖28″` / `||28"` at `i`. A break with no duration rests 28 seconds.
+    private static func readBreak(_ chars: [Character], at i: Int) -> (seconds: TimeInterval, next: Int)? {
+        var j: Int
+        if chars[i] == "\u{2016}" {
+            j = i + 1
+        } else if chars[i] == "|" && i + 1 < chars.count && chars[i + 1] == "|" {
+            j = i + 2
+        } else {
+            return nil
+        }
+        while j < chars.count && (chars[j] == " " || chars[j] == "\t") { j += 1 }
+        return readDuration(chars, at: j) ?? (28, j)
+    }
+
+    /// Splits one line into text, `[ ]` groups, postfix `×N` repeats and `‖` breaks.
+    private static func parseLine(_ line: String, into builder: inout NodeBuilder) {
+        let chars = Array(line)
+        var text = ""
+        var afterGroup = false      // only whitespace since the last `]`
+
+        func flushText() {
+            if !text.allSatisfy(\.isWhitespace) {
+                builder.append(.text(text))
+            }
+            text = ""
+        }
+
+        var i = 0
+        while i < chars.count {
+            let ch = chars[i]
+            if ch == "[" {
+                flushText()
+                builder.open()
+                afterGroup = false
+                i += 1
+                continue
+            }
+            if ch == "]" && !builder.isAtTopLevel {
+                flushText()
+                builder.close()
+                afterGroup = true
+                i += 1
+                continue
+            }
+            if let marker = readRepeatMarker(chars, at: i) {
+                flushText()
+                builder.repeatTail(marker.count, groupOnly: afterGroup)
+                afterGroup = false
+                i = marker.next
+                continue
+            }
+            if let brk = readBreak(chars, at: i) {
+                flushText()
+                builder.append(.rest(brk.seconds))
+                afterGroup = false
+                i = brk.next
+                continue
+            }
+            if !ch.isWhitespace { afterGroup = false }
+            text.append(ch)
+            i += 1
+        }
+        flushText()
+    }
+
+    /// Parses one line on its own, closing any `[` it leaves open.
+    private static func lineNodes(_ line: String) -> [Node] {
+        var builder = NodeBuilder()
+        parseLine(line, into: &builder)
+        return builder.finish()
+    }
+
+    // MARK: - Old prefix repeats (deprecated)
+
+    private enum LegacyRepeat {
+        case stanza(count: Int, rest: TimeInterval, inlineBody: String?)  // ×5𝄐28″ [inline body]
+        case inline(count: Int, text: String)                              // ×4 text...
+        case block(count: Int)                                             // ×4 (alone, body follows indented)
+    }
+
+    /// Parses a line starting with × or x into one of the old prefix forms.
+    private static func parseLegacyRepeat(_ line: String) -> LegacyRepeat {
+        let chars = Array(line.dropFirst()) // drop × or x
+        var idx = 0
+        var numStr = ""
+        while idx < chars.count && chars[idx].isNumber {
+            numStr.append(chars[idx])
+            idx += 1
+        }
+
+        // ×5𝄐28″ [optional inline body] — the fermata sits right after the count
+        if idx < chars.count && isFermata(chars[idx]) && !(idx + 1 < chars.count && chars[idx + 1] == "|") {
+            let count = Int(numStr) ?? 5
+            var ri = idx + 1
+            while ri < chars.count && (chars[ri] == " " || chars[ri] == "\t") { ri += 1 }
+            var rest: TimeInterval = 28
+            if let duration = readDuration(chars, at: ri) {
+                rest = duration.seconds
+                ri = duration.next
+            }
+            let inlineBody = String(chars[ri...]).trimmingCharacters(in: .whitespaces)
+            return .stanza(count: count, rest: rest, inlineBody: inlineBody.isEmpty ? nil : inlineBody)
+        }
+
+        let count = Int(numStr) ?? 1
+        let remaining = String(chars[idx...]).trimmingCharacters(in: .whitespaces)
+        return remaining.isEmpty ? .block(count: count) : .inline(count: count, text: remaining)
+    }
+
+    /// Converts the old prefix repeat at `lines[index]` (and any indented body) into nodes,
+    /// advancing `index` past what it read.
+    private static func legacyRepeatNodes(lines: [String], index: inout Int) -> [Node] {
+        let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+        switch parseLegacyRepeat(trimmed) {
+        case .inline(let count, let text):
+            index += 1
+            return [.repeated(count, legacyBodyLineNodes(text))]
+        case .block(let count):
+            let body = collectIndentedBody(lines: lines, index: &index)
+            return [.repeated(count, legacyBodyNodes(body))]
+        case .stanza(let count, let rest, let inlineBody):
+            let body: [Node]
+            if let inlineBody = inlineBody {
+                index += 1
+                body = legacyBodyLineNodes(inlineBody)
+            } else {
+                body = legacyBodyNodes(collectIndentedBody(lines: lines, index: &index))
+            }
+            return [.repeated(count, body + [.rest(rest)])]
+        }
+    }
+
+    /// A body line of an old repeat: itself possibly an inline `×N text`.
+    private static func legacyBodyLineNodes(_ line: String) -> [Node] {
+        if isRepeatLineStart(line), case .inline(let count, let text) = parseLegacyRepeat(line) {
+            return [.repeated(count, lineNodes(text))]
+        }
+        return lineNodes(line)
+    }
+
+    /// Body lines of an old block repeat, still carrying their indentation so a nested
+    /// `×N` alone can claim the lines indented under it.
+    private static func legacyBodyNodes(_ body: [String]) -> [Node] {
+        var nodes: [Node] = []
+        var k = 0
+        while k < body.count {
+            let raw = body[k]
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            if isRepeatLineStart(trimmed), case .block(let count) = parseLegacyRepeat(trimmed) {
+                let indent = raw.prefix(while: { $0 == " " || $0 == "\t" }).count
+                var inner: [String] = []
+                k += 1
+                while k < body.count && body[k].prefix(while: { $0 == " " || $0 == "\t" }).count > indent {
+                    inner.append(body[k])
+                    k += 1
+                }
+                nodes.append(.repeated(count, legacyBodyNodes(inner)))
+                continue
+            }
+            nodes.append(contentsOf: legacyBodyLineNodes(trimmed))
+            k += 1
+        }
+        return nodes
     }
 
     /// Reads indented body lines (starting with 2+ spaces or tab), advancing index past them.
+    /// Lines keep their indentation; blank and comment lines are dropped.
     private static func collectIndentedBody(lines: [String], index: inout Int) -> [String] {
         var body: [String] = []
         index += 1
@@ -420,66 +633,64 @@ struct MeditationParser {
             guard line.hasPrefix("  ") || line.hasPrefix("\t") else { break }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty && !trimmed.hasPrefix("#") {
-                body.append(trimmed)
+                body.append(line)
             }
             index += 1
         }
         return body
     }
 
-    /// Expands inner ×N inline repeats within body lines of a stanza block.
-    private static func expandInnerRepeats(_ bodyLines: [String]) -> [String] {
-        var expanded: [String] = []
-        for line in bodyLines {
-            if isRepeatLineStart(line) {
-                let parsed = parseRepeatLine(line)
-                switch parsed {
-                case .inlineRepeat(let count, let text):
-                    for _ in 0..<count {
-                        expanded.append(text)
-                    }
-                default:
-                    expanded.append(line)
-                }
-            } else {
-                expanded.append(line)
-            }
-        }
-        return expanded
-    }
+    // MARK: - Expansion
 
-    // MARK: - Stanza Expansion
-
-    private static func expandStanzaBlock(
-        bodyLines: [String],
-        outerCount: Int,
-        outerRest: TimeInterval,
+    /// Expands nodes into steps. `round` is the innermost enclosing repeat's progress,
+    /// which decides what a `‖` break says.
+    private static func expand(
+        _ nodes: [Node],
+        round: (index: Int, count: Int)?,
         pools: [String: Pool],
         bindings: inout [String: Pick]
     ) -> [MeditationStep] {
         var steps: [MeditationStep] = []
-
-        for stanza in 0..<outerCount {
-            for line in bodyLines {
-                steps.append(contentsOf: expandSpeakLine(line, pools: pools, bindings: &bindings))
-            }
-
-            // Rest between stanzas
-            if stanza < outerCount - 2 {
-                steps.append(.speak("Rest."))
-                steps.append(.pause(outerRest))
-                steps.append(.speak("Again."))
-                steps.append(.pause(1))
-            } else if stanza == outerCount - 2 {
-                steps.append(.speak("Rest."))
-                steps.append(.pause(outerRest))
-                steps.append(.speak("One last time."))
-                steps.append(.pause(1))
+        for node in nodes {
+            switch node {
+            case .text(let text):
+                steps.append(contentsOf: expandSpeakLine(text, pools: pools, bindings: &bindings))
+            case .group(let inner):
+                steps.append(contentsOf: expand(inner, round: round, pools: pools, bindings: &bindings))
+            case .repeated(let count, let body):
+                for index in 0..<max(count, 0) {
+                    steps.append(contentsOf: expand(body, round: (index, count), pools: pools, bindings: &bindings))
+                }
+                if count > 0 && containsOwnBreak(body) {
+                    steps.append(.speak("End"))
+                }
+            case .rest(let secs):
+                guard let round = round else {
+                    // Outside any repeat a break is just a pause.
+                    steps.append(.pause(secs))
+                    continue
+                }
+                // Skipped after the final round.
+                if round.index < round.count - 1 {
+                    steps.append(.speak("Rest."))
+                    steps.append(.pause(secs))
+                    steps.append(.speak(round.index < round.count - 2 ? "Again." : "One last time."))
+                    steps.append(.pause(1))
+                }
             }
         }
-
-        steps.append(.speak("End"))
         return steps
+    }
+
+    /// True if a break in `nodes` belongs to the repeat directly around them (not a nested one).
+    private static func containsOwnBreak(_ nodes: [Node]) -> Bool {
+        nodes.contains { node in
+            switch node {
+            case .rest: return true
+            case .group(let inner): return containsOwnBreak(inner)
+            case .text, .repeated: return false
+            }
+        }
     }
 
     // MARK: - Speak Line Expansion

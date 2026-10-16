@@ -21,8 +21,10 @@ Or press **F5** in VS Code with this folder open to launch an Extension Developm
 - **Pool weight markers**: `🪨`
 - **Gender markers**: `♀` `♂`
 - **Gender-neutral pronouns** rewritten at runtime: `they`/`them`/`their`/`theirs`/`themselves`
-- **Repeats**: `×5`, `x5`
-- **Fermata**: `𝄐`, `|`
+- **Repeats**: `×5`, `x5` after what they repeat
+- **Groups**: `[` `]`
+- **Breaks**: `‖28″`, `||28"`
+- **Old prefix repeats** (deprecated): `×5 text`, `×5𝄐28″`, scoped `invalid.deprecated` so themes show them as deprecated
 - **Dot pauses**: `···`
 - **Durations**: `28″`, `28"`, `3′`, `3'`
 - **Countdowns**: `⏳12″`

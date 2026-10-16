@@ -7,8 +7,10 @@
     { "include": "#tag-line" },
     { "include": "#comment" },
     { "include": "#pool-def" },
+    { "include": "#legacy-repeat" },
     { "include": "#repeat" },
-    { "include": "#fermata" },
+    { "include": "#group" },
+    { "include": "#break" },
     { "include": "#countdown" },
     { "include": "#duration" },
     { "include": "#dot-pause" },
@@ -70,13 +72,22 @@
         "4": { "name": "entity.name.function.pool-ref.med" }
       }
     },
+    "legacy-repeat": {
+      "comment": "Deprecated prefix repeats: ×4 text, ×5𝄐28″, x5|28\". Still played; write ×N after what it repeats instead.",
+      "match": "^[ \\t]*(?:×|x)\\d+(?:(?:𝄐|\\|(?!\\|))[ \\t]*(?:\\d+(?:\\.\\d+)?[″\"′'])?)?",
+      "name": "invalid.deprecated.repeat.med"
+    },
     "repeat": {
-      "match": "(?:^|(?<=\\s))(?:×|x)\\d+",
+      "match": "(?:^|(?<=[\\s\\]]))(?:×|x)\\d+(?=$|[\\s\\[\\]‖|])",
       "name": "constant.numeric.repeat.med"
     },
-    "fermata": {
-      "match": "(𝄐|\\|)",
-      "name": "keyword.operator.fermata.med"
+    "group": {
+      "match": "[\\[\\]]",
+      "name": "punctuation.section.group.med"
+    },
+    "break": {
+      "match": "‖|\\|\\|",
+      "name": "keyword.operator.break.med"
     },
     "countdown": {
       "match": "(⏳)[ \\t]*(\\d+(?:\\.\\d+)?)?([″\"′'])?",

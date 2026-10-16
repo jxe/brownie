@@ -28,8 +28,13 @@ struct MeditationEditorView: View {
                             Label {
                                 Text("Line \(diagnostic.line): \(diagnostic.message)")
                             } icon: {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
+                                if diagnostic.isDeprecation {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
+                                }
                             }
                         }
                         if diagnostics.count > 3 {

@@ -23,7 +23,7 @@ struct SampleMeditations {
               Am I trying to be good? · Can I just be at peace?
               I try being heart centered with ~h
 
-            ×7𝄐1′ ×5 ~x ··· 20″
+            ~x ··· 20″ ×5 ‖1′ ×7
             """
         ),
         (
@@ -59,7 +59,7 @@ struct SampleMeditations {
               Can I have a kind of presence with myself, as a person of principle?
               Can I be a person of principle, noticing when there’s pain in my heart, and feeling it and holding myself?
 
-            ×10𝄐28″ ×5 ~a 10″
+            ~a 10″ ×5 ‖28″ ×10
             """
         ),
     ]

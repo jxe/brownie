@@ -114,7 +114,7 @@ I take 30 seconds to feel my fear of ~x=fears. 30″ I try ~x.
 Each `~x=fears` draws fresh and replaces the old pick, so inside a repeat every repetition gets its own pick, reused within that repetition:
 
 ```
-×3 I feel ~f=fears. 20″ I breathe with ~f. 10″
+I feel ~f=fears. 20″ I breathe with ~f. 10″ ×3
 ```
 
 A binding lasts from where it is made until it is rebound, across lines. It takes precedence over a pool with the same name, and a pick's gender marker carries over to pronouns wherever it is reused.
@@ -147,55 +147,78 @@ The first item has weight 1, the second has weight 2, and the third has weight 3
 
 ## Repeats
 
-Use `×` (multiplication sign) to repeat lines or blocks.
+`×N` (multiplication sign, or `x`) goes **after** what it repeats, so a script reads in the order it plays.
 
-### Simple repeat: `×N text...`
+### Repeat a line: `text ×N`
 
-Repeats the line N times:
-
-```
-×4 I'm with ~person, not making progress. · Is it better ~why? 12″
-```
-
-This runs the line 4 times. Any trailing pause (the `12″`) naturally separates each repetition.
-
-### Stanza block: `×N𝄐REST`
-
-Repeats an indented body N times with REST seconds of silence between stanzas. The app automatically says "Rest." / "Again." between stanzas and "One last time." before the final one. `𝄐` is the fermata sign (U+1D110).
+`×N` at the end of a line repeats everything to its left:
 
 ```
-×5𝄐28″
-  I'm with someone, not making progress. · It's ~why. 12″
+I'm with ~person, not making progress. · Is it better ~why? 12″ ×4
 ```
 
-This runs the body 5 times with 28s rest between each.
+This plays the line 4 times. The trailing `12″` separates each repetition.
 
-### Nested repeats
+### Repeat part of a line, or several lines: `[ … ] ×N`
 
-Body lines inside a stanza block can themselves use `×N` for inner repetition:
-
-```
-×5𝄐28″
-  ×4 I'm with ~person, not making progress. · Is it better ~why? 12″
-```
-
-This means: 5 stanzas, each containing 4 repetitions of the line. The `12″` at the end of the line acts as the pause between inner cycles. 28s rest between stanzas.
-
-### One-liner
-
-The whole structure can be on a single line:
+`×N` right after a `]` repeats just the bracketed group:
 
 ```
-×5𝄐28″ ×4 I'm with ~person, not making progress. · Is it better ~why? 12″
+Neck stretch [left · right ·] ×3 back · forward ·
 ```
 
-The inner repeat can also be written in block form:
+Groups can span lines. Indenting inside them is optional and just for reading:
 
 ```
-×5𝄐28″
-  ×4
-    I'm with ~person, not making progress. · Is it better ~why? 12″
+[
+  Breathe in ····
+  Breathe out ····
+] ×5
 ```
+
+### Breaks between repeats: `‖REST`
+
+`‖` (double vertical line, or `||`) followed by a duration is a **break**. Inside a repeat it rests between rounds and is skipped after the last one. The app says "Rest." / "Again." around each break, "One last time." before the final round, and "End" after it. A break with no duration rests 28″. Outside any repeat, a break is just a pause.
+
+A plain duration like `28″` is a pause that always happens; a break only happens *between* repetitions.
+
+```
+~fbs ·· Feel 22″ Done. 6″ ×5 ‖28″ ×3
+```
+
+Read left to right: the line five times, a 28-second break, and all of that three times.
+
+The same thing as a block:
+
+```
+[
+  ~fbs ·· Feel 22″ Done. 6″ ×5
+  ‖28″
+] ×3
+```
+
+### Nesting
+
+Each `×N` repeats everything to its left on its line (or inside its group), including earlier repeats, so they nest outward:
+
+```
+~x ~y 11″ ×4 ‖28″ ×5        # 5 rounds of (4 × the line), 28″ breaks between rounds
+[left · right ·] ×2 ×3      # the group twice, all of that three times
+```
+
+### Old prefix repeats (deprecated)
+
+Older scripts put the count first. These still play, but the editor strikes them through and suggests the new form:
+
+| Old (deprecated) | New |
+|---|---|
+| `×4 text 12″` | `text 12″ ×4` |
+| `×5𝄐28″ ×4 text 11″` | `text 11″ ×4 ‖28″ ×5` |
+| `×4` + indented body | `[` body `] ×4` |
+| `×5𝄐28″` + indented body | `[` body, then `‖28″` `] ×5` |
+| `x5\|28" x4 ~x 11"` | `~x 11" x4 \|\|28" x5` |
+
+`𝄐` (the fermata) only ever meant "rest between stanzas" in the old stanza form; use `‖` instead.
 
 ## Complete Examples
 
@@ -223,7 +246,7 @@ Amen.
   So tired of nonstop progress.
   If only I'd found the right people.
 
-×3𝄐28″ ×5 ~fbs ·· Feel 22″ Done. 6″
+~fbs ·· Feel 22″ Done. 6″ ×5 ‖28″ ×3
 ```
 
 ### Yes to Life (countdown timers)
@@ -268,14 +291,16 @@ Done!
 | `~name` (line start) | Tilde + name | Pool definition (followed by indented items). Space after `~` optional. | — |
 | `~name` (inline) | Tilde + name | Pool reference (or a remembered pick, if `name` was bound) | — |
 | `~name=pool` | Tilde + name = pool | Draw from `pool` and remember it as `name` | — |
-| `×` | Multiplication (U+00D7) | Repeat count (`×5 text` or `×5𝄐28″`) | `x` (e.g. `x5`) |
-| `𝄐` | Fermata (U+1D110) | Rest between stanzas (`×5𝄐28″`) | `\|` (e.g. `x5\|28"`) |
+| `×` | Multiplication (U+00D7) | Repeat what comes before it N times (`text ×5`, `[…] ×5`) | `x` (e.g. `x5`) |
+| `[` `]` | Brackets | Group to repeat, on one line or across lines | — |
+| `‖` | Double vertical line (U+2016) | Break between repeats (`‖28″`) | `\|\|` (e.g. `\|\|28"`) |
+| `𝄐` | Fermata (U+1D110) | Deprecated: old stanza rest (`×5𝄐28″`) | `\|` |
 | `♀` | Female sign (U+2640) | Female gender on pool item | — |
 | `♂` | Male sign (U+2642) | Male gender on pool item | — |
 | `🪨` | Rock (U+1FAA8) | Extra weight on pool item | — |
 
-All-ASCII example equivalent to `×5𝄐28″ ×4 ~x ~y 11″`:
+All-ASCII example equivalent to `~x ~y 11″ ×4 ‖28″ ×5`:
 
 ```
-x5|28" x4 ~x ~y 11"
+~x ~y 11" x4 ||28" x5
 ```

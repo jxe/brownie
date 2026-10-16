@@ -10,8 +10,10 @@ struct MedTextEditor: UIViewRepresentable {
             ("#", "#", "Title, tag, or comment marker"),
         ],
         [
-            ("×", "\u{00D7}", "Repeat marker"),
-            ("\u{1D110}", "\u{1D110}", "Fermata rest marker"),
+            ("[", "[", "Start a group to repeat"),
+            ("]", "]", "End the group, then its repeat count"),
+            ("×", "\u{00D7}", "Repeat count, after what it repeats"),
+            ("‖", "\u{2016}", "Break between repeats"),
         ],
         [
             ("·", "·", "One second pause"),
@@ -87,6 +89,31 @@ struct MedTextEditor: UIViewRepresentable {
         return btn
     }
 
+    /// Inserts a toolbar symbol, nudging toward postfix repeats: `×` and `‖` get a space
+    /// before them, `]` comes with its `×`, and `[` wraps any selection as `[…] ×`.
+    private static func insertSymbol(_ char: String, into textView: UITextView) {
+        let content = textView.text as NSString
+        let selection = textView.selectedRange
+        let previous: Character? = selection.location > 0
+            ? Character(content.substring(with: content.rangeOfComposedCharacterSequence(at: selection.location - 1)))
+            : nil
+        let needsSpace = previous.map { !$0.isWhitespace && $0 != "[" } ?? false
+
+        switch char {
+        case "[" where selection.length > 0:
+            let selected = content.substring(with: selection)
+            textView.insertText("[\(selected)] \u{00D7}")
+        case "]":
+            textView.insertText("] \u{00D7}")
+        case "\u{00D7}" where needsSpace && previous != "]":
+            textView.insertText(" \u{00D7}")
+        case "\u{2016}" where needsSpace:
+            textView.insertText(" \u{2016}")
+        default:
+            textView.insertText(char)
+        }
+    }
+
     private func makeToolbar(textView: UITextView) -> UIView {
         let bar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
         bar.backgroundColor = .systemBackground.withAlphaComponent(0.55)
@@ -116,7 +143,7 @@ struct MedTextEditor: UIViewRepresentable {
             for symbol in group {
                 let btn = SymbolButton(label: symbol.label, accessibilityLabel: symbol.accessibilityLabel) { [weak textView] in
                     guard let tv = textView else { return }
-                    tv.insertText(symbol.char)
+                    Self.insertSymbol(symbol.char, into: tv)
                 }
                 stack.addArrangedSubview(btn)
             }
@@ -195,7 +222,7 @@ struct MedTextEditor: UIViewRepresentable {
             let stripped = currentLine.drop(while: { $0 == " " || $0 == "\t" })
             let indent = String(currentLine.prefix(currentLine.count - stripped.count))
 
-            // Pool definition (~name or ~ name) and × / x repeats should increase indent
+            // Pool definitions (~name or ~ name) and lines opening a [ group increase indent
             let trimmed = currentLine.trimmingCharacters(in: .whitespacesAndNewlines)
             let newIndent: String
             let isPoolDef: Bool = {
@@ -203,14 +230,8 @@ struct MedTextEditor: UIViewRepresentable {
                 let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
                 return !after.isEmpty && after.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
             }()
-            let isRepeat: Bool = {
-                guard let first = trimmed.first else { return false }
-                if first == "\u{00D7}" || first == "x" {
-                    return trimmed.count > 1 && trimmed.dropFirst().first?.isNumber == true
-                }
-                return false
-            }()
-            if isPoolDef || isRepeat {
+            let opensGroup = trimmed.hasSuffix("[")
+            if isPoolDef || opensGroup {
                 newIndent = indent + "  "
             } else {
                 newIndent = indent
@@ -332,10 +353,12 @@ private let medSyntaxRules: [MedSyntaxRule] = {
                       groupColors: [0: secondary]),
         MedSyntaxRule(regex: rx(#"^[ \t]*(~)[ \t]*([A-Za-z0-9_]+)[ \t]*$"#),
                       groupColors: [1: pool, 2: pool]),
-        MedSyntaxRule(regex: rx(#"(?:^|(?<=\s))(?:×|x)\d+"#),
+        MedSyntaxRule(regex: rx(#"(?:^|(?<=[\s\]]))(?:×|x)\d+(?=$|[\s\[\]‖|])"#),
                       groupColors: [0: count]),
-        MedSyntaxRule(regex: rx(#"(𝄐|\|)"#),
+        MedSyntaxRule(regex: rx(#"[\[\]]"#),
                       groupColors: [0: count]),
+        MedSyntaxRule(regex: rx(#"‖|\|\|"#),
+                      groupColors: [0: pause]),
         MedSyntaxRule(regex: rx(#"(⏳)[ \t]*(\d+(?:\.\d+)?)?([″"′'])?"#),
                       groupColors: [1: pause, 2: count, 3: count]),
         MedSyntaxRule(regex: rx(#"\b(\d+(?:\.\d+)?)([″"])"#),
@@ -377,6 +400,15 @@ private func applyMedHighlights(to textView: UITextView) {
     }
     for diagnostic in MeditationParser.diagnose(text)
     where NSMaxRange(diagnostic.range) <= storage.length {
+        if diagnostic.isDeprecation {
+            // Old syntax still plays: show it struck through rather than as an error.
+            storage.addAttributes([
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                .strikethroughColor: UIColor.secondaryLabel,
+                .foregroundColor: UIColor.secondaryLabel,
+            ], range: diagnostic.range)
+            continue
+        }
         storage.addAttributes([
             .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
             .underlineColor: UIColor.systemRed,
