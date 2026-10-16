@@ -24,6 +24,8 @@ struct MeditationListView: View {
     /// Set once the user folds or unfolds the previous era; until then it's open only while
     /// the current era is empty.
     @State private var previousEraCollapsedOverride: Bool? = nil
+    /// Where rows and headers are on screen, so a tap between them can stop playback.
+    @State private var tappableFrames = TappableFrames()
 
     private var hasEras: Bool { !eraIndex.eras.isEmpty }
 
@@ -138,6 +140,15 @@ struct MeditationListView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            // Tapping empty space stops the current meditation, like tapping outside the
+            // feelings chips stops the running one.
+            .simultaneousGesture(
+                SpatialTapGesture(coordinateSpace: .global).onEnded { value in
+                    guard player.currentSourceURL != nil,
+                          !tappableFrames.contains(value.location) else { return }
+                    player.stop()
+                }
+            )
             .navigationTitle(eraTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu {
@@ -261,6 +272,7 @@ struct MeditationListView: View {
         }
         .buttonStyle(.plain)
         .padding(.top, 16)
+        .tracksTappableFrame("header.timeless", in: tappableFrames)
         .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -295,6 +307,7 @@ struct MeditationListView: View {
         }
         .buttonStyle(.plain)
         .padding(.top, 16)
+        .tracksTappableFrame("header.previousEra", in: tappableFrames)
         .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -303,6 +316,7 @@ struct MeditationListView: View {
 
     private func listRow(for url: URL, bringAlong: Bool = false) -> some View {
         rowView(for: url, bringAlong: bringAlong)
+            .tracksTappableFrame(url.absoluteString, in: tappableFrames)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -330,8 +344,10 @@ struct MeditationListView: View {
         let showTags = !showElapsedTime && !isPreparing && !tags.isEmpty
         let activeFill = Color.yellow.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.62)
         let inactiveFill = Color("HighlightColor").opacity(0.3)
-        let goldRim = Color.yellow.opacity(colorScheme == .dark ? 0.7 : 1.0)
-        let goldRimWidth: CGFloat = colorScheme == .dark ? 0.75 : 1.25
+        // Lift and glow like a running feelings chip: soft dark shadow in light mode, a glow
+        // of the row's own color in dark mode.
+        let liftShadow = colorScheme == .dark ? Color.yellow.opacity(0.45) : Color.black.opacity(0.18)
+        let outerGlow = colorScheme == .dark ? Color.yellow.opacity(0.25) : Color.clear
         Button {
             if isPreparing {
                 player.stop()
@@ -347,7 +363,7 @@ struct MeditationListView: View {
                         Text(titleFor(url))
                             .font(.body)
                             .fontWeight(.medium)
-                            .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.6))
+                            .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.75))
                         PlayingPulseDot(isPulsing: isActive)
                             .frame(width: 12, height: 12)
                             .opacity(isEngaged ? 1 : 0)
@@ -388,17 +404,19 @@ struct MeditationListView: View {
 
                     RoundedRectangle(cornerRadius: 14)
                         .fill(isEngaged ? activeFill : inactiveFill)
-
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(goldRim, lineWidth: goldRimWidth)
-                        .opacity(isEngaged ? 1 : 0)
                 }
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             )
-            .shadow(color: .black.opacity(isEngaged ? 0.08 : 0.0), radius: isEngaged ? 6 : 0, y: isEngaged ? 3 : 0)
-            // One snappy transaction for every piece of the state change, so fill, rim, shadow,
+            .scaleEffect(isEngaged ? 1.03 : 1.0)
+            .shadow(
+                color: isEngaged ? liftShadow : .clear,
+                radius: colorScheme == .dark ? 8 : 7,
+                y: colorScheme == .dark ? 0 : 3
+            )
+            .shadow(color: isEngaged ? outerGlow : .clear, radius: 16)
+            // One snappy transaction for every piece of the state change, so fill, lift, shadow,
             // title, dot, and time label move together instead of on separate slow curves.
-            .animation(.snappy(duration: 0.22), value: isEngaged)
+            .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
             .animation(.snappy(duration: 0.22), value: showTags)
             .contentShape(RoundedRectangle(cornerRadius: 14))
@@ -692,6 +710,23 @@ private final class ScrollTouchDelayDisablingView: UIView {
             }
             current = parent.superview
         }
+    }
+}
+
+/// Global frames of the list's tappable rows and headers. A plain class, not observed, so
+/// scrolling updates it without re-rendering the list.
+private final class TappableFrames {
+    private var frames: [String: CGRect] = [:]
+
+    func set(_ frame: CGRect, for key: String) { frames[key] = frame }
+    func remove(_ key: String) { frames[key] = nil }
+    func contains(_ point: CGPoint) -> Bool { frames.values.contains { $0.contains(point) } }
+}
+
+private extension View {
+    func tracksTappableFrame(_ key: String, in frames: TappableFrames) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.set($0, for: key) }
+            .onDisappear { frames.remove(key) }
     }
 }
 
