@@ -21,6 +21,7 @@ struct MeditationListView: View {
     @State private var eraEditTarget: EraEditTarget? = nil
     @State private var showingNewEra = false
     @AppStorage("timelessCollapsed") private var timelessCollapsed = false
+    @AppStorage("previousEraCollapsed") private var previousEraCollapsed = false
 
     private var hasEras: Bool { !eraIndex.eras.isEmpty }
 
@@ -77,6 +78,21 @@ struct MeditationListView: View {
         }
     }
 
+    /// While viewing the current era: the era before it, or "Older" when it's the first era.
+    private var previousEraLabel: String? {
+        guard let current = eraIndex.current, selectedEra == .era(current.tag) else { return nil }
+        return eraIndex.eras.count > 1 ? eraIndex.eras[1].tag : "Older"
+    }
+
+    /// Previous-era meditations not yet brought into the current era.
+    private var previousEraFiles: [URL] {
+        guard previousEraLabel != nil, let current = eraIndex.current else { return [] }
+        if eraIndex.eras.count > 1 {
+            return eraFilesFor(eraIndex.eras[1].tag).filter { fileTags[$0]?.contains(current.tag) != true }
+        }
+        return files.filter { !isTimeless($0) && eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
+    }
+
     private var eraTitle: String {
         guard hasEras else { return "Meditations" }
         switch selectedEra {
@@ -97,6 +113,12 @@ struct MeditationListView: View {
                 }
                 ForEach(eraFiles, id: \.self) { url in
                     listRow(for: url)
+                }
+                if let previousEraLabel, !previousEraFiles.isEmpty {
+                    previousEraHeader(previousEraLabel)
+                    ForEach(previousEraFiles.filter { !previousEraCollapsed || player.currentSourceURL == $0 }, id: \.self) { url in
+                        listRow(for: url, bringAlong: true)
+                    }
                 }
             }
             .listStyle(.plain)
@@ -181,13 +203,8 @@ struct MeditationListView: View {
                 }
             }
             .sheet(isPresented: $showingNewEra) {
-                NewEraView(
-                    candidates: newEraCandidates,
-                    titles: fileTitles,
-                    existingTags: Set(eraIndex.eras.map(\.tag)),
-                    preselected: Set(eraIndex.current == nil ? [] : eraFilesFor(eraIndex.current!.tag))
-                ) { tag, members in
-                    startEra(tag, members: members)
+                NewEraView(existingTags: Set(eraIndex.eras.map(\.tag))) { tag in
+                    startEra(tag)
                 }
             }
             .background(Color("BackgroundColor"))
@@ -246,8 +263,42 @@ struct MeditationListView: View {
         .accessibilityLabel(timelessCollapsed ? "Show timeless meditations" : "Hide timeless meditations")
     }
 
-    private func listRow(for url: URL) -> some View {
-        rowView(for: url)
+    private func previousEraHeader(_ tag: String) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) {
+                previousEraCollapsed.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("From \(tag)")
+                if previousEraCollapsed {
+                    Text("\(previousEraFiles.count)")
+                        .foregroundStyle(.tertiary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(previousEraCollapsed ? 0 : 90))
+                Spacer()
+                if !previousEraCollapsed {
+                    Text("Swipe right to bring along")
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .font(.footnote)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 16)
+        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .accessibilityLabel(previousEraCollapsed ? "Show meditations from \(tag)" : "Hide meditations from \(tag)")
+    }
+
+    private func listRow(for url: URL, bringAlong: Bool = false) -> some View {
+        rowView(for: url, bringAlong: bringAlong)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -261,7 +312,7 @@ struct MeditationListView: View {
     }
 
     @ViewBuilder
-    private func rowView(for url: URL) -> some View {
+    private func rowView(for url: URL, bringAlong: Bool = false) -> some View {
         let filename = url.deletingPathExtension().lastPathComponent
         let isCurrent = player.currentSourceURL == url
         let isActive = isCurrent && player.isPlaying
@@ -358,12 +409,25 @@ struct MeditationListView: View {
             .tint(.orange)
         }
         .swipeActions(edge: .leading) {
-            Button { editEras(url) } label: {
-                Label("Eras", systemImage: "sparkles")
+            if bringAlong {
+                Button { bringAlongToCurrentEra(url) } label: {
+                    Label("Bring Along", systemImage: "arrow.up.circle")
+                }
+                .tint(.green)
+            } else {
+                Button { editEras(url) } label: {
+                    Label("Eras", systemImage: "sparkles")
+                }
+                .tint(.accentColor)
             }
-            .tint(.accentColor)
         }
         .contextMenu {
+            if bringAlong, let current = eraIndex.current {
+                Button { bringAlongToCurrentEra(url) } label: {
+                    Label("Bring Along to \(current.tag)", systemImage: "arrow.up.circle")
+                }
+                Divider()
+            }
             Button { playFile(url) } label: {
                 Label("Play", systemImage: "play")
             }
@@ -525,6 +589,17 @@ struct MeditationListView: View {
         refreshFiles()
     }
 
+    /// Adds the current era's tag. Doesn't stop playback: only the header changes.
+    private func bringAlongToCurrentEra(_ url: URL) {
+        guard let current = eraIndex.current else { return }
+        let (_, tags) = metadataFor(url)
+        guard !tags.contains(current.tag) else { return }
+        writeTags(tags + [current.tag], for: url)
+        withAnimation(.snappy(duration: 0.25)) {
+            refreshFiles()
+        }
+    }
+
     private func editEras(_ url: URL) {
         let (title, tags) = metadataFor(url)
         let selectable = tags.filter { eraIndex.isEraTag($0) || $0 == EraIndex.timelessTag }
@@ -562,23 +637,11 @@ struct MeditationListView: View {
         }
     }
 
-    /// Everything except timeless meditations: current-era members first, then the rest newest first.
-    private var newEraCandidates: [URL] {
-        let current = eraIndex.current.map { Set(eraFilesFor($0.tag)) } ?? []
-        let rest = files.filter { !isTimeless($0) }
-        return rest.filter { current.contains($0) } + rest.filter { !current.contains($0) }
-    }
-
-    private func startEra(_ tag: String, members: Set<URL>) {
+    private func startEra(_ tag: String) {
         var index = EraIndex.load()
         index.eras.insert(Era(tag: tag, started: EraIndex.todayString()), at: 0)
         index.save()
-        for url in files where members.contains(url) {
-            let (_, tags) = metadataFor(url)
-            if !tags.contains(tag) {
-                writeTags(tags + [tag], for: url)
-            }
-        }
+        previousEraCollapsed = false
         selectedEraOverride = nil
         refreshFiles()
     }

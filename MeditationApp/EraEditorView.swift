@@ -68,30 +68,14 @@ struct EraEditorView: View {
     }
 }
 
-/// Names a new era and picks which meditations come along into it.
+/// Names a new era. It starts empty; meditations from the previous era are brought along
+/// one at a time from the list, where they can be played and read first.
 struct NewEraView: View {
-    let candidates: [URL]
-    let titles: [URL: String]
     let existingTags: Set<String>
-    let onSave: (String, Set<URL>) -> Void
+    let onSave: (String) -> Void
 
     @State private var name = ""
-    @State private var members: Set<URL>
     @Environment(\.dismiss) private var dismiss
-
-    init(
-        candidates: [URL],
-        titles: [URL: String],
-        existingTags: Set<String>,
-        preselected: Set<URL>,
-        onSave: @escaping (String, Set<URL>) -> Void
-    ) {
-        self.candidates = candidates
-        self.titles = titles
-        self.existingTags = existingTags
-        self.onSave = onSave
-        _members = State(initialValue: preselected)
-    }
 
     /// Era names are tags, so no spaces or leading `#`.
     private var tag: String {
@@ -114,26 +98,9 @@ struct NewEraView: View {
                 } footer: {
                     if existingTags.contains(tag) {
                         Text("That era already exists.")
+                    } else if !existingTags.isEmpty {
+                        Text("The new era starts empty. The previous era's meditations wait below it, so you can listen and bring along the ones that still fit.")
                     }
-                }
-                Section {
-                    ForEach(candidates, id: \.self) { url in
-                        Button {
-                            if members.contains(url) { members.remove(url) } else { members.insert(url) }
-                        } label: {
-                            HStack {
-                                Text(titles[url] ?? url.deletingPathExtension().lastPathComponent)
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                Image(systemName: members.contains(url) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(members.contains(url) ? Color.accentColor : Color.secondary)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Bring along (\(members.count))")
-                } footer: {
-                    Text("They stay in their earlier eras too.")
                 }
             }
             .navigationTitle("New Era")
@@ -144,12 +111,13 @@ struct NewEraView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
-                        onSave(tag, members)
+                        onSave(tag)
                         dismiss()
                     }
                     .disabled(!isValid)
                 }
             }
         }
+        .presentationDetents([.medium])
     }
 }
