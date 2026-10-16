@@ -145,6 +145,11 @@ struct MeditationListView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .overlay {
+                if files.isEmpty {
+                    emptyLibrary
+                }
+            }
             // Tapping empty space stops the current meditation, like tapping outside the
             // feelings chips stops the running one.
             .simultaneousGesture(
@@ -174,14 +179,6 @@ struct MeditationListView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingStore = true
-                    } label: {
-                        Image(systemName: "storefront")
-                    }
-                    .accessibilityLabel("Store")
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingSettings = true
@@ -198,11 +195,21 @@ struct MeditationListView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        newFile()
+                    Menu {
+                        Button {
+                            newFile()
+                        } label: {
+                            Label("New Meditation", systemImage: "square.and.pencil")
+                        }
+                        Button {
+                            showingStore = true
+                        } label: {
+                            Label("Browse Store", systemImage: "books.vertical")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add")
                 }
             }
             .onAppear { hasGoodVoice = MeditationPlayer.hasGoodVoice }
@@ -291,6 +298,18 @@ struct MeditationListView: View {
                 // and archive paths call player.stop() explicitly.
                 refreshFiles()
             }
+    }
+
+    private var emptyLibrary: some View {
+        ContentUnavailableView {
+            Label("No Meditations Yet", systemImage: "leaf")
+        } description: {
+            Text("Write your own, or add some that other people shared.")
+        } actions: {
+            Button("New Meditation") { newFile() }
+                .buttonStyle(.borderedProminent)
+            Button("Browse Store") { showingStore = true }
+        }
     }
 
     private var timelessHeader: some View {
@@ -519,7 +538,7 @@ struct MeditationListView: View {
             // Downloads stay with their author; "Edit a Copy" makes one that can be shared.
             if storeRole != .downloaded {
                 Button { shareToStore(url) } label: {
-                    Label(storeRole == .shared ? "Update in Store…" : "Share to Store…", systemImage: "storefront")
+                    Label(storeRole == .shared ? "Update in Store…" : "Share to Store…", systemImage: "square.and.arrow.up")
                 }
             }
             if let recordName = meditationStore.link(for: filename)?.recordName {

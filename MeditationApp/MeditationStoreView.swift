@@ -70,7 +70,7 @@ struct MeditationStoreView: View {
             } else {
                 ContentUnavailableView(
                     "Nothing Shared Yet",
-                    systemImage: "storefront",
+                    systemImage: "books.vertical",
                     description: Text("Share one of your meditations from its menu in the list.")
                 )
             }
