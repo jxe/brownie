@@ -1,0 +1,8 @@
+{
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/", "destination": "/api/page?path=/" },
+    { "source": "/m/:rest*", "destination": "/api/page?path=/m/:rest*" },
+    { "source": "/.well-known/apple-app-site-association", "destination": "/api/page?path=/.well-known/apple-app-site-association" }
+  ]
+}
