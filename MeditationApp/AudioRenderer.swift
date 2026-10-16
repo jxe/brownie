@@ -42,6 +42,8 @@ class AudioRenderer {
     /// each time, flooding the console with plugin-interrupted / RBS-assertion
     /// churn. Render calls are awaited serially, so writes never overlap.
     private var synthesizer = AVSpeechSynthesizer()
+    /// The render in flight, so cancelling playback can end it. Main thread only.
+    private var activeSession: SpeechRenderSession?
 
     init() {
         self.format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
@@ -51,24 +53,31 @@ class AudioRenderer {
 
     /// Renders spoken text to an audio buffer using AVSpeechSynthesizer.write.
     func renderSpeech(text: String, voice: AVSpeechSynthesisVoice?, rate: Float) async throws -> AVAudioPCMBuffer {
+        let startedAt = Date()
+        let preview = Self.preview(text)
         let buffers: [AVAudioPCMBuffer] = try await withCheckedThrowingContinuation { continuation in
-            let session = SpeechRenderSession(synthesizer: synthesizer, text: text, voice: voice, rate: rate)
-            let preview = Self.preview(text)
+            let session = SpeechRenderSession(text: text, voice: voice, rate: rate, continuation: continuation)
 
             let timeoutWorkItem = DispatchWorkItem {
-                session.stopSpeaking()
                 session.finishFailure(
-                    AudioRendererError.speechTimedOut(seconds: self.speechRenderTimeout, preview: preview),
-                    continuation: continuation
+                    AudioRendererError.speechTimedOut(seconds: self.speechRenderTimeout, preview: preview)
                 )
             }
             session.setTimeoutWorkItem(timeoutWorkItem)
             DispatchQueue.main.asyncAfter(deadline: .now() + speechRenderTimeout, execute: timeoutWorkItem)
 
-            // AVSpeechSynthesizer.write must be called on the main thread
+            // AVSpeechSynthesizer.write must be called on the main thread. The synthesizer is
+            // picked here rather than above so a cancel queued before this block (which swaps
+            // in a fresh synthesizer) is respected.
             DispatchQueue.main.async {
-                session.start(continuation: continuation)
+                self.activeSession = session
+                session.start(on: self.synthesizer)
             }
+        }
+
+        let elapsed = Date().timeIntervalSince(startedAt)
+        if elapsed > 2 {
+            print("Brownie speech render took \(String(format: "%.1f", elapsed))s: \(preview)")
         }
 
         guard !buffers.isEmpty else {
@@ -79,12 +88,19 @@ class AudioRenderer {
         return try concatenateAndConvert(buffers: buffers)
     }
 
+    /// Ends any render in flight and swaps in a fresh synthesizer. A write interrupted by
+    /// `stopSpeaking` can fail to deliver its final callback, which left the old render's
+    /// timeout pending: 12s later it stopped whatever the shared synthesizer was rendering
+    /// for the next meditation, stalling it for another full timeout. The interrupted
+    /// synthesizer could also stay wedged, so the next meditation's first line hung too.
     func cancelSpeechRendering() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if self.synthesizer.isSpeaking {
-                self.synthesizer.stopSpeaking(at: .immediate)
-            }
+            guard let session = self.activeSession else { return }
+            self.activeSession = nil
+            guard !session.isFinished else { return }
+            session.finishFailure(CancellationError())
+            self.synthesizer = AVSpeechSynthesizer()
         }
     }
 
@@ -93,6 +109,7 @@ class AudioRenderer {
             if self.synthesizer.isSpeaking {
                 self.synthesizer.stopSpeaking(at: .immediate)
             }
+            self.activeSession = nil
             self.synthesizer = AVSpeechSynthesizer()
         }
     }
@@ -316,19 +333,28 @@ private final class SpeechRenderSession: @unchecked Sendable {
     private let text: String
     private let voice: AVSpeechSynthesisVoice?
     private let rate: Float
-    private let synthesizer: AVSpeechSynthesizer
+    private let continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>
+    /// The synthesizer this render was started on. Stopping goes through it, never the
+    /// renderer's current one, so a stale session can't interrupt a newer render.
+    private var synthesizer: AVSpeechSynthesizer?
     private var timeoutWorkItem: DispatchWorkItem?
     private var collected: [AVAudioPCMBuffer] = []
     private var finished = false
 
-    init(synthesizer: AVSpeechSynthesizer, text: String, voice: AVSpeechSynthesisVoice?, rate: Float) {
-        self.synthesizer = synthesizer
+    init(text: String, voice: AVSpeechSynthesisVoice?, rate: Float, continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>) {
         self.text = text
         self.voice = voice
         self.rate = rate
+        self.continuation = continuation
     }
 
-    func start(continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>) {
+    func start(on synthesizer: AVSpeechSynthesizer) {
+        lock.lock()
+        let alreadyFinished = finished
+        self.synthesizer = synthesizer
+        lock.unlock()
+        guard !alreadyFinished else { return }
+
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = rate
         utterance.voice = voice
@@ -337,17 +363,17 @@ private final class SpeechRenderSession: @unchecked Sendable {
         synthesizer.write(utterance) { [weak self] buffer in
             guard let self else { return }
             guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
-                finishSuccess(continuation: continuation)
+                finishSuccess()
                 return
             }
             append(pcm)
         }
     }
 
-    func stopSpeaking() {
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
+    var isFinished: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finished
     }
 
     func setTimeoutWorkItem(_ item: DispatchWorkItem) {
@@ -364,7 +390,7 @@ private final class SpeechRenderSession: @unchecked Sendable {
         lock.unlock()
     }
 
-    func finishSuccess(continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>) {
+    func finishSuccess() {
         let buffers: [AVAudioPCMBuffer]
         let timeout: DispatchWorkItem?
 
@@ -383,8 +409,10 @@ private final class SpeechRenderSession: @unchecked Sendable {
         continuation.resume(returning: buffers)
     }
 
-    func finishFailure(_ error: Error, continuation: CheckedContinuation<[AVAudioPCMBuffer], Error>) {
+    /// Stops this session's own synthesizer and fails the render. Call on the main thread.
+    func finishFailure(_ error: Error) {
         let timeout: DispatchWorkItem?
+        let synthesizer: AVSpeechSynthesizer?
 
         lock.lock()
         guard !finished else {
@@ -395,10 +423,13 @@ private final class SpeechRenderSession: @unchecked Sendable {
         collected.removeAll()
         timeout = timeoutWorkItem
         timeoutWorkItem = nil
+        synthesizer = self.synthesizer
         lock.unlock()
 
         timeout?.cancel()
-        stopSpeaking()
+        if let synthesizer, synthesizer.isSpeaking {
+            synthesizer.stopSpeaking(at: .immediate)
+        }
         continuation.resume(throwing: error)
     }
 }
