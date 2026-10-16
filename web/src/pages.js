@@ -1,5 +1,5 @@
-// Link pages for meditations shared in Brownie's store, shared by the Vercel
-// function (api/page.js) and the Cloudflare Worker (src/worker.js).
+// Link pages for meditations shared in Brownie's store, served by the Vercel
+// function in api/page.js.
 //
 //   /m/<id>        a page with the script and a social card; opens the app when it's installed
 //   /m/<id>.med    the raw script

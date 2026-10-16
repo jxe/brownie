@@ -38,7 +38,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 ### Store backend (outside the app)
 - **cloudkit/schema.ckdb** - CloudKit public-database schema (record types, indexes, security roles). Change it alongside any new store field
 - **tools/cloudkit.sh** - `cktool` wrapper: import the schema to Development, feature a starter
-- **web/** - med.nxhx.org on Vercel (`api/page.js`, page logic in `src/pages.js`; `src/worker.js` is a Cloudflare alternative): `/m/<id>` link pages with social cards, `/m/<id>.med` raw scripts, and the apple-app-site-association file for universal links
+- **web/** - med.nxhx.org on Vercel (`api/page.js`, page logic in `src/pages.js`;): `/m/<id>` link pages with social cards, `/m/<id>.med` raw scripts, and the apple-app-site-association file for universal links
 - **FileManager+Meditations.swift** - File persistence and iCloud migration
 
 ### Emotion Tracking
