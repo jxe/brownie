@@ -322,12 +322,7 @@ struct MeditationListView: View {
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
     }
 
-    /// Chips for a row: its other eras when eras exist, otherwise every tag as before.
-    private func chipTags(for url: URL) -> [String] {
-        guard hasEras else { return fileTags[url] ?? [] }
-        if isTimeless(url) { return [] }
-        return eraTags(of: url).filter { $0 != selectedEraTag }
-    }
+    private static let timeSlotHeight: CGFloat = 17
 
     @ViewBuilder
     private func rowView(for url: URL, bringAlong: Bool = false) -> some View {
@@ -338,16 +333,14 @@ struct MeditationListView: View {
         let isEngaged = isActive || isPreparing
         let hasLogToday = store.hasMeditationLogToday(filename: filename)
         let lastPlayed = store.lastPlayed(filename: filename)
-        let tags = chipTags(for: url)
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
         let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
-        let showTags = !showElapsedTime && !isPreparing && !tags.isEmpty
-        let activeFill = Color.yellow.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.62)
+        let activeFill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.7)
         let inactiveFill = Color("HighlightColor").opacity(0.3)
         // Lift and glow like a running feelings chip: soft dark shadow in light mode, a glow
         // of the row's own color in dark mode.
-        let liftShadow = colorScheme == .dark ? Color.yellow.opacity(0.45) : Color.black.opacity(0.18)
-        let outerGlow = colorScheme == .dark ? Color.yellow.opacity(0.25) : Color.clear
+        let liftShadow = colorScheme == .dark ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.18)
+        let outerGlow = colorScheme == .dark ? Color.accentColor.opacity(0.25) : Color.clear
         Button {
             if isPreparing {
                 player.stop()
@@ -369,26 +362,16 @@ struct MeditationListView: View {
                             .opacity(isEngaged ? 1 : 0)
                             .scaleEffect(isEngaged ? 1 : 0.4)
                     }
+                    // Without the time label the title drops to the row's middle; the slot
+                    // below keeps its height so rows don't change size when playback starts.
+                    .offset(y: showElapsedTime ? 0 : Self.timeSlotHeight / 2 + 2)
                     ZStack(alignment: .leading) {
                         if showElapsedTime {
                             PlaybackTimeLabel()
                                 .transition(.opacity.combined(with: .offset(y: 4)))
                         }
-                        if !tags.isEmpty {
-                            HStack(spacing: 4) {
-                                ForEach(tags, id: \.self) { tag in
-                                    Text(tag)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 2)
-                                        .background(Color.accentColor.opacity(0.18))
-                                        .clipShape(Capsule())
-                                }
-                            }
-                            .opacity(showTags ? 1 : 0)
-                        }
                     }
-                    .frame(minHeight: 17, alignment: .leading)
+                    .frame(minHeight: Self.timeSlotHeight, alignment: .leading)
                 }
 
                 Spacer()
@@ -418,7 +401,6 @@ struct MeditationListView: View {
             // title, dot, and time label move together instead of on separate slow curves.
             .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
-            .animation(.snappy(duration: 0.22), value: showTags)
             .contentShape(RoundedRectangle(cornerRadius: 14))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
