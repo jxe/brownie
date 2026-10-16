@@ -25,6 +25,10 @@ struct MeditationStoreView: View {
                 }
                 .listRowBackground(Color.clear)
                 .contextMenu {
+                    ShareLink(item: MeditationStore.shareURL(for: item.id)) {
+                        Label("Share Link…", systemImage: "square.and.arrow.up")
+                    }
+                    Divider()
                     StoreModerationButtons(item: item)
                 }
             }
@@ -106,7 +110,7 @@ private struct StoreRow: View {
     }
 }
 
-private struct StoreDetailView: View {
+struct StoreDetailView: View {
     let item: SharedMeditation
     @Environment(\.dismiss) private var dismiss
     private let store = MeditationStore.shared
@@ -156,6 +160,11 @@ private struct StoreDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: MeditationStore.shareURL(for: item.id), subject: Text(item.title)) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     StoreModerationButtons(item: item) { dismiss() }
                 } label: {
@@ -164,6 +173,44 @@ private struct StoreDetailView: View {
             }
         }
         .onAppear { isInLibrary = store.recordsInLibrary().contains(item.id) }
+    }
+}
+
+/// A store meditation opened from a med.nxhx.org link.
+struct StoreLinkView: View {
+    let id: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var item: SharedMeditation?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let item {
+                    StoreDetailView(item: item)
+                } else if let errorMessage {
+                    ContentUnavailableView("Can't Open Link", systemImage: "link", description: Text(errorMessage))
+                } else {
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color("BackgroundColor"))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .task(id: id) {
+            item = nil
+            errorMessage = nil
+            do {
+                item = try await MeditationStore.shared.fetchMeditation(id: id)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }
 

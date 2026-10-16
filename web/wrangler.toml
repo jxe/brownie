@@ -1,0 +1,13 @@
+# The med.nxhx.org link pages for shared meditations. Deploy with `npx wrangler deploy` from web/.
+name = "brownie-med"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+routes = [{ pattern = "med.nxhx.org", custom_domain = true }]
+
+[assets]
+directory = "./public"
+
+[vars]
+CK_CONTAINER = "iCloud.com.joeedelman.meditations"
+CK_ENVIRONMENT = "production"
+# CK_API_TOKEN is a secret: `npx wrangler secret put CK_API_TOKEN`

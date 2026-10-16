@@ -54,5 +54,11 @@ struct ContentView: View {
             }
         )
         .environment(\.feelingsTabCenterX, feelingsTabCenterX)
+        // med.nxhx.org/m/<id> universal links and brownie://m/<id> open the store item.
+        .onOpenURL { url in
+            guard let id = MeditationStore.recordName(from: url) else { return }
+            selectedTab = .meditations
+            MeditationStore.shared.openedLinkID = id
+        }
     }
 }

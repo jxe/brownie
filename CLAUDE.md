@@ -34,6 +34,11 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **SampleMeditations.swift** - Installs the store's featured meditations for brand-new local libraries
 - **MeditationStore.swift** - CloudKit public-database store: browse, download, share, updates, reports. Local file ↔ record links live in UserDefaults
 - **MeditationStoreView.swift** - Store sheet (opened from the Meditations toolbar) and the Share to Store sheet
+
+### Store backend (outside the app)
+- **cloudkit/schema.ckdb** - CloudKit public-database schema (record types, indexes, security roles). Change it alongside any new store field
+- **tools/cloudkit.sh** - `cktool` wrapper: import the schema to Development, feature a starter
+- **web/** - Cloudflare Worker serving med.nxhx.org: `/m/<id>` link pages with social cards, `/m/<id>.med` raw scripts, and the apple-app-site-association file for universal links
 - **FileManager+Meditations.swift** - File persistence and iCloud migration
 
 ### Emotion Tracking

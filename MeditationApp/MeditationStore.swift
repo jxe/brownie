@@ -43,16 +43,15 @@ struct StoreLink: Codable {
 
 /// The shared meditation store, kept in Brownie's CloudKit public database.
 ///
-/// Record types (create them in the CloudKit Dashboard, or let a development build create them):
-/// - `SharedMeditation`: title, tags, body, authorName. Anyone can read; only the sharer can change it.
-/// - `Featured`: meditation (reference), order. The starter set for new users; only Joe's role can create these.
-/// - `Report`: meditation (reference), title, reason. Written by the Report button, read in the Dashboard.
+/// The record types and their permissions are in `cloudkit/schema.ckdb`; `tools/cloudkit.sh` applies it.
+/// Each shared meditation also has a web page at `shareURL(for:)`, served by `web/`.
 @MainActor
 @Observable
 final class MeditationStore {
     static let shared = MeditationStore()
 
     static let containerIdentifier = "iCloud.com.joeedelman.meditations"
+    static let webHost = "med.nxhx.org"
     private static let meditationType = "SharedMeditation"
     private static let featuredType = "Featured"
     private static let reportType = "Report"
@@ -70,6 +69,8 @@ final class MeditationStore {
     private(set) var links: [String: StoreLink]
     private(set) var hiddenAuthors: Set<String>
     private(set) var reported: Set<String>
+    /// A store item someone opened a link to, waiting to be shown.
+    var openedLinkID: String?
 
     private var database: CKDatabase {
         CKContainer(identifier: Self.containerIdentifier).publicCloudDatabase
@@ -102,6 +103,39 @@ final class MeditationStore {
     func recordsInLibrary() -> Set<String> {
         let localNames = Set(FileManager.default.meditationFiles().map { $0.deletingPathExtension().lastPathComponent })
         return Set(links.filter { localNames.contains($0.key) }.map(\.value.recordName))
+    }
+
+    // MARK: Links
+
+    static func shareURL(for recordName: String) -> URL {
+        URL(string: "https://\(webHost)/m/\(recordName)")!
+    }
+
+    /// The store item id in a `https://med.nxhx.org/m/<id>` or `brownie://m/<id>` link.
+    static func recordName(from url: URL) -> String? {
+        let isWeb = url.scheme == "https" && url.host == webHost
+        let isApp = url.scheme == "brownie"
+        guard isWeb || isApp else { return nil }
+        // brownie://m/<id> puts "m" in the host; the web link puts it in the path.
+        var parts = url.pathComponents.filter { $0 != "/" }
+        if isApp, let host = url.host { parts.insert(host, at: 0) }
+        guard parts.count == 2, parts[0] == "m" else { return nil }
+        let id = parts[1].hasSuffix(".med") ? String(parts[1].dropLast(4)) : parts[1]
+        return id.isEmpty ? nil : id
+    }
+
+    func fetchMeditation(id: String) async throws -> SharedMeditation {
+        do {
+            let record = try await database.record(for: CKRecord.ID(recordName: id))
+            guard let item = SharedMeditation(record: record) else {
+                throw StoreError(message: "This link isn't a meditation.")
+            }
+            return item
+        } catch let error as CKError where error.code == .unknownItem {
+            throw StoreError(message: "This meditation is no longer in the store.")
+        } catch let error as CKError {
+            throw StoreError(message: Self.message(for: error))
+        }
     }
 
     // MARK: Browsing
@@ -267,21 +301,21 @@ final class MeditationStore {
 
     // MARK: Starters
 
-    /// The meditations Joe featured, in his order.
+    /// The meditations Joe featured, in the order he featured them.
     func fetchStarters() async throws -> [SharedMeditation] {
         let query = CKQuery(recordType: Self.featuredType, predicate: NSPredicate(value: true))
+        query.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         let (results, _) = try await database.records(matching: query, resultsLimit: 50)
-        let picks: [(order: Int, id: CKRecord.ID)] = results
-            .compactMap { try? $0.1.get() }
-            .compactMap { record in
-                guard let reference = record["meditation"] as? CKRecord.Reference else { return nil }
-                return ((record["order"] as? Int) ?? 0, reference.recordID)
-            }
-            .sorted { $0.order < $1.order }
-        guard !picks.isEmpty else { return [] }
-        let records = try await database.records(for: picks.map(\.id))
-        return picks
-            .compactMap { try? records[$0.id]?.get() }
+        var ids: [CKRecord.ID] = []
+        for case .success(let record) in results.map(\.1) {
+            guard let name = record["meditationID"] as? String else { continue }
+            let id = CKRecord.ID(recordName: name)
+            if !ids.contains(id) { ids.append(id) }
+        }
+        guard !ids.isEmpty else { return [] }
+        let records = try await database.records(for: ids)
+        return ids
+            .compactMap { try? records[$0]?.get() }
             .compactMap(SharedMeditation.init)
     }
 

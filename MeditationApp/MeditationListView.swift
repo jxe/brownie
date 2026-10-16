@@ -235,6 +235,14 @@ struct MeditationListView: View {
             .sheet(isPresented: $showingStore) {
                 MeditationStoreView()
             }
+            .sheet(isPresented: Binding(
+                get: { meditationStore.openedLinkID != nil },
+                set: { if !$0 { meditationStore.openedLinkID = nil } }
+            )) {
+                if let id = meditationStore.openedLinkID {
+                    StoreLinkView(id: id)
+                }
+            }
             .sheet(item: $shareTarget) { target in
                 ShareToStoreView(filename: target.filename, title: target.title, content: target.content)
             }
@@ -512,6 +520,11 @@ struct MeditationListView: View {
             if storeRole != .downloaded {
                 Button { shareToStore(url) } label: {
                     Label(storeRole == .shared ? "Update in Store…" : "Share to Store…", systemImage: "storefront")
+                }
+            }
+            if let recordName = meditationStore.link(for: filename)?.recordName {
+                ShareLink(item: MeditationStore.shareURL(for: recordName)) {
+                    Label("Share Store Link…", systemImage: "link")
                 }
             }
             // Only offered for something played today; an existing mark can always be removed.

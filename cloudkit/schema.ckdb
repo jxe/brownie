@@ -1,0 +1,61 @@
+DEFINE SCHEMA
+
+    // Joe's role: the only one allowed to choose the starter set.
+    CREATE ROLE Curator;
+
+    RECORD TYPE Users (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        roles           LIST<INT64>,
+        GRANT WRITE TO "_creator",
+        GRANT READ TO "_world"
+    );
+
+    // A meditation someone shared. Anyone can read it; only its sharer can change it.
+    RECORD TYPE SharedMeditation (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP SORTABLE,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        title           STRING QUERYABLE SEARCHABLE SORTABLE,
+        tags            LIST<STRING> QUERYABLE,
+        body            STRING,
+        authorName      STRING QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    // One starter for new users, in the order they were created. Only a Curator can add them.
+    RECORD TYPE Featured (
+        "___createTime" TIMESTAMP SORTABLE,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        meditationID    STRING QUERYABLE,
+        GRANT CREATE, WRITE TO Curator,
+        GRANT READ TO "_world"
+    );
+
+    // A report from the Report… button. Reporters can create; only Joe reads them, in the Console.
+    RECORD TYPE Report (
+        "___createTime" TIMESTAMP SORTABLE,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        meditation      REFERENCE QUERYABLE,
+        title           STRING,
+        reason          STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud"
+    );
