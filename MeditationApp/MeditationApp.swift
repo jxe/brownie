@@ -14,7 +14,7 @@ struct BrownieApp: App {
 
     init() {
         FileManager.default.configureInitialMeditationStorageIfNeeded()
-        SampleMeditations.installIfNeeded()
+        Task { await SampleMeditations.installIfNeeded() }
         icloudWatcher.start()
     }
 

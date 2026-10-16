@@ -21,7 +21,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 ## Architecture
 
 ### Meditation
-- **MeditationApp.swift** - App entry point, `SidebarDestination` enum, `ContentView` with `NavigationSplitView`
+- **MeditationApp.swift** - App entry point, `TabDestination` enum, `ContentView` with a `TabView` (Feelings, Meditations, Journal)
 - **MeditationModels.swift** - Core types: Pool, Gender, PronounResolver, MeditationStep, Meditation
 - **MeditationParser.swift** - Parses meditation script text into Meditation steps
 - **MeditationPlayer.swift** - AVSpeechSynthesizer-based playback engine (`@EnvironmentObject`)
@@ -31,7 +31,9 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **MeditationEditorView.swift** - Editor for meditation scripts (presented as sheet)
 - **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable)
 - **SettingsView.swift** - App settings (voice selection, speaking rate, iCloud)
-- **SampleMeditations.swift** - Built-in sample meditation scripts
+- **SampleMeditations.swift** - Installs the store's featured meditations for brand-new local libraries
+- **MeditationStore.swift** - CloudKit public-database store: browse, download, share, updates, reports. Local file ↔ record links live in UserDefaults
+- **MeditationStoreView.swift** - Store sheet (opened from the Meditations toolbar) and the Share to Store sheet
 - **FileManager+Meditations.swift** - File persistence and iCloud migration
 
 ### Emotion Tracking
@@ -42,10 +44,8 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **JournalView.swift** - Combined reflection picker (for selected emotions) + past journal entries list with share/export
 
 ## Navigation
-- Uses `NavigationSplitView` for sidebar
-- `SidebarDestination` enum in MeditationApp.swift defines all sidebar items: Meditations, Check In, Journal, Settings
-- To add a new sidebar item: add a case to `SidebarDestination` (with label + icon), handle it in the detail `switch` in `ContentView`
-- `MeditationEditorView` is presented as a `.sheet` from `MeditationListView`
+- Uses a `TabView` with tabs Feelings, Meditations, Journal (`TabDestination` in MeditationApp.swift)
+- Settings, the Store, and `MeditationEditorView` are presented as `.sheet`s from `MeditationListView`
 - `JournalView` uses an inner `NavigationStack` with `.navigationDestination(for: Emotion.self)` to push `ReflectionView`
 
 ## Key Patterns

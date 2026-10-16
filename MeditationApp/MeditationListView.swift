@@ -26,6 +26,11 @@ struct MeditationListView: View {
     @State private var previousEraCollapsedOverride: Bool? = nil
     /// Where rows and headers are on screen, so a tap between them can stop playback.
     @State private var tappableFrames = TappableFrames()
+    @State private var showingStore = false
+    @State private var shareTarget: ShareTarget? = nil
+    /// Filename of a downloaded meditation whose update is waiting for confirmation.
+    @State private var updateTarget: String? = nil
+    private let meditationStore = MeditationStore.shared
 
     private var hasEras: Bool { !eraIndex.eras.isEmpty }
 
@@ -169,6 +174,14 @@ struct MeditationListView: View {
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingStore = true
+                    } label: {
+                        Image(systemName: "storefront")
+                    }
+                    .accessibilityLabel("Store")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingSettings = true
@@ -219,6 +232,26 @@ struct MeditationListView: View {
                     refreshFiles()
                 }
             }
+            .sheet(isPresented: $showingStore) {
+                MeditationStoreView()
+            }
+            .sheet(item: $shareTarget) { target in
+                ShareToStoreView(filename: target.filename, title: target.title, content: target.content)
+            }
+            .confirmationDialog(
+                "Get the new version?",
+                isPresented: Binding(
+                    get: { updateTarget != nil },
+                    set: { if !$0 { updateTarget = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: updateTarget
+            ) { filename in
+                Button("Update") { applyStoreUpdate(filename) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("Its author shared a new version. It replaces this copy, including any changes you made to it.")
+            }
             .sheet(item: $eraEditTarget) { target in
                 EraEditorView(
                     title: target.title,
@@ -235,10 +268,14 @@ struct MeditationListView: View {
             }
             .background(Color("BackgroundColor"))
             .onAppear { refreshFiles() }
+            .task { await meditationStore.checkForUpdates() }
             .onChange(of: scenePhase) { _, newPhase in
                 // Defensive refresh on returning to foreground in case the watcher missed
                 // events while the app was suspended.
-                if newPhase == .active { refreshFiles() }
+                if newPhase == .active {
+                    refreshFiles()
+                    Task { await meditationStore.checkForUpdates() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .meditationsDidChange)) { _ in
                 // Watcher only drives list refresh. The player is intentionally not invalidated
@@ -333,6 +370,8 @@ struct MeditationListView: View {
         let isEngaged = isActive || isPreparing
         let hasLogToday = store.hasMeditationLogToday(filename: filename)
         let lastPlayed = store.lastPlayed(filename: filename)
+        let hasUpdate = meditationStore.updates[filename] != nil
+        let storeRole = meditationStore.link(for: filename)?.role
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
         let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
         let activeFill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.65)
@@ -377,6 +416,7 @@ struct MeditationListView: View {
                 Spacer()
 
                 LastPlayedLabel(date: lastPlayed, helpedToday: hasLogToday)
+                    .opacity(hasUpdate ? 0 : 1)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -405,6 +445,24 @@ struct MeditationListView: View {
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(MeditationRowPressStyle())
+        // Over the row rather than inside its label, so it gets its own taps.
+        .overlay(alignment: .trailing) {
+            if hasUpdate {
+                Button {
+                    updateTarget = filename
+                } label: {
+                    Text("Update")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.22)))
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 14)
+                .accessibilityLabel("Update from the store")
+            }
+        }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
             Button { archiveFile(url) } label: {
@@ -444,6 +502,17 @@ struct MeditationListView: View {
             }
             Button { editEras(url) } label: {
                 Label("Eras…", systemImage: "sparkles")
+            }
+            if hasUpdate {
+                Button { updateTarget = filename } label: {
+                    Label("Update from Store", systemImage: "arrow.down.circle")
+                }
+            }
+            // Downloads stay with their author; "Edit a Copy" makes one that can be shared.
+            if storeRole != .downloaded {
+                Button { shareToStore(url) } label: {
+                    Label(storeRole == .shared ? "Update in Store…" : "Share to Store…", systemImage: "storefront")
+                }
             }
             // Only offered for something played today; an existing mark can always be removed.
             if hasLogToday || lastPlayed.map(Calendar.current.isDateInToday) == true {
@@ -568,6 +637,23 @@ struct MeditationListView: View {
         editorFilename = candidate
         isNewFile = false
         showingEditor = true
+    }
+
+    private func shareToStore(_ url: URL) {
+        guard let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) else { return }
+        shareTarget = ShareTarget(
+            filename: url.deletingPathExtension().lastPathComponent,
+            title: titleFor(url),
+            content: content
+        )
+    }
+
+    private func applyStoreUpdate(_ filename: String) {
+        if player.currentSourceURL?.deletingPathExtension().lastPathComponent == filename {
+            player.stop()
+        }
+        meditationStore.applyUpdate(to: filename)
+        refreshFiles()
     }
 
     private func newFile() {
@@ -919,4 +1005,11 @@ private final class PulseDotView: UIView {
         group.isRemovedOnCompletion = false
         dot.add(group, forKey: Self.animationKey)
     }
+}
+
+private struct ShareTarget: Identifiable {
+    let filename: String
+    let title: String
+    let content: String
+    var id: String { filename }
 }
