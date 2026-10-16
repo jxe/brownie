@@ -335,7 +335,7 @@ struct MeditationListView: View {
         let lastPlayed = store.lastPlayed(filename: filename)
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
         let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
-        let activeFill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.7)
+        let activeFill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.65)
         let inactiveFill = Color("HighlightColor").opacity(0.3)
         // Lift and glow like a running feelings chip: soft dark shadow in light mode, a glow
         // of the row's own color in dark mode.
