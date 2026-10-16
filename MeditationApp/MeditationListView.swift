@@ -62,8 +62,15 @@ struct MeditationListView: View {
         return EraIndex.dateString(for: url) >= current.started
     }
 
+    /// Timeless meditations not already shown under the selected era.
     private var timelessFiles: [URL] {
-        hasEras ? files.filter(isTimeless) : []
+        guard hasEras else { return [] }
+        return files.filter { isTimeless($0) && !isInSelectedEra($0) }
+    }
+
+    private func isInSelectedEra(_ url: URL) -> Bool {
+        guard let selectedEraTag else { return false }
+        return fileTags[url]?.contains(selectedEraTag) == true
     }
 
     private var eraFiles: [URL] {
@@ -73,8 +80,11 @@ struct MeditationListView: View {
         case .older:
             return rest.filter { eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
         case .era(let tag):
+            // Timeless meditations also tagged with this era show here rather than under Timeless.
             let isCurrent = tag == eraIndex.current?.tag
-            return rest.filter { fileTags[$0]?.contains(tag) == true || (isCurrent && isUnassignedNew($0)) }
+            return files.filter {
+                fileTags[$0]?.contains(tag) == true || (isCurrent && !isTimeless($0) && isUnassignedNew($0))
+            }
         }
     }
 
@@ -103,16 +113,15 @@ struct MeditationListView: View {
 
     var body: some View {
             List {
+                ForEach(eraFiles, id: \.self) { url in
+                    listRow(for: url)
+                }
                 if !timelessFiles.isEmpty {
                     timelessHeader
                     // Collapsed still shows whatever's playing, so it can be paused.
                     ForEach(timelessFiles.filter { !timelessCollapsed || player.currentSourceURL == $0 }, id: \.self) { url in
                         listRow(for: url)
                     }
-                    sectionCaption(eraTitle)
-                }
-                ForEach(eraFiles, id: \.self) { url in
-                    listRow(for: url)
                 }
                 if let previousEraLabel, !previousEraFiles.isEmpty {
                     previousEraHeader(previousEraLabel)
@@ -222,17 +231,6 @@ struct MeditationListView: View {
             }
     }
 
-    private func sectionCaption(_ text: String) -> some View {
-        Text(text)
-            .font(.footnote)
-            .fontWeight(.medium)
-            .foregroundStyle(.secondary)
-            .padding(.top, 8)
-            .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-    }
-
     private var timelessHeader: some View {
         Button {
             withAnimation(.snappy(duration: 0.25)) {
@@ -256,7 +254,7 @@ struct MeditationListView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.top, 8)
+        .padding(.top, 16)
         .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
