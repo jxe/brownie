@@ -21,7 +21,9 @@ struct MeditationListView: View {
     @State private var eraEditTarget: EraEditTarget? = nil
     @State private var showingNewEra = false
     @AppStorage("timelessCollapsed") private var timelessCollapsed = false
-    @AppStorage("previousEraCollapsed") private var previousEraCollapsed = false
+    /// Set once the user folds or unfolds the previous era; until then it's open only while
+    /// the current era is empty.
+    @State private var previousEraCollapsedOverride: Bool? = nil
 
     private var hasEras: Bool { !eraIndex.eras.isEmpty }
 
@@ -92,6 +94,10 @@ struct MeditationListView: View {
     private var previousEraLabel: String? {
         guard let current = eraIndex.current, selectedEra == .era(current.tag) else { return nil }
         return eraIndex.eras.count > 1 ? eraIndex.eras[1].tag : "Older"
+    }
+
+    private var previousEraCollapsed: Bool {
+        previousEraCollapsedOverride ?? !eraFiles.isEmpty
     }
 
     /// Previous-era meditations not yet brought into the current era.
@@ -264,7 +270,7 @@ struct MeditationListView: View {
     private func previousEraHeader(_ tag: String) -> some View {
         Button {
             withAnimation(.snappy(duration: 0.25)) {
-                previousEraCollapsed.toggle()
+                previousEraCollapsedOverride = !previousEraCollapsed
             }
         } label: {
             HStack(spacing: 6) {
@@ -639,7 +645,7 @@ struct MeditationListView: View {
         var index = EraIndex.load()
         index.eras.insert(Era(tag: tag, started: EraIndex.todayString()), at: 0)
         index.save()
-        previousEraCollapsed = false
+        previousEraCollapsedOverride = nil
         selectedEraOverride = nil
         refreshFiles()
     }
