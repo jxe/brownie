@@ -33,7 +33,8 @@ struct JournalView: View {
 
                 **Long-term value or change:** \(t.value)
 
-                **Did:** \(t.actionSentence)
+                **Did:**
+                \(t.filledActions.map { "- \($0.sentence)" }.joined(separator: "\n"))
                 """
             }
             let dateStr = entry.timestamp.formatted(date: .long, time: .shortened)
@@ -541,7 +542,7 @@ private struct OpenTodoRow: View {
                 Text(emotion.name)
                     .font(.body)
                     .fontWeight(.medium)
-                Text(todo.map { $0.actionObject.isEmpty ? $0.state.label : $0.actionSentence } ?? emotion.question)
+                Text(todo.map { $0.filledActions.isEmpty ? $0.state.label : $0.actionsSummary } ?? emotion.question)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -571,8 +572,10 @@ private struct DoneTodoRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Label(todo.actionSentence, systemImage: "checkmark.circle.fill")
-                .font(.subheadline)
+            ForEach(todo.filledActions) { action in
+                Label(action.sentence, systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+            }
             Text("\(todo.concernPrompt): \(todo.concern)")
                 .font(.caption)
                 .foregroundStyle(.secondary)

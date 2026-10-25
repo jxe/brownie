@@ -167,6 +167,26 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
         }
     }
 
+    /// One local action: "Inspire / Ask for / Attend to ___".
+    struct Action: Identifiable, Codable, Hashable {
+        let id: UUID
+        var verb: ActionVerb
+        var object: String = ""
+
+        init(verb: ActionVerb) {
+            id = UUID()
+            self.verb = verb
+        }
+
+        var isBlank: Bool {
+            object.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        var sentence: String {
+            "\(verb.label) \(object.trimmingCharacters(in: .whitespacesAndNewlines))"
+        }
+    }
+
     let id: UUID
     let emotionName: String
     let emoji: String
@@ -177,10 +197,9 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
     var concern: String = ""
     /// The long-term value or change wanted.
     var value: String = ""
-    var actionVerb: ActionVerb = .inspire
-    /// Completes "Inspire / Ask for / Attend to ___".
-    var actionObject: String = ""
+    var actions: [Action] = []
     var feltThroughAt: Date?
+    /// When the feeling was marked done, all its actions at once.
     var doneAt: Date?
 
     init(emotion: Emotion, createdAt: Date = Date()) {
@@ -192,16 +211,55 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
         self.createdAt = createdAt
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, emotionName, emoji, question, category, createdAt
+        case concern, value, actions, feltThroughAt, doneAt
+    }
+
+    /// The first version held a single action in these keys.
+    private enum LegacyKeys: String, CodingKey {
+        case actionVerb, actionObject
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        emotionName = try c.decode(String.self, forKey: .emotionName)
+        emoji = try c.decode(String.self, forKey: .emoji)
+        question = try c.decode(String.self, forKey: .question)
+        category = try c.decode(EmotionCategory.self, forKey: .category)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        concern = try c.decodeIfPresent(String.self, forKey: .concern) ?? ""
+        value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
+        feltThroughAt = try c.decodeIfPresent(Date.self, forKey: .feltThroughAt)
+        doneAt = try c.decodeIfPresent(Date.self, forKey: .doneAt)
+        if let actions = try c.decodeIfPresent([Action].self, forKey: .actions) {
+            self.actions = actions
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+            let object = try legacy.decodeIfPresent(String.self, forKey: .actionObject) ?? ""
+            if !object.isEmpty {
+                var action = Action(verb: try legacy.decodeIfPresent(ActionVerb.self, forKey: .actionVerb) ?? .inspire)
+                action.object = object
+                actions = [action]
+            }
+        }
+    }
+
+    var filledActions: [Action] {
+        actions.filter { !$0.isBlank }
+    }
+
     var isFilledOut: Bool {
-        [concern, value, actionObject].allSatisfy {
+        !filledActions.isEmpty && [concern, value].allSatisfy {
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
     var hasContent: Bool {
-        [concern, value, actionObject].contains {
+        [concern, value].contains {
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } || feltThroughAt != nil || doneAt != nil
+        } || !filledActions.isEmpty || feltThroughAt != nil || doneAt != nil
     }
 
     var state: State {
@@ -214,7 +272,7 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
         category == .negative ? "The complaint" : "What to honor"
     }
 
-    var actionSentence: String {
-        "\(actionVerb.label) \(actionObject.trimmingCharacters(in: .whitespacesAndNewlines))"
+    var actionsSummary: String {
+        filledActions.map(\.sentence).joined(separator: "; ")
     }
 }

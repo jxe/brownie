@@ -317,7 +317,7 @@ class EmotionStore {
         persistTodos()
     }
 
-    /// Clears a done to-do's check, unless that feeling already has another open one.
+    /// Unchecks a done to-do, unless that feeling already has another open one.
     func reopenTodo(_ todo: FeelingTodo) {
         guard let index = todos.firstIndex(where: { $0.id == todo.id }),
               !todos.contains(where: { $0.emotionName == todo.emotionName && $0.doneAt == nil })

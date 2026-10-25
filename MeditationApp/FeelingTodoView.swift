@@ -10,6 +10,7 @@ struct FeelingTodoView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var todo: FeelingTodo?
     @State private var dictation = DictationRecorder()
+    @FocusState private var focusedAction: UUID?
 
     private var isAccruing: Bool {
         store.accruingEmotionID == emotion.id
@@ -60,6 +61,10 @@ struct FeelingTodoView: View {
         }
         .onDisappear {
             dictation.stop()
+            if var todo, todo.actions.contains(where: \.isBlank) {
+                todo.actions.removeAll(where: \.isBlank)
+                store.saveTodo(todo)
+            }
         }
         .task(id: isAccruing) {
             // Taps cap credit at `maxEmotionCreditDuration`; keep extending while on.
@@ -117,6 +122,7 @@ struct FeelingTodoView: View {
             field(todo.wrappedValue.concernPrompt, id: "concern", text: todo.concern)
             field("The long-term value or change", id: "value", text: todo.value)
             actionField(todo)
+            doneButton(todo)
         }
         .padding()
     }
@@ -192,37 +198,65 @@ struct FeelingTodoView: View {
 
     private func actionField(_ todo: Binding<FeelingTodo>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("The one thing you can do now")
+            Text("What you can do now")
                 .font(.subheadline)
                 .fontWeight(.medium)
-            Picker("Action", selection: todo.actionVerb) {
+            ForEach(todo.actions) { action in
+                actionRow(action)
+            }
+            HStack(spacing: 8) {
                 ForEach(FeelingTodo.ActionVerb.allCases) { verb in
-                    Text(verb.label).tag(verb)
+                    Button {
+                        let action = FeelingTodo.Action(verb: verb)
+                        todo.wrappedValue.actions.append(action)
+                        focusedAction = action.id
+                    } label: {
+                        Label(verb.label, systemImage: "plus")
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
-            .pickerStyle(.segmented)
-            HStack(alignment: .top, spacing: 8) {
-                Button {
-                    todo.wrappedValue.doneAt = todo.wrappedValue.doneAt == nil ? Date() : nil
-                } label: {
-                    Image(systemName: todo.wrappedValue.doneAt == nil ? "circle" : "checkmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                .disabled(todo.wrappedValue.actionObject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel(todo.wrappedValue.doneAt == nil ? "Mark done" : "Mark not done")
-
-                TextField(todo.wrappedValue.actionVerb.prompt, text: todo.actionObject, axis: .vertical)
-                    .lineLimit(1...4)
-                    .strikethrough(todo.wrappedValue.doneAt != nil)
-                micButton(id: "action", text: todo.actionObject)
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color("HighlightColor"))
-            )
         }
+    }
+
+    private func doneButton(_ todo: Binding<FeelingTodo>) -> some View {
+        let isDone = todo.wrappedValue.doneAt != nil
+        return Button {
+            if !isDone, isAccruing { store.stopAccruing() }
+            todo.wrappedValue.doneAt = isDone ? nil : Date()
+        } label: {
+            Label(isDone ? "Done" : "Mark Feeling Done", systemImage: isDone ? "checkmark.circle.fill" : "checkmark.circle")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(!isDone && todo.wrappedValue.filledActions.isEmpty)
+        .accessibilityHint(isDone ? "Reopens this to-do" : "Marks all its actions done")
+    }
+
+    private func actionRow(_ action: Binding<FeelingTodo.Action>) -> some View {
+        let isDone = todo?.doneAt != nil
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(action.wrappedValue.verb.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField(action.wrappedValue.verb.prompt, text: action.object, axis: .vertical)
+                    .lineLimit(1...4)
+                    .strikethrough(isDone)
+                    .focused($focusedAction, equals: action.wrappedValue.id)
+            }
+            micButton(id: action.wrappedValue.id.uuidString, text: action.object)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color("HighlightColor"))
+        )
     }
 }
 
