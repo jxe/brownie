@@ -110,6 +110,13 @@ struct JournalView: View {
                                 NavigationLink(value: emotion) {
                                     OpenActionRow(todo: item.todo, action: item.action)
                                 }
+                                .contextMenu {
+                                    Button {
+                                        UIPasteboard.general.string = item.action.sentence
+                                    } label: {
+                                        Label("Copy", systemImage: "doc.on.doc")
+                                    }
+                                }
                             }
                         }
                     }

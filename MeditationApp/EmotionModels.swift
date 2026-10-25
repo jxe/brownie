@@ -250,10 +250,9 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
         actions.filter { !$0.isBlank }
     }
 
+    /// The long-term value is optional and doesn't count here.
     var isFilledOut: Bool {
-        !filledActions.isEmpty && [concern, value].allSatisfy {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        !filledActions.isEmpty && !concern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var hasContent: Bool {
