@@ -381,17 +381,10 @@ private struct SelectedEmotionChipView: View {
     private var activeChipOuterGlowColor: Color {
         colorScheme == .dark ? chipColor.opacity(0.55) : .clear
     }
-    /// This emotion's fraction of the session's committed time, or nil before any time is logged.
-    private var sessionShare: Double? {
-        guard store.sessionTime > 0 else { return nil }
-        return min(1, store.timeContribution(for: emotion) / store.sessionTime)
-    }
     private var accessibilityValue: String {
         var values: [String] = []
         if isAccruing {
             values.append("Timing, \(ChipTimeFormatter.string(from: store.timeContribution(for: emotion, asOf: Date())))")
-        } else if let sessionShare {
-            values.append("\(Int((sessionShare * 100).rounded())) percent of session time")
         }
         if hasReflection {
             values.append("Reflected")
@@ -410,14 +403,6 @@ private struct SelectedEmotionChipView: View {
                     .font(.subheadline)
                     .fontWeight(.medium)
                 Spacer(minLength: 0)
-                if let sessionShare {
-                    SessionSharePie(fraction: sessionShare, colorScheme: colorScheme)
-                        // The live timer takes this spot while the chip is accruing.
-                        .opacity(isAccruing ? 0 : 1)
-                        .animation(.easeOut(duration: 0.12), value: isAccruing)
-                        .animation(.easeInOut(duration: 0.4), value: sessionShare)
-                        .accessibilityHidden(true)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -524,60 +509,6 @@ private struct SelectedEmotionChipView: View {
             radius: 16
         )
         .zIndex(isAccruing ? 1 : 0)
-    }
-}
-
-/// A small, faint pie pressed into the chip showing this emotion's share of session time.
-private struct SessionSharePie: View {
-    let fraction: Double
-    let colorScheme: ColorScheme
-
-    private var ink: Color { colorScheme == .dark ? .white : .black }
-    private var shade: Color { .black.opacity(colorScheme == .dark ? 0.35 : 0.16) }
-    private var highlight: Color { .white.opacity(colorScheme == .dark ? 0.08 : 0.30) }
-
-    var body: some View {
-        ZStack {
-            // Recessed well: shade along the top-left rim, light catching the bottom-right.
-            Circle()
-                .fill(
-                    ink.opacity(0.04)
-                        .shadow(.inner(color: shade, radius: 0.6, x: 0.6, y: 0.8))
-                        .shadow(.inner(color: highlight, radius: 0.6, x: -0.6, y: -0.8))
-                )
-            PieWedge(fraction: fraction)
-                .fill(
-                    ink.opacity(0.09)
-                        .shadow(.inner(color: shade, radius: 0.5, x: 0.4, y: 0.6))
-                )
-        }
-        .frame(width: 18, height: 18)
-    }
-}
-
-private struct PieWedge: Shape {
-    var fraction: Double
-
-    var animatableData: Double {
-        get { fraction }
-        set { fraction = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        guard fraction > 0 else { return path }
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2
-        path.move(to: center)
-        path.addArc(
-            center: center,
-            radius: radius,
-            startAngle: .degrees(-90),
-            endAngle: .degrees(-90 + 360 * min(fraction, 1)),
-            clockwise: false
-        )
-        path.closeSubpath()
-        return path
     }
 }
 
