@@ -2,12 +2,23 @@ import SwiftUI
 
 struct JournalView: View {
     @Environment(EmotionStore.self) private var store
+    @State private var navigationPath = NavigationPath()
 
-    /// Feelings with an open to-do, then this session's feelings that don't have one yet.
-    private var openTodoEmotions: [Emotion] {
-        let withTodos = store.openTodos.compactMap { Emotion.named($0.emotionName) }
+    /// Every filled-in action of every open to-do, one row each.
+    private var openActions: [(todo: FeelingTodo, action: FeelingTodo.Action)] {
+        store.openTodos.flatMap { todo in
+            todo.filledActions.map { (todo: todo, action: $0) }
+        }
+    }
+
+    /// Open feelings with no actions yet: open to-dos without any, then this
+    /// session's feelings that have no to-do.
+    private var otherOpenEmotions: [Emotion] {
+        let withoutActions = store.openTodos
+            .filter { $0.filledActions.isEmpty }
+            .compactMap { Emotion.named($0.emotionName) }
         let rest = store.selectedEmotionsSorted().filter { store.openTodo(for: $0) == nil }
-        return withTodos + rest
+        return withoutActions + rest
     }
 
     /// Journal entries and done to-dos, newest first.
@@ -74,7 +85,7 @@ struct JournalView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 // Streak banner
                 let streak = store.currentMeditationStreak
@@ -92,12 +103,23 @@ struct JournalView: View {
                 }
 
                 // Open to-dos section
-                if !openTodoEmotions.isEmpty {
+                if !openActions.isEmpty {
                     Section("Open To-dos") {
-                        ForEach(openTodoEmotions) { emotion in
-                            NavigationLink(value: emotion) {
-                                OpenTodoRow(emotion: emotion, todo: store.openTodo(for: emotion))
+                        ForEach(openActions, id: \.action.id) { item in
+                            if let emotion = Emotion.named(item.todo.emotionName) {
+                                NavigationLink(value: emotion) {
+                                    OpenActionRow(todo: item.todo, action: item.action)
+                                }
                             }
+                        }
+                    }
+                }
+
+                // Feelings still open but without actions, together in one row
+                if !otherOpenEmotions.isEmpty {
+                    Section("Open Feelings") {
+                        OpenFeelingsRow(emotions: otherOpenEmotions) { emotion in
+                            navigationPath.append(emotion)
                         }
                     }
                 }
@@ -137,7 +159,7 @@ struct JournalView: View {
                 }
 
                 // Empty state
-                if openTodoEmotions.isEmpty && pastRows.isEmpty {
+                if openActions.isEmpty && otherOpenEmotions.isEmpty && pastRows.isEmpty {
                     ContentUnavailableView(
                         "No Entries Yet",
                         systemImage: "book.closed",
@@ -530,29 +552,57 @@ private enum PastRow: Identifiable {
     }
 }
 
-private struct OpenTodoRow: View {
-    let emotion: Emotion
-    let todo: FeelingTodo?
+private struct OpenActionRow: View {
+    let todo: FeelingTodo
+    let action: FeelingTodo.Action
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(emotion.emoji)
-                .font(.title3)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(emotion.name)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(action.sentence)
                     .font(.body)
-                    .fontWeight(.medium)
-                Text(todo.map { $0.filledActions.isEmpty ? $0.state.label : $0.actionsSummary } ?? emotion.question)
+                    .lineLimit(2)
+                Text("\(todo.emoji) \(todo.emotionName)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
             Spacer()
-            if let todo {
-                TodoStateMark(state: todo.state)
-                    .frame(width: 14, height: 14)
-                    .accessibilityLabel(todo.state.label)
+            TodoStateMark(state: todo.state)
+                .frame(width: 14, height: 14)
+                .accessibilityLabel(todo.state.label)
+        }
+    }
+}
+
+private struct OpenFeelingsRow: View {
+    let emotions: [Emotion]
+    var onSelect: (Emotion) -> Void
+    @Environment(EmotionStore.self) private var store
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(emotions) { emotion in
+                    Button {
+                        onSelect(emotion)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(emotion.emoji)
+                            Text(emotion.name)
+                                .font(.subheadline)
+                            if let todo = store.openTodo(for: emotion) {
+                                TodoStateMark(state: todo.state)
+                                    .frame(width: 10, height: 10)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color("HighlightColor")))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(.vertical, 2)
         }
     }
 }

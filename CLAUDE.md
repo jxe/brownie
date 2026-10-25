@@ -47,7 +47,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **CheckInView.swift** - Emotion selection grid with tap-to-increment counts; emotions sort by count
 - **ReflectionView.swift** - Old free-text reflection form, unused while the to-do experiment runs
 - **FeelingTodoView.swift** - Experimental to-do form (feel it through; complaint/honor, long-term value, one local action). Opened by swiping a chip left or from Journal's Open To-dos. `FeelingTodo` lives in EmotionModels.swift and persists separately in Documents/feeling_todos.json, so removing the experiment leaves the journal file alone
-- **JournalView.swift** - Open to-dos (plus this session's feelings without one) + past entries (journal entries merged with done to-dos) with share/export
+- **JournalView.swift** - Open to-dos (one row per action, tagged with its feeling), Open Feelings (one row of feelings with no actions yet) + past entries (journal entries merged with done to-dos) with share/export
 
 ## Navigation
 - Uses a `TabView` with tabs Feelings, Meditations, Journal (`TabDestination` in MeditationApp.swift)
