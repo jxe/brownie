@@ -538,10 +538,13 @@ private struct SessionSharePie: View {
 
     var body: some View {
         ZStack {
+            // Recessed well: shade along the top-left rim, light catching the bottom-right.
             Circle()
-                .strokeBorder(ink.opacity(0.12), lineWidth: 1)
-                // Pressed-in edge: a faint highlight just below the outline.
-                .shadow(color: highlight, radius: 0, x: 0, y: 0.6)
+                .fill(
+                    ink.opacity(0.04)
+                        .shadow(.inner(color: shade, radius: 0.6, x: 0.6, y: 0.8))
+                        .shadow(.inner(color: highlight, radius: 0.6, x: -0.6, y: -0.8))
+                )
             PieWedge(fraction: fraction)
                 .fill(
                     ink.opacity(0.09)
