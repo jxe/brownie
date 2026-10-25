@@ -559,9 +559,9 @@ private struct OpenActionRow: View {
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(action.sentence)
+                Text("\(Text(action.verb.label).fontWeight(.semibold).foregroundStyle(.tint)) \(action.object.trimmingCharacters(in: .whitespacesAndNewlines))")
                     .font(.body)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("\(todo.emoji) \(todo.emotionName)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
