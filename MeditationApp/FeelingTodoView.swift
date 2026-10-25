@@ -186,6 +186,9 @@ struct FeelingTodoView: View {
     private func micButton(id: String, text: Binding<String>) -> some View {
         let isListening = dictation.activeField == id
         return Button {
+            // Dictate without the keyboard in the way.
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            focusedAction = nil
             dictation.toggle(id, text: text)
         } label: {
             Image(systemName: isListening ? "mic.fill" : "mic")

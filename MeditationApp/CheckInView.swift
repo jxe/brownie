@@ -359,8 +359,9 @@ private struct SelectedEmotionChipView: View {
     var onReflect: () -> Void
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
-    /// Set when a long press opened the to-do, so the tap that ends it is ignored.
-    @State private var didLongPress = false
+    /// How far the chip is being dragged left toward opening its to-do.
+    @State private var swipeOffset: CGFloat = 0
+    private static let swipeThreshold: CGFloat = 60
 
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
@@ -396,10 +397,6 @@ private struct SelectedEmotionChipView: View {
 
     var body: some View {
         Button {
-            if didLongPress {
-                didLongPress = false
-                return
-            }
             onTap()
         } label: {
             HStack(spacing: 6) {
@@ -491,16 +488,21 @@ private struct SelectedEmotionChipView: View {
                 )
             }
         )
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                didLongPress = true
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                onReflect()
+        .offset(x: swipeOffset)
+        .gesture(
+            LeftSwipeGesture { dx in
+                let crossed = dx <= -Self.swipeThreshold
+                if crossed != (swipeOffset <= -Self.swipeThreshold) {
+                    UIImpactFeedbackGenerator(style: crossed ? .medium : .light).impactOccurred()
+                }
+                // Follow the finger, resisting past the threshold.
+                swipeOffset = crossed ? -Self.swipeThreshold + (dx + Self.swipeThreshold) * 0.25 : dx
+            } onEnded: { dx in
+                withAnimation(.spring(duration: 0.3, bounce: 0.3)) { swipeOffset = 0 }
+                if dx <= -Self.swipeThreshold { onReflect() }
             }
         )
         .accessibilityAction(named: "Open To-do") { onReflect() }
-        // The release after a long press can be swallowed by the push; clear on return.
-        .onAppear { didLongPress = false }
         .shadow(
             color: isAccruing ? activeChipShadowColor : .clear,
             radius: colorScheme == .dark ? 8 : 7,
@@ -511,6 +513,45 @@ private struct SelectedEmotionChipView: View {
             radius: 16
         )
         .zIndex(isAccruing ? 1 : 0)
+    }
+}
+
+/// A leftward pan on a chip. It only begins for mostly horizontal, leftward
+/// movement, so vertical scrolling and taps on the chip still work.
+private struct LeftSwipeGesture: UIGestureRecognizerRepresentable {
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (CGFloat) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let dx = min(0, recognizer.translation(in: recognizer.view).x)
+        switch recognizer.state {
+        case .changed:
+            onChanged(dx)
+        case .ended:
+            onEnded(dx)
+        case .cancelled, .failed:
+            onEnded(0)
+        default:
+            break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return velocity.x < 0 && abs(velocity.x) > abs(velocity.y) * 1.5
+        }
     }
 }
 
