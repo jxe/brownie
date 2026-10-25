@@ -1,3 +1,5 @@
+import AVFoundation
+import Speech
 import SwiftUI
 
 /// Experimental replacement for `ReflectionView`: instead of a free-text answer,
@@ -7,6 +9,7 @@ struct FeelingTodoView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var todo: FeelingTodo?
+    @State private var dictation = DictationRecorder()
 
     private var isAccruing: Bool {
         store.accruingEmotionID == emotion.id
@@ -51,6 +54,19 @@ struct FeelingTodoView: View {
         .onAppear {
             if todo == nil {
                 todo = store.openTodo(for: emotion) ?? FeelingTodo(emotion: emotion)
+            }
+            // The timer only runs here while "Keep Feeling" is on.
+            if isAccruing { store.stopAccruing() }
+        }
+        .onDisappear {
+            dictation.stop()
+        }
+        .task(id: isAccruing) {
+            // Taps cap credit at `maxEmotionCreditDuration`; keep extending while on.
+            while isAccruing && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(EmotionStore.maxEmotionCreditDuration / 2))
+                guard isAccruing, !Task.isCancelled else { break }
+                store.keepAccruing(emotion)
             }
         }
         .onChange(of: todo) { _, newValue in
@@ -98,8 +114,8 @@ struct FeelingTodoView: View {
 
             feelSection(todo)
 
-            field(todo.wrappedValue.concernPrompt, text: todo.concern)
-            field("The long-term value or change", text: todo.value)
+            field(todo.wrappedValue.concernPrompt, id: "concern", text: todo.concern)
+            field("The long-term value or change", id: "value", text: todo.value)
             actionField(todo)
         }
         .padding()
@@ -108,14 +124,20 @@ struct FeelingTodoView: View {
     private func feelSection(_ todo: Binding<FeelingTodo>) -> some View {
         HStack(spacing: 10) {
             Button {
-                store.tap(emotion)
+                if isAccruing {
+                    store.stopAccruing()
+                } else {
+                    store.keepAccruing(emotion)
+                }
             } label: {
-                Label("Keep Feeling", systemImage: "heart")
+                Label("Keep Feeling", systemImage: isAccruing ? "heart.fill" : "heart")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
             }
             .buttonStyle(.bordered)
+            .tint(isAccruing ? .accentColor : nil)
             .disabled(todo.wrappedValue.feltThroughAt != nil)
+            .accessibilityValue(isAccruing ? "On" : "Off")
 
             Button {
                 if todo.wrappedValue.feltThroughAt == nil {
@@ -137,19 +159,35 @@ struct FeelingTodoView: View {
         }
     }
 
-    private func field(_ title: String, text: Binding<String>) -> some View {
+    private func field(_ title: String, id: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.medium)
-            TextField("", text: text, axis: .vertical)
-                .lineLimit(1...6)
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color("HighlightColor"))
-                )
+            HStack(alignment: .top, spacing: 8) {
+                TextField("", text: text, axis: .vertical)
+                    .lineLimit(1...6)
+                micButton(id: id, text: text)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color("HighlightColor"))
+            )
         }
+    }
+
+    private func micButton(id: String, text: Binding<String>) -> some View {
+        let isListening = dictation.activeField == id
+        return Button {
+            dictation.toggle(id, text: text)
+        } label: {
+            Image(systemName: isListening ? "mic.fill" : "mic")
+                .symbolEffect(.pulse, isActive: isListening)
+                .foregroundStyle(isListening ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isListening ? "Stop dictation" : "Dictate")
     }
 
     private func actionField(_ todo: Binding<FeelingTodo>) -> some View {
@@ -163,21 +201,21 @@ struct FeelingTodoView: View {
                 }
             }
             .pickerStyle(.segmented)
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
                 Button {
                     todo.wrappedValue.doneAt = todo.wrappedValue.doneAt == nil ? Date() : nil
                 } label: {
                     Image(systemName: todo.wrappedValue.doneAt == nil ? "circle" : "checkmark.circle.fill")
-                        .font(.title3)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
                 .disabled(todo.wrappedValue.actionObject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel(todo.wrappedValue.doneAt == nil ? "Mark done" : "Mark not done")
 
-                Text(todo.wrappedValue.actionVerb.label)
-                    .foregroundStyle(.secondary)
-                TextField("…", text: todo.actionObject, axis: .vertical)
+                TextField(todo.wrappedValue.actionVerb.prompt, text: todo.actionObject, axis: .vertical)
                     .lineLimit(1...4)
                     .strikethrough(todo.wrappedValue.doneAt != nil)
+                micButton(id: "action", text: todo.actionObject)
             }
             .padding(12)
             .background(
@@ -216,5 +254,93 @@ struct TodoStateMark: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+/// Live dictation into one text field at a time, appended after what's already there.
+@MainActor
+@Observable
+final class DictationRecorder {
+    private(set) var activeField: String?
+    private let recognizer = SFSpeechRecognizer()
+    private let audioEngine = AVAudioEngine()
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var task: SFSpeechRecognitionTask?
+    private var tapInstalled = false
+
+    func toggle(_ field: String, text: Binding<String>) {
+        if activeField == field {
+            stop()
+            return
+        }
+        stop()
+        Task { await start(field, text: text) }
+    }
+
+    func stop() {
+        if audioEngine.isRunning { audioEngine.stop() }
+        if tapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        request?.endAudio()
+        task?.cancel()
+        request = nil
+        task = nil
+        if activeField != nil {
+            activeField = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
+    private func start(_ field: String, text: Binding<String>) async {
+        guard await Self.requestPermissions(),
+              let recognizer, recognizer.isAvailable else { return }
+
+        let base = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+            request.addsPunctuation = true
+
+            let input = audioEngine.inputNode
+            input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
+                request.append(buffer)
+            }
+            tapInstalled = true
+            audioEngine.prepare()
+            try audioEngine.start()
+
+            self.request = request
+            activeField = field
+            task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                Task { @MainActor in
+                    guard let self, self.activeField == field else { return }
+                    if let result {
+                        let spoken = result.bestTranscription.formattedString
+                        text.wrappedValue = base.isEmpty ? spoken : "\(base) \(spoken)"
+                        if result.isFinal { self.stop() }
+                    } else if error != nil {
+                        self.stop()
+                    }
+                }
+            }
+        } catch {
+            print("Dictation error: \(error)")
+            activeField = field
+            stop()
+        }
+    }
+
+    private static func requestPermissions() async -> Bool {
+        let speech = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
+        }
+        guard speech == .authorized else { return false }
+        return await AVAudioApplication.requestRecordPermission()
     }
 }

@@ -144,6 +144,14 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
             case .attendTo: "Attend to"
             }
         }
+
+        var prompt: String {
+            switch self {
+            case .inspire: "Inspire whom, to what?"
+            case .askFor: "Ask for what?"
+            case .attendTo: "Attend to what?"
+            }
+        }
     }
 
     enum State {

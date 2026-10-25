@@ -13,6 +13,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Brownie listens while you dictate into a to-do.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Brownie turns what you say into text for your to-do.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

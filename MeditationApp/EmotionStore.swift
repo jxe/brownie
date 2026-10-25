@@ -81,6 +81,20 @@ class EmotionStore {
         return creditedEmotion
     }
 
+    /// Keeps time running on a feeling past the per-tap cap without counting
+    /// another tap. Starts it with a tap if it isn't the one accruing.
+    @discardableResult
+    func keepAccruing(_ emotion: Emotion) -> TimeCredit? {
+        guard lastTappedEmotionName == emotion.name, lastTapTime != nil else {
+            return tap(emotion)
+        }
+        let now = Date()
+        let creditedEmotion = addSessionCredit(at: now)
+        lastInteractionTime = now
+        saveSession()
+        return creditedEmotion
+    }
+
     @discardableResult
     func stopAccruing() -> TimeCredit? {
         guard lastTapTime != nil || lastTappedEmotionName != nil else { return nil }
