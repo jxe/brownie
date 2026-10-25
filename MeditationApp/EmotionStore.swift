@@ -20,6 +20,8 @@ class EmotionStore {
     var emotionTimeContributions: [String: TimeInterval] = [:]
     var inFlightEmotions: Set<String> = []
     private(set) var journalEntries: [JournalEntry] = []
+    /// Experimental feeling to-dos, newest first. Kept out of `journalEntries`.
+    private(set) var todos: [FeelingTodo] = []
 
     /// Cumulative engagement time in seconds, grows with each tap.
     var sessionTime: TimeInterval = 0
@@ -59,6 +61,7 @@ class EmotionStore {
 
     init() {
         load()
+        loadTodos()
         loadSession()
         loadRecentPlays()
     }
@@ -251,6 +254,62 @@ class EmotionStore {
         )
         journalEntries.insert(entry, at: 0)
         save()
+    }
+
+    // MARK: - Feeling To-dos
+
+    /// The one not-yet-done to-do for this feeling, if any.
+    func openTodo(for emotion: Emotion) -> FeelingTodo? {
+        todos.first { $0.emotionName == emotion.name && $0.doneAt == nil }
+    }
+
+    var openTodos: [FeelingTodo] {
+        todos.filter { $0.doneAt == nil }
+    }
+
+    var doneTodos: [FeelingTodo] {
+        todos.filter { $0.doneAt != nil }
+    }
+
+    /// The state to mark on a chip: the open to-do's state, or done when one
+    /// was finished during the current session.
+    func todoState(for emotion: Emotion) -> FeelingTodo.State? {
+        if let open = openTodo(for: emotion) { return open.state }
+        guard let sessionStartTime else { return nil }
+        let doneThisSession = todos.contains {
+            $0.emotionName == emotion.name && ($0.doneAt ?? .distantPast) >= sessionStartTime
+        }
+        return doneThisSession ? .done : nil
+    }
+
+    /// Inserts or replaces a to-do. Blank to-dos aren't kept.
+    func saveTodo(_ todo: FeelingTodo) {
+        if let index = todos.firstIndex(where: { $0.id == todo.id }) {
+            if todo.hasContent {
+                todos[index] = todo
+            } else {
+                todos.remove(at: index)
+            }
+        } else if todo.hasContent {
+            todos.insert(todo, at: 0)
+        } else {
+            return
+        }
+        persistTodos()
+    }
+
+    func deleteTodo(_ todo: FeelingTodo) {
+        todos.removeAll { $0.id == todo.id }
+        persistTodos()
+    }
+
+    /// Clears a done to-do's check, unless that feeling already has another open one.
+    func reopenTodo(_ todo: FeelingTodo) {
+        guard let index = todos.firstIndex(where: { $0.id == todo.id }),
+              !todos.contains(where: { $0.emotionName == todo.emotionName && $0.doneAt == nil })
+        else { return }
+        todos[index].doneAt = nil
+        persistTodos()
     }
 
     func deleteEntry(_ entry: JournalEntry) {
@@ -560,6 +619,32 @@ class EmotionStore {
             journalEntries = try JSONDecoder().decode([JournalEntry].self, from: data)
         } catch {
             print("EmotionStore load error: \(error)")
+        }
+    }
+
+    // MARK: - To-do Persistence
+
+    private var todosFileURL: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("feeling_todos.json")
+    }
+
+    private func persistTodos() {
+        do {
+            let data = try JSONEncoder().encode(todos)
+            try data.write(to: todosFileURL, options: .atomic)
+        } catch {
+            print("EmotionStore todo save error: \(error)")
+        }
+    }
+
+    private func loadTodos() {
+        guard FileManager.default.fileExists(atPath: todosFileURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: todosFileURL)
+            todos = try JSONDecoder().decode([FeelingTodo].self, from: data)
+        } catch {
+            print("EmotionStore todo load error: \(error)")
         }
     }
 }

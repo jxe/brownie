@@ -68,7 +68,7 @@ struct CheckInView: View {
                             SelectedEmotionChipView(
                                 emotion: emotion,
                                 isAccruing: store.accruingEmotionID == emotion.id,
-                                hasReflection: store.hasReflectionInCurrentSession(for: emotion),
+                                todoState: store.todoState(for: emotion),
                                 floatingTimes: floatingTimeEvents[emotion.id, default: []],
                                 onTap: { tapSelectedEmotion(emotion) },
                                 onReflect: { navigationPath.append(emotion) }
@@ -194,7 +194,7 @@ struct CheckInView: View {
                 .sharedBackgroundVisibility(.hidden)
             }
             .navigationDestination(for: Emotion.self) { emotion in
-                ReflectionView(emotion: emotion)
+                FeelingTodoView(emotion: emotion)
             }
         }
         .onAppear {
@@ -353,12 +353,14 @@ private struct FloatingTimeEvent: Identifiable {
 private struct SelectedEmotionChipView: View {
     let emotion: Emotion
     let isAccruing: Bool
-    let hasReflection: Bool
+    let todoState: FeelingTodo.State?
     let floatingTimes: [FloatingTimeEvent]
     var onTap: () -> Void
     var onReflect: () -> Void
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
+    /// Set when a long press opened the to-do, so the tap that ends it is ignored.
+    @State private var didLongPress = false
 
     private var chipColor: Color {
         emotion.chipColor(for: colorScheme)
@@ -386,14 +388,18 @@ private struct SelectedEmotionChipView: View {
         if isAccruing {
             values.append("Timing, \(ChipTimeFormatter.string(from: store.timeContribution(for: emotion, asOf: Date())))")
         }
-        if hasReflection {
-            values.append("Reflected")
+        if let todoState {
+            values.append("To-do: \(todoState.label)")
         }
         return values.joined(separator: ", ")
     }
 
     var body: some View {
         Button {
+            if didLongPress {
+                didLongPress = false
+                return
+            }
             onTap()
         } label: {
             HStack(spacing: 6) {
@@ -411,10 +417,10 @@ private struct SelectedEmotionChipView: View {
                 EmotionChipBackground(emotion: emotion, colorScheme: colorScheme)
             )
             .overlay(alignment: .topTrailing) {
-                if hasReflection {
-                    ReflectionCornerMarker()
-                        .fill(Color.accentColor)
-                        .frame(width: 16, height: 16)
+                if let todoState {
+                    TodoStateMark(state: todoState)
+                        .frame(width: 9, height: 9)
+                        .padding(5)
                         .accessibilityHidden(true)
                 }
             }
@@ -485,20 +491,16 @@ private struct SelectedEmotionChipView: View {
                 )
             }
         )
-        .contextMenu {
-            Button {
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                didLongPress = true
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 onReflect()
-            } label: {
-                Label("Reflect", systemImage: "pencil.line")
             }
-            Button(role: .destructive) {
-                store.deselect(emotion)
-            } label: {
-                Label("Remove", systemImage: "xmark.circle")
-            }
-        } preview: {
-            ReflectionPreview(emotion: emotion)
-        }
+        )
+        .accessibilityAction(named: "Open To-do") { onReflect() }
+        // The release after a long press can be swallowed by the push; clear on return.
+        .onAppear { didLongPress = false }
         .shadow(
             color: isAccruing ? activeChipShadowColor : .clear,
             radius: colorScheme == .dark ? 8 : 7,
@@ -509,17 +511,6 @@ private struct SelectedEmotionChipView: View {
             radius: 16
         )
         .zIndex(isAccruing ? 1 : 0)
-    }
-}
-
-private struct ReflectionCornerMarker: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.closeSubpath()
-        }
     }
 }
 
@@ -603,7 +594,7 @@ private struct FloatingTimeContributionView: View {
 
 /// A session/emotion time total that counts up live while an emotion is accruing. Only this
 /// text re-renders each second; the rest of the Check In screen stays idle.
-private struct LiveTimeText: View {
+struct LiveTimeText: View {
     let isLive: Bool
     let seconds: (Date) -> TimeInterval
     @Environment(EmotionStore.self) private var store
@@ -625,7 +616,7 @@ private struct LiveTimeText: View {
     }
 }
 
-private enum ChipTimeFormatter {
+enum ChipTimeFormatter {
     static func string(from seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds))
         if total < 60 {
@@ -642,40 +633,6 @@ private enum ChipTimeFormatter {
             return "\(Int(roundedMinutes))m"
         }
         return String(format: "%.1fm", roundedMinutes)
-    }
-}
-
-// MARK: - Context Menu Preview
-
-private struct ReflectionPreview: View {
-    let emotion: Emotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Text(emotion.emoji)
-                    .font(.largeTitle)
-                Text(emotion.name)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-            }
-
-            Text(emotion.question)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(.secondarySystemBackground))
-                )
-
-            Text("Tap \"Reflect\" to write your thoughts…")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-        }
-        .padding()
-        .frame(width: 320)
     }
 }
 

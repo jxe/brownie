@@ -3,8 +3,39 @@ import SwiftUI
 struct JournalView: View {
     @Environment(EmotionStore.self) private var store
 
+    /// Feelings with an open to-do, then this session's feelings that don't have one yet.
+    private var openTodoEmotions: [Emotion] {
+        let withTodos = store.openTodos.compactMap { Emotion.named($0.emotionName) }
+        let rest = store.selectedEmotionsSorted().filter { store.openTodo(for: $0) == nil }
+        return withTodos + rest
+    }
+
+    /// Journal entries and done to-dos, newest first.
+    private var pastRows: [PastRow] {
+        (store.journalEntries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo))
+            .sorted { $0.date > $1.date }
+    }
+
     private var markdownExport: String {
-        store.journalEntries.map { entry in
+        pastRows.map { row -> String in
+            let entry: JournalEntry
+            switch row {
+            case .entry(let e):
+                entry = e
+            case .todo(let t):
+                let dateStr = (t.doneAt ?? t.createdAt).formatted(date: .long, time: .shortened)
+                return """
+                # \(t.emoji) \(t.emotionName) to-do — \(dateStr)
+
+                **Question:** \(t.question)
+
+                **\(t.concernPrompt):** \(t.concern)
+
+                **Long-term value or change:** \(t.value)
+
+                **Did:** \(t.actionSentence)
+                """
+            }
             let dateStr = entry.timestamp.formatted(date: .long, time: .shortened)
             switch entry.content {
             case .reflection(let r):
@@ -59,61 +90,53 @@ struct JournalView: View {
                     }
                 }
 
-                // Reflect section
-                if !store.selectedEmotionsSorted().isEmpty {
-                    Section("Reflect") {
-                        ForEach(store.selectedEmotionsSorted()) { emotion in
+                // Open to-dos section
+                if !openTodoEmotions.isEmpty {
+                    Section("Open To-dos") {
+                        ForEach(openTodoEmotions) { emotion in
                             NavigationLink(value: emotion) {
-                                HStack(spacing: 10) {
-                                    Text(emotion.emoji)
-                                        .font(.title3)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack {
-                                            Text(emotion.name)
-                                                .font(.body)
-                                                .fontWeight(.medium)
-                                            Text(reflectDetail(for: emotion))
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Text(emotion.question)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
+                                OpenTodoRow(emotion: emotion, todo: store.openTodo(for: emotion))
                             }
                         }
                     }
                 }
 
                 // Past entries section
-                if !store.journalEntries.isEmpty {
+                if !pastRows.isEmpty {
                     Section("Past Entries") {
-                        ForEach(store.journalEntries) { entry in
-                            switch entry.content {
-                            case .reflection(let r):
-                                ReflectionEntryRow(entry: entry, reflection: r)
-                            case .meditation(let m):
-                                MeditationLogRow(entry: entry, meditation: m)
-                            case .checkInSession(let s):
-                                NavigationLink {
-                                    CheckInSessionDetailView(entry: entry, session: s)
-                                } label: {
-                                    CheckInSessionRow(entry: entry, session: s)
+                        ForEach(pastRows) { row in
+                            switch row {
+                            case .todo(let todo):
+                                DoneTodoRow(todo: todo)
+                            case .entry(let entry):
+                                switch entry.content {
+                                case .reflection(let r):
+                                    ReflectionEntryRow(entry: entry, reflection: r)
+                                case .meditation(let m):
+                                    MeditationLogRow(entry: entry, meditation: m)
+                                case .checkInSession(let s):
+                                    NavigationLink {
+                                        CheckInSessionDetailView(entry: entry, session: s)
+                                    } label: {
+                                        CheckInSessionRow(entry: entry, session: s)
+                                    }
                                 }
                             }
                         }
                         .onDelete { indexSet in
+                            let rows = pastRows
                             for index in indexSet {
-                                store.deleteEntry(store.journalEntries[index])
+                                switch rows[index] {
+                                case .todo(let todo): store.deleteTodo(todo)
+                                case .entry(let entry): store.deleteEntry(entry)
+                                }
                             }
                         }
                     }
                 }
 
                 // Empty state
-                if store.selectedEmotionsSorted().isEmpty && store.journalEntries.isEmpty {
+                if openTodoEmotions.isEmpty && pastRows.isEmpty {
                     ContentUnavailableView(
                         "No Entries Yet",
                         systemImage: "book.closed",
@@ -125,7 +148,7 @@ struct JournalView: View {
             .background(Color("BackgroundColor"))
             .navigationTitle("Journal")
             .navigationDestination(for: Emotion.self) { emotion in
-                ReflectionView(emotion: emotion)
+                FeelingTodoView(emotion: emotion)
             }
             .toolbar {
                 NavigationLink {
@@ -134,7 +157,7 @@ struct JournalView: View {
                     Label("Emotion Leaderboard", systemImage: "chart.bar.xaxis")
                 }
 
-                if !store.journalEntries.isEmpty {
+                if !pastRows.isEmpty {
                     ShareLink(
                         item: markdownExport,
                         subject: Text("Emotion Journal"),
@@ -484,5 +507,88 @@ private enum JournalTimeFormatter {
             return "\(Int(roundedMinutes))m"
         }
         return String(format: "%.1fm", roundedMinutes)
+    }
+}
+
+private enum PastRow: Identifiable {
+    case entry(JournalEntry)
+    case todo(FeelingTodo)
+
+    var id: UUID {
+        switch self {
+        case .entry(let entry): entry.id
+        case .todo(let todo): todo.id
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .entry(let entry): entry.timestamp
+        case .todo(let todo): todo.doneAt ?? todo.createdAt
+        }
+    }
+}
+
+private struct OpenTodoRow: View {
+    let emotion: Emotion
+    let todo: FeelingTodo?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(emotion.emoji)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(emotion.name)
+                    .font(.body)
+                    .fontWeight(.medium)
+                Text(todo.map { $0.actionObject.isEmpty ? $0.state.label : $0.actionSentence } ?? emotion.question)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if let todo {
+                TodoStateMark(state: todo.state)
+                    .frame(width: 14, height: 14)
+                    .accessibilityLabel(todo.state.label)
+            }
+        }
+    }
+}
+
+private struct DoneTodoRow: View {
+    let todo: FeelingTodo
+    @Environment(EmotionStore.self) private var store
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(todo.emoji)
+                Text(todo.emotionName)
+                    .fontWeight(.medium)
+                Spacer()
+                Text((todo.doneAt ?? todo.createdAt).formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Label(todo.actionSentence, systemImage: "checkmark.circle.fill")
+                .font(.subheadline)
+            Text("\(todo.concernPrompt): \(todo.concern)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Toward: \(todo.value)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+        .contextMenu {
+            if !store.openTodos.contains(where: { $0.emotionName == todo.emotionName }) {
+                Button {
+                    store.reopenTodo(todo)
+                } label: {
+                    Label("Reopen", systemImage: "arrow.uturn.backward")
+                }
+            }
+        }
     }
 }

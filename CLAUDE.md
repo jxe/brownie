@@ -45,13 +45,14 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **EmotionModels.swift** - `Emotion` struct (name, emoji, question, category), `JournalEntry`, static lists of ~45 emotions
 - **EmotionStore.swift** - `@Observable` class managing session emotion counts and persisted journal entries (JSON in Documents)
 - **CheckInView.swift** - Emotion selection grid with tap-to-increment counts; emotions sort by count
-- **ReflectionView.swift** - Single-emotion reflection form (pushed from JournalView)
-- **JournalView.swift** - Combined reflection picker (for selected emotions) + past journal entries list with share/export
+- **ReflectionView.swift** - Old free-text reflection form, unused while the to-do experiment runs
+- **FeelingTodoView.swift** - Experimental to-do form (feel it through; complaint/honor, long-term value, one local action). Opened by long press on a chip or from Journal's Open To-dos. `FeelingTodo` lives in EmotionModels.swift and persists separately in Documents/feeling_todos.json, so removing the experiment leaves the journal file alone
+- **JournalView.swift** - Open to-dos (plus this session's feelings without one) + past entries (journal entries merged with done to-dos) with share/export
 
 ## Navigation
 - Uses a `TabView` with tabs Feelings, Meditations, Journal (`TabDestination` in MeditationApp.swift)
 - Settings, the Store, and `MeditationEditorView` are presented as `.sheet`s from `MeditationListView`
-- `JournalView` uses an inner `NavigationStack` with `.navigationDestination(for: Emotion.self)` to push `ReflectionView`
+- `JournalView` uses an inner `NavigationStack` with `.navigationDestination(for: Emotion.self)` to push `FeelingTodoView` (CheckInView does the same)
 
 ## Key Patterns
 - `@EnvironmentObject` for sharing `MeditationPlayer` across views

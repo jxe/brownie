@@ -34,6 +34,7 @@
 		A100001B000000000000001B /* ArchivedMeditationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200001B000000000000001B /* ArchivedMeditationsView.swift */; };
 		A100001C000000000000001C /* MeditationMetadataWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200001C000000000000001C /* MeditationMetadataWriter.swift */; };
 		A100001D000000000000001D /* TagEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200001D000000000000001D /* TagEditorView.swift */; };
+		A100001E000000000000001E /* FeelingTodoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200001E000000000000001E /* FeelingTodoView.swift */; };
 		A10000200000000000000020 /* EraIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000200000000000000020 /* EraIndex.swift */; };
 		A10000210000000000000021 /* EraEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000210000000000000021 /* EraEditorView.swift */; };
 		A10000220000000000000022 /* MeditationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000220000000000000022 /* MeditationStore.swift */; };
@@ -70,6 +71,7 @@
 		A200001B000000000000001B /* ArchivedMeditationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchivedMeditationsView.swift; sourceTree = "<group>"; };
 		A200001C000000000000001C /* MeditationMetadataWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationMetadataWriter.swift; sourceTree = "<group>"; };
 		A200001D000000000000001D /* TagEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorView.swift; sourceTree = "<group>"; };
+		A200001E000000000000001E /* FeelingTodoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeelingTodoView.swift; sourceTree = "<group>"; };
 		A20000200000000000000020 /* EraIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EraIndex.swift; sourceTree = "<group>"; };
 		A20000210000000000000021 /* EraEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EraEditorView.swift; sourceTree = "<group>"; };
 		A20000220000000000000022 /* MeditationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationStore.swift; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 				A200001B000000000000001B /* ArchivedMeditationsView.swift */,
 				A200001C000000000000001C /* MeditationMetadataWriter.swift */,
 				A200001D000000000000001D /* TagEditorView.swift */,
+				A200001E000000000000001E /* FeelingTodoView.swift */,
 				A20000200000000000000020 /* EraIndex.swift */,
 				A20000210000000000000021 /* EraEditorView.swift */,
 				A20000220000000000000022 /* MeditationStore.swift */,
@@ -234,6 +237,7 @@
 				A100001B000000000000001B /* ArchivedMeditationsView.swift in Sources */,
 				A100001C000000000000001C /* MeditationMetadataWriter.swift in Sources */,
 				A100001D000000000000001D /* TagEditorView.swift in Sources */,
+				A100001E000000000000001E /* FeelingTodoView.swift in Sources */,
 				A10000200000000000000020 /* EraIndex.swift in Sources */,
 				A10000210000000000000021 /* EraEditorView.swift in Sources */,
 				A10000220000000000000022 /* MeditationStore.swift in Sources */,

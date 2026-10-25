@@ -126,3 +126,87 @@ struct JournalEntry: Identifiable, Codable {
         }
     }
 }
+
+/// Experimental: a small to-do worked through from a feeling, replacing the
+/// free-text reflection. Persisted on its own (feeling_todos.json) rather than
+/// as a `JournalEntry`, so the experiment can be removed without touching the
+/// journal file.
+struct FeelingTodo: Identifiable, Codable, Hashable {
+    enum ActionVerb: String, Codable, CaseIterable, Identifiable {
+        case inspire, askFor, attendTo
+
+        var id: Self { self }
+
+        var label: String {
+            switch self {
+            case .inspire: "Inspire"
+            case .askFor: "Ask for"
+            case .attendTo: "Attend to"
+            }
+        }
+    }
+
+    enum State {
+        case incomplete, notFeltThrough, feltThrough, done
+
+        var label: String {
+            switch self {
+            case .incomplete: "Not filled out"
+            case .notFeltThrough: "Not felt through"
+            case .feltThrough: "Felt through"
+            case .done: "Done"
+            }
+        }
+    }
+
+    let id: UUID
+    let emotionName: String
+    let emoji: String
+    let question: String
+    let category: EmotionCategory
+    let createdAt: Date
+    /// The complaint (negative feelings) or what to honor (positive feelings).
+    var concern: String = ""
+    /// The long-term value or change wanted.
+    var value: String = ""
+    var actionVerb: ActionVerb = .inspire
+    /// Completes "Inspire / Ask for / Attend to ___".
+    var actionObject: String = ""
+    var feltThroughAt: Date?
+    var doneAt: Date?
+
+    init(emotion: Emotion, createdAt: Date = Date()) {
+        id = UUID()
+        emotionName = emotion.name
+        emoji = emotion.emoji
+        question = emotion.question
+        category = emotion.category
+        self.createdAt = createdAt
+    }
+
+    var isFilledOut: Bool {
+        [concern, value, actionObject].allSatisfy {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    var hasContent: Bool {
+        [concern, value, actionObject].contains {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        } || feltThroughAt != nil || doneAt != nil
+    }
+
+    var state: State {
+        if doneAt != nil { return .done }
+        if !isFilledOut { return .incomplete }
+        return feltThroughAt == nil ? .notFeltThrough : .feltThrough
+    }
+
+    var concernPrompt: String {
+        category == .negative ? "The complaint" : "What to honor"
+    }
+
+    var actionSentence: String {
+        "\(actionVerb.label) \(actionObject.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+}
