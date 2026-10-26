@@ -108,7 +108,9 @@ struct JournalView: View {
                         ForEach(openActions, id: \.action.id) { item in
                             if let emotion = Emotion.named(item.todo.emotionName) {
                                 NavigationLink(value: emotion) {
-                                    OpenActionRow(todo: item.todo, action: item.action)
+                                    OpenActionRow(todo: item.todo, action: item.action) {
+                                        store.toggleActionDone(item.action.id, in: item.todo.id)
+                                    }
                                 }
                                 .contextMenu {
                                     Button {
@@ -575,9 +577,17 @@ private enum PastRow: Identifiable {
 private struct OpenActionRow: View {
     let todo: FeelingTodo
     let action: FeelingTodo.Action
+    var onDone: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
+            Button(action: onDone) {
+                Image(systemName: "circle")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Mark done")
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(Text(action.verb.label).fontWeight(.semibold).foregroundStyle(.tint)) \(action.object.trimmingCharacters(in: .whitespacesAndNewlines))")
                     .font(.body)

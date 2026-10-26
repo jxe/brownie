@@ -256,21 +256,21 @@ struct FeelingTodoView: View {
             ForEach(todo.actions) { action in
                 actionRow(action)
             }
-            HStack(spacing: 8) {
+            Menu {
                 ForEach(FeelingTodo.ActionVerb.allCases) { verb in
-                    Button {
+                    Button(verb.label) {
                         let action = FeelingTodo.Action(verb: verb)
                         todo.wrappedValue.actions.append(action)
                         focusedAction = action.id
-                    } label: {
-                        Label(verb.label, systemImage: "plus")
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
                 }
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
             }
+            .accessibilityLabel("Add action")
         }
     }
 
