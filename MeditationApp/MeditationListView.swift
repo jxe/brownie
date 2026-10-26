@@ -10,8 +10,10 @@ struct MeditationListView: View {
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
     @State private var eraIndex = EraIndex()
-    /// nil means the current era, so starting a new era moves the view along with it.
-    @State private var selectedEraOverride: EraSelection? = nil
+    @State private var tab: ListTab = .current
+    /// The past era the Earlier tab shows. nil means the one just before the current era,
+    /// so starting a new era moves the tab along with it.
+    @State private var earlierEraOverride: EraSelection? = nil
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
@@ -20,11 +22,6 @@ struct MeditationListView: View {
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
     @State private var eraEditTarget: EraEditTarget? = nil
     @State private var showingNewEra = false
-    @AppStorage("timelessCollapsed") private var timelessCollapsed = false
-    @AppStorage("eraCollapsed") private var eraCollapsed = false
-    /// Set once the user folds or unfolds the previous era; until then it's open only while
-    /// the current era is empty.
-    @State private var previousEraCollapsedOverride: Bool? = nil
     /// Where rows and headers are on screen, so a tap between them can stop playback.
     @State private var tappableFrames = TappableFrames()
     @State private var showingStore = false
@@ -35,24 +32,14 @@ struct MeditationListView: View {
 
     private var hasEras: Bool { !eraIndex.eras.isEmpty }
 
-    private var selectedEra: EraSelection {
-        if let selectedEraOverride { return selectedEraOverride }
-        if let current = eraIndex.current { return .era(current.tag) }
-        return .older
+    private var earlierEra: EraSelection {
+        if let earlierEraOverride { return earlierEraOverride }
+        return eraIndex.eras.count > 1 ? .era(eraIndex.eras[1].tag) : .older
     }
 
-    private var selectedEraBinding: Binding<EraSelection> {
-        Binding(
-            get: { selectedEra },
-            set: { newValue in
-                selectedEraOverride = newValue == .era(eraIndex.current?.tag ?? "") ? nil : newValue
-            }
-        )
-    }
-
-    private var selectedEraTag: String? {
-        if case .era(let tag) = selectedEra { return tag }
-        return nil
+    /// Eras before the current one, newest first, then "Older" for untagged meditations.
+    private var pastEras: [EraSelection] {
+        eraIndex.eras.dropFirst().map { .era($0.tag) } + [.older]
     }
 
     private func isTimeless(_ url: URL) -> Bool {
@@ -72,81 +59,52 @@ struct MeditationListView: View {
         return EraIndex.dateString(for: url) >= current.started
     }
 
-    /// Timeless meditations not already shown under the selected era.
+    /// The current era's meditations, timeless ones tagged with it included.
+    private var currentEraFiles: [URL] {
+        guard let current = eraIndex.current else { return files }
+        return files.filter {
+            fileTags[$0]?.contains(current.tag) == true || (!isTimeless($0) && isUnassignedNew($0))
+        }
+    }
+
     private var timelessFiles: [URL] {
-        guard hasEras else { return [] }
-        return files.filter { isTimeless($0) && !isInSelectedEra($0) }
+        files.filter(isTimeless)
     }
 
-    private func isInSelectedEra(_ url: URL) -> Bool {
-        guard let selectedEraTag else { return false }
-        return fileTags[url]?.contains(selectedEraTag) == true
-    }
-
-    private var eraFiles: [URL] {
-        guard hasEras else { return files }
-        let rest = files.filter { !isTimeless($0) }
-        switch selectedEra {
-        case .older:
-            return rest.filter { eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
+    /// Meditations from the past era the Earlier tab shows, minus ones already brought along.
+    private var earlierFiles: [URL] {
+        guard let current = eraIndex.current else { return [] }
+        switch earlierEra {
         case .era(let tag):
-            // Timeless meditations also tagged with this era show here rather than under Timeless.
-            let isCurrent = tag == eraIndex.current?.tag
-            return files.filter {
-                fileTags[$0]?.contains(tag) == true || (isCurrent && !isTimeless($0) && isUnassignedNew($0))
-            }
+            return eraFilesFor(tag).filter { fileTags[$0]?.contains(current.tag) != true }
+        case .older:
+            return files.filter { !isTimeless($0) && eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
         }
     }
 
-    /// While viewing the current era: the era before it, or "Older" when it's the first era.
-    private var previousEraLabel: String? {
-        guard let current = eraIndex.current, selectedEra == .era(current.tag) else { return nil }
-        return eraIndex.eras.count > 1 ? eraIndex.eras[1].tag : "Older"
-    }
-
-    private var previousEraCollapsed: Bool {
-        previousEraCollapsedOverride ?? !eraFiles.isEmpty
-    }
-
-    /// Previous-era meditations not yet brought into the current era.
-    private var previousEraFiles: [URL] {
-        guard previousEraLabel != nil, let current = eraIndex.current else { return [] }
-        if eraIndex.eras.count > 1 {
-            return eraFilesFor(eraIndex.eras[1].tag).filter { fileTags[$0]?.contains(current.tag) != true }
+    private var tabFiles: [URL] {
+        guard hasEras else { return files }
+        switch tab {
+        case .current: return currentEraFiles
+        case .timeless: return timelessFiles
+        case .earlier: return earlierFiles
         }
-        return files.filter { !isTimeless($0) && eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
     }
 
-    private var eraTitle: String {
-        guard hasEras else { return "Meditations" }
-        switch selectedEra {
-        case .older: return "Older"
-        case .era(let tag): return tag
+    private func label(for era: EraSelection) -> String {
+        switch era {
+        case .era(let tag): tag
+        case .older: "Older"
         }
     }
 
     var body: some View {
             List {
-                // With eras, the selected era's rows fold under their own header like the
-                // sections below. Folded, the playing row stays so it can be paused.
-                if hasEras && !eraFiles.isEmpty {
-                    eraHeader
+                if hasEras && tab == .earlier {
+                    earlierHeader
                 }
-                ForEach(eraFiles.filter { !(hasEras && eraCollapsed) || player.currentSourceURL == $0 }, id: \.self) { url in
-                    listRow(for: url)
-                }
-                if !timelessFiles.isEmpty {
-                    timelessHeader
-                    // Collapsed still shows whatever's playing, so it can be paused.
-                    ForEach(timelessFiles.filter { !timelessCollapsed || player.currentSourceURL == $0 }, id: \.self) { url in
-                        listRow(for: url)
-                    }
-                }
-                if let previousEraLabel, !previousEraFiles.isEmpty {
-                    previousEraHeader(previousEraLabel)
-                    ForEach(previousEraFiles.filter { !previousEraCollapsed || player.currentSourceURL == $0 }, id: \.self) { url in
-                        listRow(for: url, bringAlong: true)
-                    }
+                ForEach(tabFiles, id: \.self) { url in
+                    listRow(for: url, bringAlong: hasEras && tab == .earlier)
                 }
             }
             .listStyle(.plain)
@@ -154,6 +112,8 @@ struct MeditationListView: View {
             .overlay {
                 if files.isEmpty {
                     emptyLibrary
+                } else if tabFiles.isEmpty {
+                    emptyTab
                 }
             }
             // Tapping empty space stops the current meditation, like tapping outside the
@@ -165,25 +125,24 @@ struct MeditationListView: View {
                     player.stop()
                 }
             )
-            .navigationTitle(eraTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarTitleMenu {
+            // Tabs sit outside the tap-to-stop gesture above, so switching tabs doesn't stop playback.
+            .safeAreaInset(edge: .top, spacing: 0) {
                 if hasEras {
-                    Picker("Era", selection: selectedEraBinding) {
-                        ForEach(eraIndex.eras, id: \.tag) { era in
-                            Text(era.tag == eraIndex.current?.tag ? "\(era.tag)  Current" : era.tag)
-                                .tag(EraSelection.era(era.tag))
-                        }
-                        Text("Older").tag(EraSelection.older)
+                    Picker("Show", selection: $tab.animation(.snappy(duration: 0.2))) {
+                        Text("This Era").tag(ListTab.current)
+                        Text("Timeless").tag(ListTab.timeless)
+                        Text("Earlier").tag(ListTab.earlier)
                     }
-                    Divider()
-                }
-                Button {
-                    showingNewEra = true
-                } label: {
-                    Label("Start New Era…", systemImage: "sparkles")
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
+                    .background(Color("BackgroundColor"))
                 }
             }
+            // The title names the era you're in; earlier eras are a tab, not a title menu.
+            .navigationTitle(eraIndex.current?.tag ?? "Meditations")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -211,6 +170,12 @@ struct MeditationListView: View {
                             showingStore = true
                         } label: {
                             Label("Browse Store", systemImage: "books.vertical")
+                        }
+                        Divider()
+                        Button {
+                            showingNewEra = true
+                        } label: {
+                            Label("Start New Era…", systemImage: "sparkles")
                         }
                     } label: {
                         Image(systemName: "plus")
@@ -318,88 +283,53 @@ struct MeditationListView: View {
         }
     }
 
-    private var eraHeader: some View {
-        // The title above already names the era, so the header doesn't repeat it.
-        let isCurrentEra = eraIndex.current.map { selectedEra == .era($0.tag) } ?? false
-        return foldHeader(
-            id: "header.era",
-            title: isCurrentEra ? "This era" : "Meditations",
-            count: eraFiles.count,
-            isCollapsed: eraCollapsed,
-            topPadding: 4,
-            accessibilityName: "meditations from \(eraTitle)"
-        ) {
-            eraCollapsed.toggle()
-        }
-    }
-
-    private var timelessHeader: some View {
-        foldHeader(
-            id: "header.timeless",
-            title: "Timeless",
-            count: timelessFiles.count,
-            isCollapsed: timelessCollapsed,
-            accessibilityName: "timeless meditations"
-        ) {
-            timelessCollapsed.toggle()
-        }
-    }
-
-    private func previousEraHeader(_ tag: String) -> some View {
-        foldHeader(
-            id: "header.previousEra",
-            title: "From \(tag)",
-            count: previousEraFiles.count,
-            isCollapsed: previousEraCollapsed,
-            hint: "Swipe right to bring along",
-            accessibilityName: "meditations from \(tag)"
-        ) {
-            previousEraCollapsedOverride = !previousEraCollapsed
-        }
-    }
-
-    /// A section title that folds the rows under it. It says "Hide" or "Show N" in words
-    /// rather than with a chevron, so it doesn't look like the era switcher in the title.
-    private func foldHeader(
-        id: String,
-        title: String,
-        count: Int,
-        isCollapsed: Bool,
-        topPadding: CGFloat = 16,
-        hint: String? = nil,
-        accessibilityName: String,
-        toggle: @escaping () -> Void
-    ) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.25)) { toggle() }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(title)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(isCollapsed ? "Show \(count)" : "Hide")
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.accentColor)
-                        .contentTransition(.opacity)
+    /// Picks which past era the Earlier tab shows.
+    private var earlierHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Menu {
+                Picker("Era", selection: Binding(
+                    get: { earlierEra },
+                    set: { earlierEraOverride = $0 }
+                )) {
+                    ForEach(pastEras, id: \.self) { era in
+                        Text(label(for: era)).tag(era)
+                    }
                 }
-                if let hint, !isCollapsed {
-                    Text(hint)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("From \(label(for: earlierEra))")
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2.weight(.semibold))
                 }
+                .fontWeight(.semibold)
             }
-            .font(.footnote)
-            .contentShape(Rectangle())
+            .disabled(pastEras.count < 2)
+            Spacer()
+            if !earlierFiles.isEmpty {
+                Text("Swipe right to bring along")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .buttonStyle(.plain)
-        .padding(.top, topPadding)
-        .tracksTappableFrame(id, in: tappableFrames)
-        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 30))   // Show/Hide lines up with the rows' time labels
+        .font(.footnote)
+        .tracksTappableFrame("header.earlier", in: tappableFrames)
+        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 4, trailing: 30))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
-        .accessibilityLabel(isCollapsed ? "Show \(accessibilityName)" : "Hide \(accessibilityName)")
+    }
+
+    private var emptyTab: some View {
+        let message = switch tab {
+        case .current: "Nothing in this era yet. Bring meditations along from Earlier, or write a new one."
+        case .timeless: "Mark a meditation Timeless from its Eras menu to keep it across eras."
+        case .earlier: "Everything from \(label(for: earlierEra)) has been brought along."
+        }
+        return Text(message)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 40)
+            .allowsHitTesting(false)
     }
 
     private func listRow(for url: URL, bringAlong: Bool = false) -> some View {
@@ -617,8 +547,8 @@ struct MeditationListView: View {
         fileTitles = titleMap
         fileTags = tagMap
         eraIndex = EraIndex.load()
-        if case .era(let tag) = selectedEraOverride, !eraIndex.isEraTag(tag) {
-            selectedEraOverride = nil
+        if case .era(let tag) = earlierEraOverride, !eraIndex.isEraTag(tag) || tag == eraIndex.current?.tag {
+            earlierEraOverride = nil
         }
     }
 
@@ -794,10 +724,14 @@ struct MeditationListView: View {
         var index = EraIndex.load()
         index.eras.insert(Era(tag: tag, started: EraIndex.todayString()), at: 0)
         index.save()
-        previousEraCollapsedOverride = nil
-        selectedEraOverride = nil
+        earlierEraOverride = nil
+        tab = .current
         refreshFiles()
     }
+}
+
+private enum ListTab: Hashable {
+    case current, timeless, earlier
 }
 
 private enum EraSelection: Hashable {
