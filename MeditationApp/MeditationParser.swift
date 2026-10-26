@@ -6,7 +6,15 @@ struct MeditationDiagnostic: Identifiable {
     let range: NSRange      // UTF-16 range in the script source
     let message: String
     var isDeprecation = false   // old syntax that still plays, rather than a likely mistake
+    var fix: MeditationFix? = nil
     var id: String { "\(range.location):\(message)" }
+}
+
+/// A rewrite that resolves a diagnostic: replace `range` of the script with `replacement`.
+struct MeditationFix {
+    let title: String
+    let range: NSRange      // UTF-16 range in the script source
+    let replacement: String
 }
 
 struct MeditationParser {
@@ -195,7 +203,10 @@ struct MeditationParser {
                 diagnostics.append(MeditationDiagnostic(
                     line: lineNumber,
                     range: NSRange(location: line.range.location + match.range.location, length: 1),
-                    message: "Capital X isn't a repeat marker. Use x or ×."))
+                    message: "Capital X isn't a repeat marker. Use x or ×.",
+                    fix: MeditationFix(title: "Change X to ×",
+                                       range: NSRange(location: line.range.location + match.range.location, length: 1),
+                                       replacement: "×")))
             }
 
             if !isPoolItem, let match = legacyRepeatRegex.firstMatch(in: line.text, range: lineLength) {
@@ -213,7 +224,8 @@ struct MeditationParser {
                     line: lineNumber,
                     range: NSRange(location: line.range.location + match.range.location, length: match.range.length),
                     message: message,
-                    isDeprecation: true))
+                    isDeprecation: true,
+                    fix: legacyRepeatFix(lines, at: index, in: ns)))
             }
 
             if !isPoolItem {
@@ -223,7 +235,8 @@ struct MeditationParser {
                         openBrackets.append((lineNumber, range))
                     } else if openBrackets.popLast() == nil {
                         diagnostics.append(MeditationDiagnostic(line: lineNumber, range: range,
-                                                                message: "This ] has no [ before it, so it would be read out."))
+                                                                message: "This ] has no [ before it, so it would be read out.",
+                                                                fix: MeditationFix(title: "Remove this ]", range: range, replacement: "")))
                     }
                 }
             }
@@ -258,6 +271,57 @@ struct MeditationParser {
                                                     message: "This [ is never closed, so it runs to the end. Add ] ×N after what it repeats."))
         }
         return diagnostics.sorted { $0.range.location < $1.range.location }
+    }
+
+    /// Rewrites an old prefix repeat in the postfix form: `×4 text` becomes `text ×4`,
+    /// `×5𝄐28″ ×4 text` becomes `text ×4 ‖28″ ×5`, and `×4` over an indented body wraps the
+    /// body in `[` … `] ×4`. Nil for nested prefixes over a body, which need a person's judgment.
+    private static func legacyRepeatFix(_ lines: [(text: String, range: NSRange)], at index: Int, in source: NSString) -> MeditationFix? {
+        let line = lines[index]
+        let indent = String(line.text.prefix { $0 == " " || $0 == "\t" })
+        var rest = String(line.text.dropFirst(indent.count))
+        var repeats: [(count: Substring, rest: String?)] = []   // outermost first
+        while let match = legacyRepeatRegex.firstMatch(in: rest, range: NSRange(location: 0, length: (rest as NSString).length)) {
+            let restNS = rest as NSString
+            let count = restNS.substring(with: match.range(at: 1)).dropFirst()
+            var breakDuration: String? = nil
+            if match.range(at: 2).location != NSNotFound {
+                breakDuration = match.range(at: 3).location != NSNotFound ? restNS.substring(with: match.range(at: 3)) : ""
+            }
+            repeats.append((count, breakDuration))
+            rest = restNS.substring(from: NSMaxRange(match.range)).trimmingCharacters(in: .whitespaces)
+        }
+        guard let outer = repeats.first else { return nil }
+
+        if !rest.isEmpty {
+            let suffix = repeats.reversed().map { r in
+                r.rest.map { "‖\($0) ×\(r.count)" } ?? "×\(r.count)"
+            }.joined(separator: " ")
+            return MeditationFix(title: "Move the repeat to the end of the line",
+                                 range: line.range,
+                                 replacement: indent + rest + " " + suffix)
+        }
+
+        // A marker alone on its line repeats the more-indented lines under it.
+        guard repeats.count == 1 else { return nil }
+        var last: Int? = nil
+        for next in (index + 1)..<lines.count {
+            let text = lines[next].text
+            if text.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            if text.prefix(while: { $0 == " " || $0 == "\t" }).count <= indent.count { break }
+            last = next
+        }
+        guard let last else { return nil }
+        let bodyEnd = NSMaxRange(lines[last].range)
+        let body = source.substring(with: NSRange(location: NSMaxRange(line.range), length: bodyEnd - NSMaxRange(line.range)))
+        var closing = ""
+        if let duration = outer.rest {
+            closing += "\n" + indent + "  ‖" + duration
+        }
+        closing += "\n" + indent + "] ×\(outer.count)"
+        return MeditationFix(title: "Wrap the indented lines in [ ] ×\(outer.count)",
+                             range: NSRange(location: line.range.location, length: bodyEnd - line.range.location),
+                             replacement: indent + "[" + body + closing)
     }
 
     /// Names a script defines, for offering as `~name` insertions: pools, then remembered picks.
