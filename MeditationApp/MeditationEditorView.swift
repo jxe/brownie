@@ -18,7 +18,10 @@ struct MeditationEditorView: View {
                         .textInputAutocapitalization(.never)
                 }
 
+                // Long lines are hard to follow on iPad, so cap the measure and center it.
                 MedTextEditor(text: $content)
+                    .frame(maxWidth: 720)
+                    .frame(maxWidth: .infinity)
 
                 let diagnostics = MeditationParser.diagnose(content)
                 if !diagnostics.isEmpty {
@@ -42,7 +45,7 @@ struct MeditationEditorView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .font(.footnote)
+                    .font(.subheadline)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
