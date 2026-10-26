@@ -404,7 +404,14 @@ struct MeditationListView: View {
             .tracksTappableFrame(url.absoluteString, in: tappableFrames)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            // The fill sits RowFillShape.margin inside the row, so these insets are that much
+            // smaller than the gaps they make.
+            .listRowInsets(EdgeInsets(
+                top: 4 - RowFillShape.margin.height,
+                leading: 16 - RowFillShape.margin.width,
+                bottom: 4 - RowFillShape.margin.height,
+                trailing: 16 - RowFillShape.margin.width
+            ))
     }
 
     private static let timeSlotHeight: CGFloat = 17
@@ -466,19 +473,17 @@ struct MeditationListView: View {
                 LastPlayedLabel(date: lastPlayed, helpedToday: hasLogToday)
                     .opacity(hasUpdate ? 0 : 1)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 14 + RowFillShape.margin.width)
+            .padding(.vertical, 12 + RowFillShape.margin.height)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14)
+                    RowFillShape(isGrown: isEngaged)
                         .fill(Color("BackgroundColor"))
 
-                    RoundedRectangle(cornerRadius: 14)
+                    RowFillShape(isGrown: isEngaged)
                         .fill(isEngaged ? activeFill : inactiveFill)
                 }
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
             )
-            .scaleEffect(isEngaged ? 1.03 : 1.0)
             .shadow(
                 color: isEngaged ? liftShadow : .clear,
                 radius: colorScheme == .dark ? 8 : 7,
@@ -490,13 +495,9 @@ struct MeditationListView: View {
             .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
             .contentShape(RoundedRectangle(cornerRadius: 14))
-            // The long-press preview is cut out along this shape, but the fill under it is
-            // scaled: down while pressed, up while playing. Cut at the smallest the fill gets
-            // so the cut never shows past its edge, whether or not the scale is applied.
-            .contentShape(
-                .contextMenuPreview,
-                RoundedRectangle(cornerRadius: 14).scale(MeditationRowPressContent.pressedScale * (isEngaged ? 1.03 : 1.0))
-            )
+            // The long-press preview is cut out along the same shape as the fill, so the cut
+            // always matches it: the row grows by layout, never by a scale effect.
+            .contentShape(.contextMenuPreview, RowFillShape(isGrown: isEngaged))
         }
         .buttonStyle(MeditationRowPressStyle())
         // Over the row rather than inside its label, so it gets its own taps.
@@ -513,7 +514,7 @@ struct MeditationListView: View {
                         .background(Capsule().fill(Color.accentColor.opacity(0.22)))
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 14)
+                .padding(.trailing, 14 + RowFillShape.margin.width)
                 .accessibilityLabel("Update from the store")
             }
         }
@@ -857,6 +858,31 @@ private extension View {
     }
 }
 
+/// A row's rounded fill. At rest it sits `margin` inside the row's frame; a playing row
+/// grows to fill the frame. Growing this way rather than with scaleEffect keeps the shape,
+/// and so the long-press preview cut out along it, the size of what's drawn at every moment.
+private struct RowFillShape: Shape {
+    static let margin = CGSize(width: 4, height: 2)
+
+    var grown: CGFloat
+
+    init(isGrown: Bool) { grown = isGrown ? 1 : 0 }
+
+    var animatableData: CGFloat {
+        get { grown }
+        set { grown = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let inset = 1 - grown
+        return Path(
+            roundedRect: rect.insetBy(dx: Self.margin.width * inset, dy: Self.margin.height * inset),
+            cornerRadius: 14,
+            style: .continuous
+        )
+    }
+}
+
 private struct MeditationRowPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         MeditationRowPressContent(isPressed: configuration.isPressed, label: configuration.label)
@@ -868,15 +894,14 @@ private struct MeditationRowPressContent: View {
     let label: ButtonStyleConfiguration.Label
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static let pressedScale: CGFloat = 0.965
-
+    // Only darkens: a scale effect here would also show in the long-press preview, which
+    // UIKit cuts out at the unscaled size. UIKit shrinks the row itself while it's held.
     var body: some View {
         label
-            .scaleEffect(reduceMotion || !isPressed ? 1.0 : Self.pressedScale)
-            .brightness(isPressed ? -0.03 : 0)
-            // Press down immediately; spring back with a little life on release.
+            .brightness(isPressed ? -0.04 : 0)
+            // Darken immediately on press; ease back on release.
             .animation(
-                reduceMotion ? nil : (isPressed ? .easeOut(duration: 0.08) : .spring(duration: 0.35, bounce: 0.45)),
+                reduceMotion ? nil : .easeOut(duration: isPressed ? 0.08 : 0.25),
                 value: isPressed
             )
     }
