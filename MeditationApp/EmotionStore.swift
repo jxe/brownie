@@ -312,6 +312,13 @@ class EmotionStore {
         persistTodos()
     }
 
+    func toggleActionDone(_ actionID: UUID, in todoID: UUID) {
+        guard let t = todos.firstIndex(where: { $0.id == todoID }),
+              let a = todos[t].actions.firstIndex(where: { $0.id == actionID }) else { return }
+        todos[t].actions[a].doneAt = todos[t].actions[a].doneAt == nil ? Date() : nil
+        persistTodos()
+    }
+
     func deleteTodo(_ todo: FeelingTodo) {
         todos.removeAll { $0.id == todo.id }
         persistTodos()

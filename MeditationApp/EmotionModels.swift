@@ -172,6 +172,8 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
         let id: UUID
         var verb: ActionVerb
         var object: String = ""
+        /// Checked off on its own; separate from the whole feeling's `doneAt`.
+        var doneAt: Date?
 
         init(verb: ActionVerb) {
             id = UUID()
@@ -269,6 +271,11 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
 
     var concernPrompt: String {
         category == .negative ? "The complaint" : "What to honor"
+    }
+
+    /// Filled-in actions not yet checked off.
+    var openActions: [Action] {
+        filledActions.filter { $0.doneAt == nil }
     }
 
     var actionsSummary: String {

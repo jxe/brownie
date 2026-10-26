@@ -7,15 +7,15 @@ struct JournalView: View {
     /// Every filled-in action of every open to-do, one row each.
     private var openActions: [(todo: FeelingTodo, action: FeelingTodo.Action)] {
         store.openTodos.flatMap { todo in
-            todo.filledActions.map { (todo: todo, action: $0) }
+            todo.openActions.map { (todo: todo, action: $0) }
         }
     }
 
-    /// Open feelings with no actions yet: open to-dos without any, then this
+    /// Open feelings with no open actions: open to-dos without any, then this
     /// session's feelings that have no to-do.
     private var otherOpenEmotions: [Emotion] {
         let withoutActions = store.openTodos
-            .filter { $0.filledActions.isEmpty }
+            .filter { $0.openActions.isEmpty }
             .compactMap { Emotion.named($0.emotionName) }
         let rest = store.selectedEmotionsSorted().filter { store.openTodo(for: $0) == nil }
         return withoutActions + rest
@@ -112,10 +112,23 @@ struct JournalView: View {
                                 }
                                 .contextMenu {
                                     Button {
+                                        store.toggleActionDone(item.action.id, in: item.todo.id)
+                                    } label: {
+                                        Label("Mark Done", systemImage: "checkmark.circle")
+                                    }
+                                    Button {
                                         UIPasteboard.general.string = item.action.sentence
                                     } label: {
                                         Label("Copy", systemImage: "doc.on.doc")
                                     }
+                                }
+                                .swipeActions(edge: .leading) {
+                                    Button {
+                                        store.toggleActionDone(item.action.id, in: item.todo.id)
+                                    } label: {
+                                        Label("Done", systemImage: "checkmark")
+                                    }
+                                    .tint(.accentColor)
                                 }
                             }
                         }
@@ -630,7 +643,7 @@ private struct DoneTodoRow: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(todo.filledActions) { action in
-                Label(action.sentence, systemImage: "checkmark.circle.fill")
+                Label(action.sentence, systemImage: action.doneAt == nil ? "circle" : "checkmark.circle.fill")
                     .font(.subheadline)
             }
             Text("\(todo.concernPrompt): \(todo.concern)")

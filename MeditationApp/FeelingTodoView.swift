@@ -11,6 +11,7 @@ struct FeelingTodoView: View {
     @State private var todo: FeelingTodo?
     @State private var dictation = DictationRecorder()
     @FocusState private var focusedAction: UUID?
+    @State private var showingHint = false
 
     private var isAccruing: Bool {
         store.accruingEmotionID == emotion.id
@@ -105,22 +106,10 @@ struct FeelingTodoView: View {
                     .foregroundStyle(isAccruing ? .primary : .secondary)
             }
 
-            // Question card
-            Text(emotion.question)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .lineSpacing(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color("HighlightColor"))
-                )
-
             feelSection(todo)
 
             field(todo.wrappedValue.concernPrompt, id: "concern", text: todo.concern)
-            field("The long-term value or change", id: "value", text: todo.value)
+            field("The long-term value or change", id: "value", text: todo.value, hint: emotion.question)
             actionField(todo)
             doneButton(todo)
         }
@@ -165,11 +154,32 @@ struct FeelingTodoView: View {
         }
     }
 
-    private func field(_ title: String, id: String, text: Binding<String>) -> some View {
+    private func field(_ title: String, id: String, text: Binding<String>, hint: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.medium)
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                if let hint {
+                    Button {
+                        showingHint = true
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Hint")
+                    .popover(isPresented: $showingHint) {
+                        Text(hint)
+                            .font(.callout)
+                            .padding()
+                            .frame(maxWidth: 280)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .presentationCompactAdaptation(.popover)
+                    }
+                }
+            }
             HStack(alignment: .top, spacing: 8) {
                 TextField("", text: text, axis: .vertical)
                     .lineLimit(1...6)
@@ -242,8 +252,17 @@ struct FeelingTodoView: View {
     }
 
     private func actionRow(_ action: Binding<FeelingTodo.Action>) -> some View {
-        let isDone = todo?.doneAt != nil
+        let isDone = todo?.doneAt != nil || action.wrappedValue.doneAt != nil
         return HStack(alignment: .top, spacing: 8) {
+            Button {
+                action.wrappedValue.doneAt = action.wrappedValue.doneAt == nil ? Date() : nil
+            } label: {
+                Image(systemName: action.wrappedValue.doneAt == nil ? "circle" : "checkmark.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .disabled(action.wrappedValue.isBlank)
+            .accessibilityLabel(action.wrappedValue.doneAt == nil ? "Mark action done" : "Mark action not done")
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.wrappedValue.verb.label)
                     .font(.caption)
