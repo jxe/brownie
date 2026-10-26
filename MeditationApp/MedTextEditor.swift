@@ -39,7 +39,7 @@ struct MedTextEditor: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
-        textView.font = medMonoFont
+        textView.font = medFont
         textView.autocorrectionType = .no
         textView.autocapitalizationType = .none
         textView.smartQuotesType = .no
@@ -311,12 +311,21 @@ private class AccessoryGap: UIView {
 // tools/vscode-med/syntaxes/med.tmLanguage.json — keep the two in sync if the
 // .med language evolves.
 
-// 17pt at the default text size, scaled with the user's Dynamic Type setting. Computed so a
-// size change in Settings takes effect the next time the text is highlighted.
-private var medMonoFont: UIFont {
-    let base = UIFont(name: "Menlo", size: 17) ?? .monospacedSystemFont(ofSize: 17, weight: .regular)
-    return UIFontMetrics(forTextStyle: .body).scaledFont(for: base)
+// Scripts are mostly prose, so they read in the body font (17pt at the default size, scaled
+// with Dynamic Type). Computed so a size change in Settings takes effect the next time the
+// text is highlighted.
+private var medFont: UIFont {
+    UIFont.preferredFont(forTextStyle: .body)
 }
+
+// A space in a proportional font is narrow, so two-space indents nearly vanish. Leading
+// spaces get extra kerning to be as wide as a monospaced space.
+private func medIndentKern(for font: UIFont) -> CGFloat {
+    let spaceWidth = (" " as NSString).size(withAttributes: [.font: font]).width
+    return max(0, font.pointSize * 0.6 - spaceWidth)
+}
+
+private let medLeadingSpaces = try! NSRegularExpression(pattern: "^ +", options: [.anchorsMatchLines])
 
 private let medParagraphStyle: NSParagraphStyle = {
     let p = NSMutableParagraphStyle()
@@ -328,7 +337,7 @@ private let medParagraphStyle: NSParagraphStyle = {
 }()
 
 private var medBaseAttributes: [NSAttributedString.Key: Any] { [
-    .font: medMonoFont,
+    .font: medFont,
     .foregroundColor: UIColor.label,
     .paragraphStyle: medParagraphStyle,
 ] }
@@ -392,6 +401,11 @@ private func applyMedHighlights(to textView: UITextView) {
     let text = textView.text ?? ""
     storage.beginEditing()
     storage.setAttributes(medBaseAttributes, range: full)
+    let kern = medIndentKern(for: medFont)
+    medLeadingSpaces.enumerateMatches(in: text, options: [], range: full) { match, _, _ in
+        guard let r = match?.range else { return }
+        storage.addAttribute(.kern, value: kern, range: r)
+    }
     for rule in medSyntaxRules {
         rule.regex.enumerateMatches(in: text, options: [], range: full) { match, _, _ in
             guard let match = match else { return }
