@@ -111,7 +111,6 @@ struct FeelingTodoView: View {
             field(todo.wrappedValue.concernPrompt, id: "concern", text: todo.concern)
             field("The long-term value or change", id: "value", text: todo.value, hint: emotion.question)
             actionField(todo)
-            doneButton(todo)
         }
         .padding()
     }
@@ -134,23 +133,63 @@ struct FeelingTodoView: View {
             .disabled(todo.wrappedValue.feltThroughAt != nil)
             .accessibilityValue(isAccruing ? "On" : "Off")
 
-            Button {
-                if todo.wrappedValue.feltThroughAt == nil {
-                    if isAccruing { store.stopAccruing() }
-                    todo.wrappedValue.feltThroughAt = Date()
-                } else {
-                    todo.wrappedValue.feltThroughAt = nil
+            Menu {
+                Picker("Feeling Status", selection: status(todo)) {
+                    ForEach(FeelingStatus.allCases) { status in
+                        Label(status.label, systemImage: status.systemImage).tag(status)
+                    }
                 }
             } label: {
-                Label(
-                    "Felt Through",
-                    systemImage: todo.wrappedValue.feltThroughAt == nil ? "circle" : "checkmark.circle.fill"
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+                Label(status(todo).wrappedValue.label, systemImage: status(todo).wrappedValue.systemImage)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
             }
             .buttonStyle(.bordered)
-            .tint(todo.wrappedValue.feltThroughAt == nil ? nil : .accentColor)
+            .tint(status(todo).wrappedValue == .feeling ? nil : .accentColor)
+            .accessibilityLabel("Feeling status")
+            .accessibilityValue(status(todo).wrappedValue.label)
+        }
+    }
+
+    private enum FeelingStatus: CaseIterable, Identifiable {
+        case feeling, feltThrough, done
+
+        var id: Self { self }
+
+        var label: String {
+            switch self {
+            case .feeling: "Still Feeling"
+            case .feltThrough: "Felt Through"
+            case .done: "Feeling Done"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .feeling: "circle"
+            case .feltThrough: "circle.fill"
+            case .done: "checkmark.circle.fill"
+            }
+        }
+    }
+
+    private func status(_ todo: Binding<FeelingTodo>) -> Binding<FeelingStatus> {
+        Binding {
+            if todo.wrappedValue.doneAt != nil { return .done }
+            return todo.wrappedValue.feltThroughAt == nil ? .feeling : .feltThrough
+        } set: { newStatus in
+            if newStatus != .feeling, isAccruing { store.stopAccruing() }
+            switch newStatus {
+            case .feeling:
+                todo.wrappedValue.feltThroughAt = nil
+                todo.wrappedValue.doneAt = nil
+            case .feltThrough:
+                todo.wrappedValue.feltThroughAt = todo.wrappedValue.feltThroughAt ?? Date()
+                todo.wrappedValue.doneAt = nil
+            case .done:
+                todo.wrappedValue.feltThroughAt = todo.wrappedValue.feltThroughAt ?? Date()
+                todo.wrappedValue.doneAt = todo.wrappedValue.doneAt ?? Date()
+            }
         }
     }
 
@@ -235,25 +274,9 @@ struct FeelingTodoView: View {
         }
     }
 
-    private func doneButton(_ todo: Binding<FeelingTodo>) -> some View {
-        let isDone = todo.wrappedValue.doneAt != nil
-        return Button {
-            if !isDone, isAccruing { store.stopAccruing() }
-            todo.wrappedValue.doneAt = isDone ? nil : Date()
-        } label: {
-            Label(isDone ? "Done" : "Mark Feeling Done", systemImage: isDone ? "checkmark.circle.fill" : "checkmark.circle")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(!isDone && todo.wrappedValue.filledActions.isEmpty)
-        .accessibilityHint(isDone ? "Reopens this to-do" : "Marks all its actions done")
-    }
-
     private func actionRow(_ action: Binding<FeelingTodo.Action>) -> some View {
         let isDone = todo?.doneAt != nil || action.wrappedValue.doneAt != nil
-        return HStack(alignment: .top, spacing: 8) {
+        return HStack(alignment: .center, spacing: 8) {
             Button {
                 action.wrappedValue.doneAt = action.wrappedValue.doneAt == nil ? Date() : nil
             } label: {
