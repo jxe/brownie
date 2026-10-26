@@ -21,6 +21,7 @@ struct MeditationListView: View {
     @State private var eraEditTarget: EraEditTarget? = nil
     @State private var showingNewEra = false
     @AppStorage("timelessCollapsed") private var timelessCollapsed = false
+    @AppStorage("eraCollapsed") private var eraCollapsed = false
     /// Set once the user folds or unfolds the previous era; until then it's open only while
     /// the current era is empty.
     @State private var previousEraCollapsedOverride: Bool? = nil
@@ -126,7 +127,12 @@ struct MeditationListView: View {
 
     var body: some View {
             List {
-                ForEach(eraFiles, id: \.self) { url in
+                // With eras, the selected era's rows fold under their own header like the
+                // sections below. Folded, the playing row stays so it can be paused.
+                if hasEras && !eraFiles.isEmpty {
+                    eraHeader
+                }
+                ForEach(eraFiles.filter { !(hasEras && eraCollapsed) || player.currentSourceURL == $0 }, id: \.self) { url in
                     listRow(for: url)
                 }
                 if !timelessFiles.isEmpty {
@@ -312,55 +318,70 @@ struct MeditationListView: View {
         }
     }
 
-    private var timelessHeader: some View {
-        Button {
-            withAnimation(.snappy(duration: 0.25)) {
-                timelessCollapsed.toggle()
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text("Timeless")
-                if timelessCollapsed {
-                    Text("\(timelessFiles.count)")
-                        .foregroundStyle(.tertiary)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .rotationEffect(.degrees(timelessCollapsed ? 0 : 90))
-                Spacer()
-            }
-            .font(.footnote)
-            .fontWeight(.medium)
-            .foregroundStyle(.secondary)
-            .contentShape(Rectangle())
+    private var eraHeader: some View {
+        foldHeader(
+            id: "header.era",
+            title: eraTitle,
+            count: eraFiles.count,
+            isCollapsed: eraCollapsed,
+            topPadding: 4,
+            accessibilityName: "meditations from \(eraTitle)"
+        ) {
+            eraCollapsed.toggle()
         }
-        .buttonStyle(.plain)
-        .padding(.top, 16)
-        .tracksTappableFrame("header.timeless", in: tappableFrames)
-        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .accessibilityLabel(timelessCollapsed ? "Show timeless meditations" : "Hide timeless meditations")
+    }
+
+    private var timelessHeader: some View {
+        foldHeader(
+            id: "header.timeless",
+            title: "Timeless",
+            count: timelessFiles.count,
+            isCollapsed: timelessCollapsed,
+            accessibilityName: "timeless meditations"
+        ) {
+            timelessCollapsed.toggle()
+        }
     }
 
     private func previousEraHeader(_ tag: String) -> some View {
+        foldHeader(
+            id: "header.previousEra",
+            title: "From \(tag)",
+            count: previousEraFiles.count,
+            isCollapsed: previousEraCollapsed,
+            hint: "Swipe right to bring along",
+            accessibilityName: "meditations from \(tag)"
+        ) {
+            previousEraCollapsedOverride = !previousEraCollapsed
+        }
+    }
+
+    /// A section title that folds the rows under it. Folded, it shows how many rows it hides.
+    private func foldHeader(
+        id: String,
+        title: String,
+        count: Int,
+        isCollapsed: Bool,
+        topPadding: CGFloat = 16,
+        hint: String? = nil,
+        accessibilityName: String,
+        toggle: @escaping () -> Void
+    ) -> some View {
         Button {
-            withAnimation(.snappy(duration: 0.25)) {
-                previousEraCollapsedOverride = !previousEraCollapsed
-            }
+            withAnimation(.snappy(duration: 0.25)) { toggle() }
         } label: {
             HStack(spacing: 6) {
-                Text("From \(tag)")
-                if previousEraCollapsed {
-                    Text("\(previousEraFiles.count)")
+                Text(title)
+                if isCollapsed {
+                    Text("\(count)")
                         .foregroundStyle(.tertiary)
                 }
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
-                    .rotationEffect(.degrees(previousEraCollapsed ? 0 : 90))
+                    .rotationEffect(.degrees(isCollapsed ? 0 : 90))
                 Spacer()
-                if !previousEraCollapsed {
-                    Text("Swipe right to bring along")
+                if let hint, !isCollapsed {
+                    Text(hint)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -370,12 +391,12 @@ struct MeditationListView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.top, 16)
-        .tracksTappableFrame("header.previousEra", in: tappableFrames)
+        .padding(.top, topPadding)
+        .tracksTappableFrame(id, in: tappableFrames)
         .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
-        .accessibilityLabel(previousEraCollapsed ? "Show meditations from \(tag)" : "Hide meditations from \(tag)")
+        .accessibilityLabel(isCollapsed ? "Show \(accessibilityName)" : "Hide \(accessibilityName)")
     }
 
     private func listRow(for url: URL, bringAlong: Bool = false) -> some View {
@@ -468,11 +489,14 @@ struct MeditationListView: View {
             // title, dot, and time label move together instead of on separate slow curves.
             .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
-            // The playing row is scaled up above, but scaleEffect doesn't change layout, so a
-            // plain shape here would match the unscaled frame. The long-press preview would then
-            // cut the grown fill short and crowd its text against the edges. Scale the shapes too.
-            .contentShape(RoundedRectangle(cornerRadius: 14).scale(isEngaged ? 1.03 : 1.0))
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14).scale(isEngaged ? 1.03 : 1.0))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+            // The long-press preview is cut out along this shape, but the fill under it is
+            // scaled: down while pressed, up while playing. Cut at the smallest the fill gets
+            // so the cut never shows past its edge, whether or not the scale is applied.
+            .contentShape(
+                .contextMenuPreview,
+                RoundedRectangle(cornerRadius: 14).scale(MeditationRowPressContent.pressedScale * (isEngaged ? 1.03 : 1.0))
+            )
         }
         .buttonStyle(MeditationRowPressStyle())
         // Over the row rather than inside its label, so it gets its own taps.
@@ -844,9 +868,11 @@ private struct MeditationRowPressContent: View {
     let label: ButtonStyleConfiguration.Label
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    static let pressedScale: CGFloat = 0.965
+
     var body: some View {
         label
-            .scaleEffect(reduceMotion || !isPressed ? 1.0 : 0.965)
+            .scaleEffect(reduceMotion || !isPressed ? 1.0 : Self.pressedScale)
             .brightness(isPressed ? -0.03 : 0)
             // Press down immediately; spring back with a little life on release.
             .animation(
