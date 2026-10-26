@@ -319,9 +319,11 @@ struct MeditationListView: View {
     }
 
     private var eraHeader: some View {
-        foldHeader(
+        // The title above already names the era, so the header doesn't repeat it.
+        let isCurrentEra = eraIndex.current.map { selectedEra == .era($0.tag) } ?? false
+        return foldHeader(
             id: "header.era",
-            title: eraTitle,
+            title: isCurrentEra ? "This era" : "Meditations",
             count: eraFiles.count,
             isCollapsed: eraCollapsed,
             topPadding: 4,
@@ -356,7 +358,8 @@ struct MeditationListView: View {
         }
     }
 
-    /// A section title that folds the rows under it. Folded, it shows how many rows it hides.
+    /// A section title that folds the rows under it. It says "Hide" or "Show N" in words
+    /// rather than with a chevron, so it doesn't look like the era switcher in the title.
     private func foldHeader(
         id: String,
         title: String,
@@ -370,30 +373,30 @@ struct MeditationListView: View {
         Button {
             withAnimation(.snappy(duration: 0.25)) { toggle() }
         } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                if isCollapsed {
-                    Text("\(count)")
-                        .foregroundStyle(.tertiary)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(isCollapsed ? "Show \(count)" : "Hide")
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.accentColor)
+                        .contentTransition(.opacity)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                Spacer()
                 if let hint, !isCollapsed {
                     Text(hint)
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
             }
             .font(.footnote)
-            .fontWeight(.medium)
-            .foregroundStyle(.secondary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.top, topPadding)
         .tracksTappableFrame(id, in: tappableFrames)
-        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 0, trailing: 30))   // Show/Hide lines up with the rows' time labels
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .accessibilityLabel(isCollapsed ? "Show \(accessibilityName)" : "Hide \(accessibilityName)")
