@@ -518,7 +518,7 @@ private struct SelectedEmotionChipView: View {
 
 /// A leftward pan on a chip. It only begins for mostly horizontal, leftward
 /// movement, so vertical scrolling and taps on the chip still work.
-private struct LeftSwipeGesture: UIGestureRecognizerRepresentable {
+struct LeftSwipeGesture: UIGestureRecognizerRepresentable {
     var onChanged: (CGFloat) -> Void
     var onEnded: (CGFloat) -> Void
 

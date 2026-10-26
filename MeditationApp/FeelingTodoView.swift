@@ -91,13 +91,7 @@ struct FeelingTodoView: View {
                     Text(emotion.name)
                         .font(.title2)
                         .fontWeight(.semibold)
-                    HStack(spacing: 6) {
-                        TodoStateMark(state: todo.wrappedValue.state)
-                            .frame(width: 12, height: 12)
-                        Text(todo.wrappedValue.state.label)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    statusMenu(todo)
                 }
                 Spacer()
                 LiveTimeText(isLive: isAccruing) { store.timeContribution(for: emotion, asOf: $0) }
@@ -116,7 +110,7 @@ struct FeelingTodoView: View {
     }
 
     private func feelSection(_ todo: Binding<FeelingTodo>) -> some View {
-        HStack(spacing: 10) {
+        HStack {
             Button {
                 if isAccruing {
                     store.stopAccruing()
@@ -132,23 +126,29 @@ struct FeelingTodoView: View {
             .tint(isAccruing ? .accentColor : nil)
             .disabled(todo.wrappedValue.feltThroughAt != nil)
             .accessibilityValue(isAccruing ? "On" : "Off")
-
-            Menu {
-                Picker("Feeling Status", selection: status(todo)) {
-                    ForEach(FeelingStatus.allCases) { status in
-                        Label(status.label, systemImage: status.systemImage).tag(status)
-                    }
-                }
-            } label: {
-                Label(status(todo).wrappedValue.label, systemImage: status(todo).wrappedValue.systemImage)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-            }
-            .buttonStyle(.bordered)
-            .tint(status(todo).wrappedValue == .feeling ? nil : .accentColor)
-            .accessibilityLabel("Feeling status")
-            .accessibilityValue(status(todo).wrappedValue.label)
         }
+    }
+
+    private func statusMenu(_ todo: Binding<FeelingTodo>) -> some View {
+        let current = status(todo).wrappedValue
+        return Menu {
+            Picker("Feeling Status", selection: status(todo)) {
+                ForEach(FeelingStatus.allCases) { status in
+                    Label(status.label, systemImage: status.systemImage).tag(status)
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                TodoStateMark(state: todo.wrappedValue.state)
+                    .frame(width: 12, height: 12)
+                Text(current.label)
+                Image(systemName: "chevron.up.chevron.down")
+                    .imageScale(.small)
+            }
+            .font(.subheadline)
+        }
+        .accessibilityLabel("Feeling status")
+        .accessibilityValue(current.label)
     }
 
     private enum FeelingStatus: CaseIterable, Identifiable {
@@ -197,14 +197,13 @@ struct FeelingTodoView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                    .font(.headline)
                 if let hint {
                     Button {
                         showingHint = true
                     } label: {
                         Image(systemName: "questionmark.circle")
-                            .font(.subheadline)
+                            .font(.headline)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -250,27 +249,34 @@ struct FeelingTodoView: View {
 
     private func actionField(_ todo: Binding<FeelingTodo>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("What you can do now")
-                .font(.subheadline)
-                .fontWeight(.medium)
-            ForEach(todo.actions) { action in
-                actionRow(action)
-            }
-            Menu {
-                ForEach(FeelingTodo.ActionVerb.allCases) { verb in
-                    Button(verb.label) {
-                        let action = FeelingTodo.Action(verb: verb)
-                        todo.wrappedValue.actions.append(action)
-                        focusedAction = action.id
+            HStack {
+                Text("What you can do now")
+                    .font(.headline)
+                Spacer()
+                Menu {
+                    ForEach(FeelingTodo.ActionVerb.allCases) { verb in
+                        Button(verb.label) {
+                            let action = FeelingTodo.Action(verb: verb)
+                            todo.wrappedValue.actions.append(action)
+                            focusedAction = action.id
+                        }
                     }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
                 }
-            } label: {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title2)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+                .accessibilityLabel("Add action")
             }
-            .accessibilityLabel("Add action")
+            ForEach(todo.actions) { action in
+                let id = action.wrappedValue.id
+                SwipeToDelete {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        todo.wrappedValue.actions.removeAll { $0.id == id }
+                    }
+                } content: {
+                    actionRow(action)
+                }
+            }
         }
     }
 
@@ -295,13 +301,61 @@ struct FeelingTodoView: View {
                     .strikethrough(isDone)
                     .focused($focusedAction, equals: action.wrappedValue.id)
             }
-            micButton(id: action.wrappedValue.id.uuidString, text: action.object)
+            let micID = action.wrappedValue.id.uuidString
+            // Once there's text, the mic only stays while it's listening.
+            if action.wrappedValue.isBlank || dictation.activeField == micID {
+                micButton(id: micID, text: action.object)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color("HighlightColor"))
         )
+    }
+}
+
+/// Swipe a row left past a threshold to delete it, revealing red underneath.
+private struct SwipeToDelete<Content: View>: View {
+    var onDelete: () -> Void
+    let content: Content
+    @State private var offset: CGFloat = 0
+    private let threshold: CGFloat = 90
+
+    init(onDelete: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.onDelete = onDelete
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .offset(x: offset)
+            .background {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.red)
+                    .overlay(alignment: .trailing) {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.white)
+                            .padding(.trailing, 18)
+                    }
+                    .opacity(offset < 0 ? 1 : 0)
+            }
+            .gesture(
+                LeftSwipeGesture { dx in
+                    if (dx <= -threshold) != (offset <= -threshold) {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    }
+                    offset = dx
+                } onEnded: { dx in
+                    if dx <= -threshold {
+                        onDelete()
+                    } else {
+                        withAnimation(.spring(duration: 0.3, bounce: 0.2)) { offset = 0 }
+                    }
+                }
+            )
+            .accessibilityAction(named: "Delete") { onDelete() }
     }
 }
 
