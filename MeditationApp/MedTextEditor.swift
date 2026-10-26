@@ -311,22 +311,27 @@ private class AccessoryGap: UIView {
 // tools/vscode-med/syntaxes/med.tmLanguage.json — keep the two in sync if the
 // .med language evolves.
 
-private let medMonoFont: UIFont = UIFont(name: "Menlo", size: 14)
-    ?? .monospacedSystemFont(ofSize: 14, weight: .regular)
+// 17pt at the default text size, scaled with the user's Dynamic Type setting. Computed so a
+// size change in Settings takes effect the next time the text is highlighted.
+private var medMonoFont: UIFont {
+    let base = UIFont(name: "Menlo", size: 17) ?? .monospacedSystemFont(ofSize: 17, weight: .regular)
+    return UIFontMetrics(forTextStyle: .body).scaledFont(for: base)
+}
 
 private let medParagraphStyle: NSParagraphStyle = {
     let p = NSMutableParagraphStyle()
     p.headIndent = 24        // wrapped continuations indent by 24pt
     p.firstLineHeadIndent = 0
-    p.paragraphSpacing = 6
+    p.lineSpacing = 3
+    p.paragraphSpacing = 8
     return p
 }()
 
-private let medBaseAttributes: [NSAttributedString.Key: Any] = [
+private var medBaseAttributes: [NSAttributedString.Key: Any] { [
     .font: medMonoFont,
     .foregroundColor: UIColor.label,
     .paragraphStyle: medParagraphStyle,
-]
+] }
 
 private struct MedSyntaxRule {
     let regex: NSRegularExpression

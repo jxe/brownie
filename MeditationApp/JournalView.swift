@@ -353,8 +353,8 @@ private struct ReflectionEntryRow: View {
                     .fontWeight(.medium)
                 Spacer()
                 Text(entry.timestamp, style: .date)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Text(reflection.question)
@@ -400,8 +400,8 @@ private struct MeditationLogRow: View {
             }
             Spacer()
             Text(entry.timestamp, style: .date)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
@@ -431,8 +431,8 @@ private struct CheckInSessionRow: View {
                     .fontWeight(.medium)
                 Spacer()
                 Text(entry.timestamp, style: .date)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 10) {

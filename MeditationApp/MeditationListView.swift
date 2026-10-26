@@ -422,7 +422,7 @@ struct MeditationListView: View {
                         Text(titleFor(url))
                             .font(.body)
                             .fontWeight(.medium)
-                            .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.75))
+                            .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.88))
                         PlayingPulseDot(isPulsing: isActive)
                             .frame(width: 12, height: 12)
                             .opacity(isEngaged ? 1 : 0)
@@ -468,8 +468,11 @@ struct MeditationListView: View {
             // title, dot, and time label move together instead of on separate slow curves.
             .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
-            .contentShape(RoundedRectangle(cornerRadius: 14))
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
+            // The playing row is scaled up above, but scaleEffect doesn't change layout, so a
+            // plain shape here would match the unscaled frame. The long-press preview would then
+            // cut the grown fill short and crowd its text against the edges. Scale the shapes too.
+            .contentShape(RoundedRectangle(cornerRadius: 14).scale(isEngaged ? 1.03 : 1.0))
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14).scale(isEngaged ? 1.03 : 1.0))
         }
         .buttonStyle(MeditationRowPressStyle())
         // Over the row rather than inside its label, so it gets its own taps.
@@ -866,7 +869,7 @@ private struct LastPlayedLabel: View {
         HStack(spacing: 3) {
             if helpedToday {
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(Color("HeartColor"))
             }
             if let date {
@@ -876,7 +879,7 @@ private struct LastPlayedLabel: View {
                     .foregroundStyle(style(for: recency))
             }
         }
-        .font(.caption2)
+        .font(.caption)
         .monospacedDigit()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
@@ -885,8 +888,7 @@ private struct LastPlayedLabel: View {
     private func style(for recency: Recency) -> AnyShapeStyle {
         switch recency {
         case .today: AnyShapeStyle(Color.accentColor)
-        case .yesterday: AnyShapeStyle(.secondary)
-        case .older: AnyShapeStyle(.tertiary)
+        case .yesterday, .older: AnyShapeStyle(.secondary)
         }
     }
 
