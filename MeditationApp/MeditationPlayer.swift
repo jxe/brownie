@@ -326,11 +326,12 @@ class MeditationPlayer: NSObject {
         }
 
         // Render and schedule buffers in background
-        let voice = self.voice
+        let initialVoice = self.voice
         let rate = self.speakingRate
 
         renderTask = Task { [weak self, renderer] in
             guard let owner = self else { return }
+            var voice = initialVoice
 
             // Activating the audio session and starting the engine can each block for tens of
             // milliseconds. Doing them off the main thread keeps the row's tap animation smooth.
@@ -376,7 +377,11 @@ class MeditationPlayer: NSObject {
                 case .speak(let speakText):
                     text = speakText
                     do {
-                        base = try await owner.renderSpeechWithRecovery(text: speakText, voice: voice, rate: rate)
+                        let rendered = try await owner.renderSpeechWithRecovery(text: speakText, voice: voice, rate: rate)
+                        base = rendered.buffer
+                        // Once a voice has hung, keep to the fallback for the rest of this
+                        // meditation rather than waiting out a timeout on every line.
+                        voice = rendered.voice
                     } catch {
                         guard !Task.isCancelled else { return }
                         let shouldAbort = await MainActor.run { () -> Bool in
@@ -604,14 +609,26 @@ class MeditationPlayer: NSObject {
         text: String,
         voice: AVSpeechSynthesisVoice?,
         rate: Float
-    ) async throws -> AVAudioPCMBuffer {
+    ) async throws -> (buffer: AVAudioPCMBuffer, voice: AVSpeechSynthesisVoice?) {
         do {
-            return try await renderer.renderSpeech(text: text, voice: voice, rate: rate)
+            return (try await renderer.renderSpeech(text: text, voice: voice, rate: rate), voice)
         } catch let error as AudioRendererError {
             guard case .speechTimedOut = error else { throw error }
-            print("Brownie speech render timed out; resetting synthesizer and retrying: \(error)")
+            // A voice whose assets are missing or mid-download can make write() hang without
+            // ever calling back, so retrying with it just hangs again. Retry with the
+            // built-in voice for the same language instead.
+            let fallback = Self.fallbackVoice(for: voice)
+            print("Brownie speech render timed out with voice \(voice?.identifier ?? "default") (\(voice.map { "\($0.quality.rawValue)" } ?? "-")); resetting synthesizer and retrying with \(fallback?.identifier ?? "default"): \(error)")
             await renderer.resetSpeechSynthesizer()
-            return try await renderer.renderSpeech(text: text, voice: voice, rate: rate)
+            return (try await renderer.renderSpeech(text: text, voice: fallback, rate: rate), fallback)
         }
+    }
+
+    /// The default-quality voice for the given voice's language, which ships with iOS.
+    private static func fallbackVoice(for voice: AVSpeechSynthesisVoice?) -> AVSpeechSynthesisVoice? {
+        let language = voice?.language ?? AVSpeechSynthesisVoice.currentLanguageCode()
+        return AVSpeechSynthesisVoice.speechVoices().first {
+            $0.language == language && $0.quality == .default && $0.identifier != voice?.identifier
+        } ?? AVSpeechSynthesisVoice(language: language)
     }
 }
