@@ -258,6 +258,17 @@ struct MeditationListView: View {
                     startEra(tag)
                 }
             }
+            .alert(
+                "Couldn't Start the Meditation",
+                isPresented: Binding(
+                    get: { player.speechFailure != nil },
+                    set: { if !$0 { player.speechFailure = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("iOS didn't produce speech for its first line. Try again, or pick another voice in Settings.\n\n\(player.speechFailure ?? "")")
+            }
             .background(Color("BackgroundColor"))
             .onAppear { refreshFiles() }
             .task { await meditationStore.checkForUpdates() }

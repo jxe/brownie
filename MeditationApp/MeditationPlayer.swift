@@ -22,6 +22,9 @@ class MeditationPlayer: NSObject {
     var totalSteps = 0
     var currentSourceURL: URL?
     var elapsedSeconds: Int = 0
+    /// Set when a meditation couldn't start because iOS gave no speech for its first line.
+    /// The list shows it as an alert and clears it.
+    var speechFailure: String?
     /// Total length of the current meditation, set once every step has been rendered.
     private(set) var totalSeconds: Int?
 
@@ -383,6 +386,7 @@ class MeditationPlayer: NSObject {
                             guard owner.playbackGeneration == generation else { return true }
                             if !owner.playbackStarted {
                                 owner.stop()
+                                owner.speechFailure = "\(error)"
                                 return true
                             }
                             return false
