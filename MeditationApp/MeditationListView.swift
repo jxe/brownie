@@ -120,9 +120,15 @@ struct MeditationListView: View {
             // feelings chips stops the running one.
             .simultaneousGesture(
                 SpatialTapGesture(coordinateSpace: .global).onEnded { value in
-                    guard player.currentSourceURL != nil,
-                          !tappableFrames.contains(value.location) else { return }
-                    player.stop()
+                    guard !tappableFrames.contains(value.location) else { return }
+                    // Decide on the next turn of the run loop, after any row's own action has
+                    // run: a row tap that this gesture also sees (say its frame went stale)
+                    // must not stop the meditation the row just started.
+                    DispatchQueue.main.async {
+                        guard player.currentSourceURL != nil,
+                              !tappableFrames.rowWasJustTapped else { return }
+                        player.stop()
+                    }
                 }
             )
             // Tabs sit outside the tap-to-stop gesture above, so switching tabs doesn't stop playback.
@@ -312,7 +318,7 @@ struct MeditationListView: View {
             }
         }
         .font(.footnote)
-        .tracksTappableFrame("header.earlier", in: tappableFrames)
+        .tracksTappableFrame("earlier|header", in: tappableFrames)
         .listRowInsets(EdgeInsets(top: 4, leading: 22, bottom: 4, trailing: 30))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -334,7 +340,9 @@ struct MeditationListView: View {
 
     private func listRow(for url: URL, bringAlong: Bool = false) -> some View {
         rowView(for: url, bringAlong: bringAlong)
-            .tracksTappableFrame(url.absoluteString, in: tappableFrames)
+            // Keyed by tab too: a meditation can be listed in two tabs, and the row leaving
+            // with the old tab must not erase the frame of the row arriving with the new one.
+            .tracksTappableFrame("\(tab)|\(url.absoluteString)", in: tappableFrames)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             // The fill sits RowFillShape.margin inside the row, so these insets are that much
@@ -369,6 +377,7 @@ struct MeditationListView: View {
         let liftShadow = colorScheme == .dark ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.18)
         let outerGlow = colorScheme == .dark ? Color.accentColor.opacity(0.25) : Color.clear
         Button {
+            tappableFrames.noteRowTap()
             if isPreparing {
                 player.stop()
             } else if isCurrent {
@@ -786,6 +795,10 @@ private final class TappableFrames {
     func set(_ frame: CGRect, for key: String) { frames[key] = frame }
     func remove(_ key: String) { frames[key] = nil }
     func contains(_ point: CGPoint) -> Bool { frames.values.contains { $0.contains(point) } }
+
+    private var lastRowTap = Date.distantPast
+    func noteRowTap() { lastRowTap = Date() }
+    var rowWasJustTapped: Bool { Date().timeIntervalSince(lastRowTap) < 0.5 }
 }
 
 private extension View {
