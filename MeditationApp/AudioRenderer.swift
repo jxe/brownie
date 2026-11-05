@@ -328,7 +328,7 @@ class AudioRenderer {
     }
 }
 
-private final class SpeechRenderSession: @unchecked Sendable {
+private final class SpeechRenderSession: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private let text: String
     private let voice: AVSpeechSynthesisVoice?
@@ -346,6 +346,7 @@ private final class SpeechRenderSession: @unchecked Sendable {
         self.voice = voice
         self.rate = rate
         self.continuation = continuation
+        super.init()
     }
 
     func start(on synthesizer: AVSpeechSynthesizer) {
@@ -360,6 +361,11 @@ private final class SpeechRenderSession: @unchecked Sendable {
         utterance.voice = voice
         utterance.pitchMultiplier = 1.0
 
+        // iOS 27.3 (beta 24C5037i) never sends write()'s closing empty buffer, so a render
+        // that delivered all its audio sat until the timeout and was thrown away. The
+        // delegate's didFinish still fires, so it ends the render too. The synthesizer holds
+        // its delegate weakly; the renderer's activeSession keeps this session alive.
+        synthesizer.delegate = self
         synthesizer.write(utterance) { [weak self] buffer in
             guard let self else { return }
             guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
@@ -367,6 +373,13 @@ private final class SpeechRenderSession: @unchecked Sendable {
                 return
             }
             append(pcm)
+        }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        // Finish on the next main-queue turn so any buffer callback already queued lands first.
+        DispatchQueue.main.async { [self] in
+            finishSuccess()
         }
     }
 
