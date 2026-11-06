@@ -47,7 +47,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **EmotionStore.swift** - `@Observable` class managing session emotion counts and persisted journal entries (JSON in Documents)
 - **CheckInView.swift** - Emotion selection grid with tap-to-increment counts; emotions sort by count. Pushed from the Feelings card on Always and Current
 - **ReflectionView.swift** - Old free-text reflection form, unused while the to-do experiment runs
-- **FeelingTodoView.swift** - Experimental to-do form (feel it through; complaint/honor, long-term value, one local action). Opened by swiping a chip left or from the to-dos on Current. `FeelingTodo` lives in EmotionModels.swift and persists separately in Documents/feeling_todos.json, so removing the experiment leaves the journal file alone
+- **FeelingTodoView.swift** - Experimental to-do form (feel it through; complaint/honor, long-term value, one local action). Opened by swiping a chip left or from the to-dos on Current. `FeelingTodo` lives in EmotionModels.swift and persists separately in Documents/feeling_todos.json, so removing the experiment leaves the journal file alone. A to-do belongs to one feeling in one check-in session (`sessionStartedAt`, plus `sessionFeelings`, the run of feelings that session), not to the feeling for all time: a chip shows and opens only its to-do from the current session, and the Current list opens to-dos by id
 - **JournalView.swift** - History (clock button on Always and Current): streak, past eras, past entries (journal entries merged with done to-dos) with share/export. Also `OpenTodosSection`, the to-dos shown on Current
 
 ## Navigation

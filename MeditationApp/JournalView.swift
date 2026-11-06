@@ -172,7 +172,7 @@ struct JournalView: View {
 /// to-do that has no action yet.
 struct OpenTodosSection: View {
     @Environment(EmotionStore.self) private var store
-    var onOpen: (Emotion) -> Void
+    var onOpen: (FeelingTodo) -> Void
 
     /// Every filled-in action of every open to-do, one row each.
     private var openActions: [(todo: FeelingTodo, action: FeelingTodo.Action)] {
@@ -189,7 +189,7 @@ struct OpenTodosSection: View {
         if !openActions.isEmpty {
             Section("To-dos") {
                 ForEach(openActions, id: \.action.id) { item in
-                    if let emotion = Emotion.named(item.todo.emotionName) {
+                    if Emotion.named(item.todo.emotionName) != nil {
                         HStack {
                             OpenActionRow(todo: item.todo, action: item.action) {
                                 store.toggleActionDone(item.action.id, in: item.todo.id)
@@ -199,7 +199,7 @@ struct OpenTodosSection: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture { onOpen(emotion) }
+                        .onTapGesture { onOpen(item.todo) }
                         .listRowBackground(Color.clear)
                         .contextMenu {
                             Button {
@@ -229,10 +229,10 @@ struct OpenTodosSection: View {
         if !todosWithoutActions.isEmpty {
             Section("Needs an Action") {
                 ForEach(todosWithoutActions) { todo in
-                    if let emotion = Emotion.named(todo.emotionName) {
+                    if Emotion.named(todo.emotionName) != nil {
                         HStack(spacing: 10) {
-                            Text(todo.emoji)
-                            Text(todo.emotionName)
+                            Text(todoSource(todo))
+                                .lineLimit(1)
                             Spacer()
                             TodoStateMark(state: todo.state)
                                 .frame(width: 14, height: 14)
@@ -241,7 +241,7 @@ struct OpenTodosSection: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture { onOpen(emotion) }
+                        .onTapGesture { onOpen(todo) }
                         .listRowBackground(Color.clear)
                     }
                 }
@@ -628,9 +628,10 @@ private struct OpenActionRow: View {
                 Text("\(Text(action.verb.label).fontWeight(.semibold).foregroundStyle(.tint)) \(action.object.trimmingCharacters(in: .whitespacesAndNewlines))")
                     .font(.body)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("\(todo.emoji) \(todo.emotionName)")
+                Text(todoSource(todo))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
             TodoStateMark(state: todo.state)
@@ -638,6 +639,13 @@ private struct OpenActionRow: View {
                 .accessibilityLabel(todo.state.label)
         }
     }
+}
+
+/// "😠 Anger · Nov 6, with 😢🙏": the feeling, the day, and the rest of that session.
+private func todoSource(_ todo: FeelingTodo) -> String {
+    let day = (todo.sessionStartedAt ?? todo.createdAt).formatted(.dateTime.month(.abbreviated).day())
+    let companions = todo.companionEmojis
+    return "\(todo.emoji) \(todo.emotionName) · \(day)" + (companions.isEmpty ? "" : ", with \(companions)")
 }
 
 private struct DoneTodoRow: View {
@@ -668,12 +676,10 @@ private struct DoneTodoRow: View {
         }
         .padding(.vertical, 4)
         .contextMenu {
-            if !store.openTodos.contains(where: { $0.emotionName == todo.emotionName }) {
-                Button {
-                    store.reopenTodo(todo)
-                } label: {
-                    Label("Reopen", systemImage: "arrow.uturn.backward")
-                }
+            Button {
+                store.reopenTodo(todo)
+            } label: {
+                Label("Reopen", systemImage: "arrow.uturn.backward")
             }
         }
     }

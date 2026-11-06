@@ -272,9 +272,25 @@ class EmotionStore {
 
     // MARK: - Feeling To-dos
 
-    /// The one not-yet-done to-do for this feeling, if any.
-    func openTodo(for emotion: Emotion) -> FeelingTodo? {
-        todos.first { $0.emotionName == emotion.name && $0.doneAt == nil }
+    /// Whether a to-do came from the check-in session that's running now. Session start
+    /// times round-trip through UserDefaults and JSON, so compare loosely.
+    func isFromCurrentSession(_ todo: FeelingTodo) -> Bool {
+        guard let sessionStartTime, let started = todo.sessionStartedAt else { return false }
+        return abs(started.timeIntervalSince(sessionStartTime)) < 1
+    }
+
+    /// This feeling's to-do from the current session, open or done.
+    func currentSessionTodo(for emotion: Emotion) -> FeelingTodo? {
+        todos.first { $0.emotionName == emotion.name && isFromCurrentSession($0) }
+    }
+
+    /// A fresh, unsaved to-do for this feeling in the current session.
+    func newTodo(for emotion: Emotion) -> FeelingTodo {
+        FeelingTodo(
+            emotion: emotion,
+            sessionStartedAt: sessionStartTime,
+            sessionFeelings: selectedEmotionsSorted().map(\.name)
+        )
     }
 
     var openTodos: [FeelingTodo] {
@@ -285,19 +301,30 @@ class EmotionStore {
         todos.filter { $0.doneAt != nil }
     }
 
-    /// The state to mark on a chip: the open to-do's state, or done when one
-    /// was finished during the current session.
+    /// The state to mark on a chip: that feeling's to-do from this session, if any.
     func todoState(for emotion: Emotion) -> FeelingTodo.State? {
-        if let open = openTodo(for: emotion) { return open.state }
-        guard let sessionStartTime else { return nil }
-        let doneThisSession = todos.contains {
-            $0.emotionName == emotion.name && ($0.doneAt ?? .distantPast) >= sessionStartTime
+        currentSessionTodo(for: emotion)?.state
+    }
+
+    /// Brings the session's feelings up to date on the current session's to-dos.
+    private func refreshSessionFeelings() {
+        let names = selectedEmotionsSorted().map(\.name)
+        guard !names.isEmpty else { return }
+        var changed = false
+        for i in todos.indices where isFromCurrentSession(todos[i]) && todos[i].sessionFeelings != names {
+            todos[i].sessionFeelings = names
+            changed = true
         }
-        return doneThisSession ? .done : nil
+        if changed { persistTodos() }
     }
 
     /// Inserts or replaces a to-do. Blank to-dos aren't kept.
     func saveTodo(_ todo: FeelingTodo) {
+        var todo = todo
+        if isFromCurrentSession(todo) {
+            let names = selectedEmotionsSorted().map(\.name)
+            if !names.isEmpty { todo.sessionFeelings = names }
+        }
         if let index = todos.firstIndex(where: { $0.id == todo.id }) {
             if todo.hasContent {
                 todos[index] = todo
@@ -324,11 +351,9 @@ class EmotionStore {
         persistTodos()
     }
 
-    /// Unchecks a done to-do, unless that feeling already has another open one.
+    /// Unchecks a done to-do.
     func reopenTodo(_ todo: FeelingTodo) {
-        guard let index = todos.firstIndex(where: { $0.id == todo.id }),
-              !todos.contains(where: { $0.emotionName == todo.emotionName && $0.doneAt == nil })
-        else { return }
+        guard let index = todos.firstIndex(where: { $0.id == todo.id }) else { return }
         todos[index].doneAt = nil
         persistTodos()
     }
@@ -475,6 +500,7 @@ class EmotionStore {
         )
         journalEntries.insert(entry, at: 0)
         save()
+        refreshSessionFeelings()
         clearSessionState()
     }
 

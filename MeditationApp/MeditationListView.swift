@@ -20,7 +20,7 @@ struct MeditationListView: View {
     @State private var fileTags: [URL: [String]] = [:]
     @State private var eraIndex = EraIndex()
     /// The feeling whose to-do form is pushed from the Current tab.
-    @State private var openedFeeling: Emotion?
+    @State private var openedTodo: FeelingTodo?
     @State private var showingFeelings = false
     @State private var showingEditor = false
     @State private var editorContent = ""
@@ -112,7 +112,7 @@ struct MeditationListView: View {
                     feelingsCard
                 case .current:
                     feelingsCard
-                    OpenTodosSection { openedFeeling = $0 }
+                    OpenTodosSection { openedTodo = $0 }
                 case .past:
                     if hasEras && !shelfFiles.isEmpty {
                         Text("Swipe right to bring along")
@@ -167,8 +167,10 @@ struct MeditationListView: View {
             // Current's title names the era you're in; earlier eras live in History.
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(item: $openedFeeling) { emotion in
-                FeelingTodoView(emotion: emotion)
+            .navigationDestination(item: $openedTodo) { todo in
+                if let emotion = Emotion.named(todo.emotionName) {
+                    FeelingTodoView(emotion: emotion, todoID: todo.id)
+                }
             }
             .navigationDestination(isPresented: $showingFeelings) {
                 CheckInView()

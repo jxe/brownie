@@ -203,19 +203,29 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
     var feltThroughAt: Date?
     /// When the feeling was marked done, all its actions at once.
     var doneAt: Date?
+    /// Start of the check-in session this to-do came from. A to-do belongs to one
+    /// feeling in one run of feelings, not to that feeling for all time. Nil for
+    /// to-dos made before sessions were recorded.
+    var sessionStartedAt: Date?
+    /// Every feeling in that session, most engaged first, kept up to date while the
+    /// session lasts.
+    var sessionFeelings: [String] = []
 
-    init(emotion: Emotion, createdAt: Date = Date()) {
+    init(emotion: Emotion, sessionStartedAt: Date?, sessionFeelings: [String] = [], createdAt: Date = Date()) {
         id = UUID()
         emotionName = emotion.name
         emoji = emotion.emoji
         question = emotion.question
         category = emotion.category
         self.createdAt = createdAt
+        self.sessionStartedAt = sessionStartedAt
+        self.sessionFeelings = sessionFeelings
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, emotionName, emoji, question, category, createdAt
         case concern, value, actions, feltThroughAt, doneAt
+        case sessionStartedAt, sessionFeelings
     }
 
     /// The first version held a single action in these keys.
@@ -235,6 +245,8 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
         value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
         feltThroughAt = try c.decodeIfPresent(Date.self, forKey: .feltThroughAt)
         doneAt = try c.decodeIfPresent(Date.self, forKey: .doneAt)
+        sessionStartedAt = try c.decodeIfPresent(Date.self, forKey: .sessionStartedAt)
+        sessionFeelings = try c.decodeIfPresent([String].self, forKey: .sessionFeelings) ?? []
         if let actions = try c.decodeIfPresent([Action].self, forKey: .actions) {
             self.actions = actions
         } else {
@@ -276,6 +288,14 @@ struct FeelingTodo: Identifiable, Codable, Hashable {
     /// Filled-in actions not yet checked off.
     var openActions: [Action] {
         filledActions.filter { $0.doneAt == nil }
+    }
+
+    /// The emojis of the other feelings in the same session.
+    var companionEmojis: String {
+        sessionFeelings
+            .filter { $0 != emotionName }
+            .compactMap { Emotion.named($0)?.emoji }
+            .joined()
     }
 
     var actionsSummary: String {

@@ -6,6 +6,9 @@ import SwiftUI
 /// feel the feeling through and turn it into a small to-do.
 struct FeelingTodoView: View {
     let emotion: Emotion
+    /// A particular to-do to open. Nil opens this feeling's to-do from the current
+    /// check-in session, or starts one.
+    var todoID: UUID? = nil
     @Environment(EmotionStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var todo: FeelingTodo?
@@ -55,7 +58,9 @@ struct FeelingTodoView: View {
         }
         .onAppear {
             if todo == nil {
-                todo = store.openTodo(for: emotion) ?? FeelingTodo(emotion: emotion)
+                todo = todoID.flatMap { id in store.todos.first { $0.id == id } }
+                    ?? store.currentSessionTodo(for: emotion)
+                    ?? store.newTodo(for: emotion)
             }
             // The timer only runs here while "Keep Feeling" is on.
             if isAccruing { store.stopAccruing() }
@@ -92,6 +97,7 @@ struct FeelingTodoView: View {
                         .font(.title2)
                         .fontWeight(.semibold)
                     statusMenu(todo)
+                    sessionLine(todo.wrappedValue)
                 }
                 Spacer()
                 LiveTimeText(isLive: isAccruing) { store.timeContribution(for: emotion, asOf: $0) }
@@ -107,6 +113,16 @@ struct FeelingTodoView: View {
             actionField(todo)
         }
         .padding()
+    }
+
+    /// When the feeling came up and what else was felt in that session.
+    private func sessionLine(_ todo: FeelingTodo) -> some View {
+        let companions = todo.companionEmojis
+        let day = (todo.sessionStartedAt ?? todo.createdAt).formatted(.dateTime.month(.abbreviated).day())
+        return Text(companions.isEmpty ? day : "\(day), with \(companions)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
     }
 
     private func feelSection(_ todo: Binding<FeelingTodo>) -> some View {
