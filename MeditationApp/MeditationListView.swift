@@ -256,7 +256,8 @@ struct MeditationListView: View {
                     isNew: $isNewFile,
                     sourceURL: editorURL
                 ) { savedFilename, savedContent in
-                    player.stop()
+                    // No stop here: any edit already stopped playback, so whatever is
+                    // playing now is the script being saved.
                     _ = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
                     refreshFiles()
                 }
