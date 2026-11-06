@@ -539,33 +539,16 @@ struct MeditationListView: View {
                 }
                 Divider()
             }
-            Button { playFile(url) } label: {
-                Label("Play", systemImage: "play")
-            }
-            Divider()
+            // A row tap plays, and a leading swipe edits eras, so the menu skips both.
             Button { editFile(url) } label: {
                 Label("Edit", systemImage: "pencil")
             }
             Button { editCopy(url) } label: {
                 Label("Edit a Copy", systemImage: "doc.badge.plus")
             }
-            Button { editEras(url) } label: {
-                Label("Eras…", systemImage: "sparkles")
-            }
             if hasUpdate {
                 Button { updateTarget = filename } label: {
                     Label("Update from Store", systemImage: "arrow.down.circle")
-                }
-            }
-            // Downloads stay with their author; "Edit a Copy" makes one that can be shared.
-            if storeRole != .downloaded {
-                Button { shareToStore(url) } label: {
-                    Label(storeRole == .shared ? "Update in Store…" : "Share to Store…", systemImage: "square.and.arrow.up")
-                }
-            }
-            if let recordName = meditationStore.link(for: filename)?.recordName {
-                ShareLink(item: MeditationStore.shareURL(for: recordName)) {
-                    Label("Share Store Link…", systemImage: "link")
                 }
             }
             // Only offered for something played today; an existing mark can always be removed.
@@ -580,9 +563,24 @@ struct MeditationListView: View {
                     }
                 }
             }
-            Divider()
-            Button { archiveFile(url) } label: {
-                Label("Archive", systemImage: "archivebox")
+            // Rarely used: sharing and archiving (archive is also a trailing swipe).
+            Menu {
+                // Downloads stay with their author; "Edit a Copy" makes one that can be shared.
+                if storeRole != .downloaded {
+                    Button { shareToStore(url) } label: {
+                        Label(storeRole == .shared ? "Update in Store…" : "Share to Store…", systemImage: "square.and.arrow.up")
+                    }
+                }
+                if let recordName = meditationStore.link(for: filename)?.recordName {
+                    ShareLink(item: MeditationStore.shareURL(for: recordName)) {
+                        Label("Share Store Link…", systemImage: "link")
+                    }
+                }
+                Button { archiveFile(url) } label: {
+                    Label("Archive", systemImage: "archivebox")
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
             }
         }
     }
