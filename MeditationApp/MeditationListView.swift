@@ -342,38 +342,71 @@ struct MeditationListView: View {
     }
 
     /// Feelings is the timeless practice with its own screen, and checking in is how
-    /// to-dos start, so it leads the main screen above the filter bar.
+    /// to-dos start, so it leads the main screen. During a check-in it is tinted and lists
+    /// that check-in's feelings.
     private var feelingsCard: some View {
-        let emojis = store.selectedEmotionsSorted().prefix(8).map(\.emoji).joined()
+        let feelings = store.selectedEmotionsSorted()
+        let inSession = !feelings.isEmpty
+        let names = feelings.prefix(4).map { "\($0.emoji) \($0.name)" }
+        let more = feelings.count > 4 ? ["+\(feelings.count - 4)"] : []
         return pageCard(
             emoji: "🪷",
             title: "Feelings",
-            subtitle: emojis.isEmpty ? "Check in with what you’re feeling" : emojis
+            lines: inSession
+                ? [(names + more).joined(separator: " · ")]
+                : ["Check in with what you’re feeling"],
+            highlighted: inSession
         ) {
             showingFeelings = true
+        } trailing: {
+            // This check-in's time, live while a feeling is accruing.
+            if inSession {
+                LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    /// Open to-dos live on their own page, like Feelings.
+    /// Open to-dos live on their own page, like Feelings. The card counts them and
+    /// previews the newest open actions.
     private var todosCard: some View {
         let open = store.openTodos
-        let actions = open.reduce(0) { $0 + $1.openActions.count }
+        let actions = open.flatMap { todo in todo.openActions.map { (todo, $0) } }
         let needingAction = open.filter { $0.openActions.isEmpty }.count
-        let parts = [
-            actions > 0 ? (actions == 1 ? "1 to-do" : "\(actions) to-dos") : nil,
+        let counts = [
+            actions.isEmpty ? nil : (actions.count == 1 ? "1 to-do" : "\(actions.count) to-dos"),
             needingAction > 0 ? "\(needingAction) need\(needingAction == 1 ? "s" : "") an action" : nil,
         ].compactMap { $0 }
+        let previews = actions.prefix(2).map { "\($0.0.emoji) \($0.1.sentence)" }
         return pageCard(
             emoji: "📝",
             title: "To-dos",
-            subtitle: parts.isEmpty ? "Nothing open" : parts.joined(separator: " · ")
+            lines: counts.isEmpty ? ["Nothing open"] : previews + [counts.joined(separator: " · ")],
+            highlighted: false
         ) {
             showingTodos = true
+        } trailing: {
+            if !actions.isEmpty {
+                Text("\(actions.count)")
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    /// A card that opens a page of its own, like Feelings or To-dos.
-    private func pageCard(emoji: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+    /// A card that opens a page of its own, like Feelings or To-dos. A highlighted card
+    /// is tinted, for something under way.
+    private func pageCard<Trailing: View>(
+        emoji: String,
+        title: String,
+        lines: [String],
+        highlighted: Bool,
+        action: @escaping () -> Void,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
         // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
         // NavigationLink row's plain tap.
         Button(action: action) {
@@ -383,12 +416,15 @@ struct MeditationListView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.headline)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.subheadline)
+                            .foregroundStyle(highlighted ? .primary : .secondary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
+                trailing()
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.tertiary)
@@ -400,7 +436,7 @@ struct MeditationListView: View {
         .tracksTappableFrame("card|\(title)", in: tappableFrames)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color("HighlightColor"))
+                .fill(highlighted ? Color.accentColor.opacity(0.18) : Color("HighlightColor"))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 4)
         )
