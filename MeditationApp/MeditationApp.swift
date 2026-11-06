@@ -1,13 +1,13 @@
 import SwiftUI
 
 enum TabDestination: Int {
-    case now
+    case current
     case always
 }
 
 extension EnvironmentValues {
-    /// Whether the Always tab, which holds Feelings, is the selected tab.
-    @Entry var alwaysTabIsSelected = false
+    /// Whether the tab a view sits in is the selected one.
+    @Entry var tabIsSelected = false
 }
 
 @main
@@ -33,32 +33,33 @@ struct BrownieApp: App {
 
 struct ContentView: View {
     @Environment(MeditationPlayer.self) var player
-    @AppStorage("selectedTab") private var selectedTab: TabDestination = .now
+    @AppStorage("selectedTab") private var selectedTab: TabDestination = .always
     @State private var feelingsTabCenterX: CGFloat?
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            Tab("Now", systemImage: "sun.max", value: .now) {
-                NavigationStack {
-                    MeditationListView(shelf: .now)
-                }
-            }
             Tab("Always", systemImage: "infinity", value: .always) {
                 NavigationStack {
                     MeditationListView(shelf: .always)
                 }
+                .environment(\.tabIsSelected, selectedTab == .always)
+            }
+            Tab("Current", systemImage: "sun.max", value: .current) {
+                NavigationStack {
+                    MeditationListView(shelf: .current)
+                }
+                .environment(\.tabIsSelected, selectedTab == .current)
             }
         }
-        // The Feelings bubble's tail points at the Always tab, where Feelings lives.
+        // Both tabs open Feelings, so the bubble's tail points at whichever tab you're in.
         .background(
-            TabBarCenterXReader(tabIndex: 1) { centerX in
+            TabBarCenterXReader(tabIndex: selectedTab == .always ? 0 : 1) { centerX in
                 if centerX != feelingsTabCenterX {
                     feelingsTabCenterX = centerX
                 }
             }
         )
         .environment(\.feelingsTabCenterX, feelingsTabCenterX)
-        .environment(\.alwaysTabIsSelected, selectedTab == .always)
         // med.nxhx.org/m/<id> universal links and brownie://m/<id> open the store item.
         .onOpenURL { url in
             guard let id = MeditationStore.recordName(from: url) else { return }

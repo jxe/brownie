@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Which meditations a list shows: this era's (with open to-dos), the timeless ones
-/// (with Feelings), or a past era's, opened from History.
+/// Which meditations a list shows: the timeless ones, this era's (with open to-dos),
+/// or a past era's, opened from History. Always and Current both lead with Feelings.
 enum MeditationShelf: Hashable {
-    case now, always
+    case always, current
     case past(EraSelection)
 }
 
@@ -19,8 +19,9 @@ struct MeditationListView: View {
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
     @State private var eraIndex = EraIndex()
-    /// The feeling whose to-do form is pushed from the Now tab.
+    /// The feeling whose to-do form is pushed from the Current tab.
     @State private var openedFeeling: Emotion?
+    @State private var showingFeelings = false
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
@@ -81,7 +82,7 @@ struct MeditationListView: View {
 
     private var shelfFiles: [URL] {
         switch shelf {
-        case .now: return hasEras ? currentEraFiles : files.filter { !isTimeless($0) }
+        case .current: return hasEras ? currentEraFiles : files.filter { !isTimeless($0) }
         case .always: return timelessFiles
         case .past(let era): return pastFiles(era)
         }
@@ -93,12 +94,12 @@ struct MeditationListView: View {
     }
 
     private var hasOpenTodos: Bool {
-        !store.openTodos.isEmpty || !store.selectedEmotionsSorted().isEmpty
+        !store.openTodos.isEmpty
     }
 
     private var title: String {
         switch shelf {
-        case .now: eraIndex.current?.tag ?? "Now"
+        case .current: eraIndex.current?.tag ?? "Current"
         case .always: "Always"
         case .past(let era): era.label
         }
@@ -109,7 +110,8 @@ struct MeditationListView: View {
                 switch shelf {
                 case .always:
                     feelingsCard
-                case .now:
+                case .current:
+                    feelingsCard
                     OpenTodosSection { openedFeeling = $0 }
                 case .past:
                     if hasEras && !shelfFiles.isEmpty {
@@ -131,7 +133,7 @@ struct MeditationListView: View {
                             .listRowSeparator(.hidden)
                     }
                 } header: {
-                    if shelf == .now && hasOpenTodos && !shelfFiles.isEmpty {
+                    if shelf == .current && hasOpenTodos && !shelfFiles.isEmpty {
                         Text("Meditations")
                     }
                 }
@@ -139,9 +141,11 @@ struct MeditationListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .overlay {
-                if shelf == .now && files.isEmpty && !hasOpenTodos {
+                if shelf == .current && files.isEmpty && !hasOpenTodos {
                     emptyLibrary
-                } else if shelf != .always && shelfFiles.isEmpty && !(shelf == .now && hasOpenTodos) {
+                } else if shelf == .current && shelfFiles.isEmpty && !hasOpenTodos {
+                    emptyShelf
+                } else if isPast && shelfFiles.isEmpty {
                     emptyShelf
                 }
             }
@@ -160,11 +164,14 @@ struct MeditationListView: View {
                     }
                 }
             )
-            // Now's title names the era you're in; earlier eras live in History.
+            // Current's title names the era you're in; earlier eras live in History.
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $openedFeeling) { emotion in
                 FeelingTodoView(emotion: emotion)
+            }
+            .navigationDestination(isPresented: $showingFeelings) {
+                CheckInView()
             }
             .toolbar {
                 if !isPast {
@@ -328,10 +335,13 @@ struct MeditationListView: View {
         }
     }
 
-    /// Feelings is the timeless practice with its own screen, so it leads the Always tab.
+    /// Feelings is the timeless practice with its own screen. It leads Always, and leads
+    /// Current too, since checking in is how to-dos start.
     private var feelingsCard: some View {
-        NavigationLink {
-            CheckInView()
+        // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
+        // NavigationLink row's plain tap.
+        Button {
+            showingFeelings = true
         } label: {
             HStack(spacing: 12) {
                 Text("🪷")
@@ -345,9 +355,15 @@ struct MeditationListView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
             .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .tracksTappableFrame("feelings", in: tappableFrames)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 14)
@@ -361,7 +377,7 @@ struct MeditationListView: View {
 
     private var emptyShelf: some View {
         let message = switch shelf {
-        case .now: "Nothing in this era yet. Bring meditations along from a past era in History, or write a new one."
+        case .current: "Nothing in this era yet. Bring meditations along from a past era in History, or write a new one."
         case .always: "Mark a meditation Timeless from its Eras menu to keep it here."
         case .past(let era): "Everything from \(era.label) has been brought along."
         }

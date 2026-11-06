@@ -29,7 +29,7 @@ struct CheckInView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.feelingsTabCenterX) private var feelingsTabCenterX
-    @Environment(\.alwaysTabIsSelected) private var alwaysTabIsSelected
+    @Environment(\.tabIsSelected) private var tabIsSelected
 
     @State private var showingNegativeSheet = false
     @State private var showingPositiveSheet = false
@@ -52,7 +52,7 @@ struct CheckInView: View {
 
     /// A feeling keeps accruing under its to-do form, but not once you go back or switch tabs.
     private var isActive: Bool {
-        alwaysTabIsSelected && isShown
+        tabIsSelected && isShown
     }
 
     private var isAccruingOnScreen: Bool {
