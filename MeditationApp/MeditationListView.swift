@@ -458,6 +458,7 @@ struct MeditationListView: View {
     }
 
     private static let timeSlotHeight: CGFloat = 17
+    private static let editButtonWidth: CGFloat = 36
 
     @ViewBuilder
     private func rowView(for url: URL, bringAlong: Bool = false) -> some View {
@@ -516,6 +517,9 @@ struct MeditationListView: View {
 
                 LastPlayedLabel(date: lastPlayed, helpedToday: hasLogToday)
                     .opacity(hasUpdate ? 0 : 1)
+                // Room for the edit pencil, which sits over the row (see below).
+                Color.clear
+                    .frame(width: Self.editButtonWidth - 8, height: 1)
             }
             .padding(.horizontal, 14 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
@@ -544,23 +548,37 @@ struct MeditationListView: View {
             .contentShape(.contextMenuPreview, RowFillShape(isGrown: isEngaged))
         }
         .buttonStyle(MeditationRowPressStyle())
-        // Over the row rather than inside its label, so it gets its own taps.
+        // Over the row rather than inside its label, so they get their own taps: tapping
+        // the row plays, tapping the pencil edits.
         .overlay(alignment: .trailing) {
-            if hasUpdate {
+            HStack(spacing: 0) {
+                if hasUpdate {
+                    Button {
+                        updateTarget = filename
+                    } label: {
+                        Text("Update")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.22)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Update from the store")
+                }
                 Button {
-                    updateTarget = filename
+                    editFile(url)
                 } label: {
-                    Text("Update")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.22)))
+                    Image(systemName: "pencil")
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: Self.editButtonWidth, height: 40)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 14 + RowFillShape.margin.width)
-                .accessibilityLabel("Update from the store")
+                .accessibilityLabel("Edit")
             }
+            .padding(.trailing, 6 + RowFillShape.margin.width)
         }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
