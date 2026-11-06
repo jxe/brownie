@@ -15,6 +15,7 @@ struct MeditationListView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openPanel) private var openPanel
+    @Environment(\.panelIsOpen) private var panelIsOpen
     @State private var files: [URL] = []
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
@@ -241,9 +242,11 @@ struct MeditationListView: View {
                 }
             }
             .onAppear { hasGoodVoice = MeditationPlayer.hasGoodVoice }
-            // Settings now lives in the panel, so watch for a voice change made there.
-            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-                hasGoodVoice = MeditationPlayer.hasGoodVoice
+            // Settings lives in the panel, so recheck the voice when it closes. Not on
+            // UserDefaults changes: every feeling tap saves the session there, and listing
+            // the system voices on each save made taps lag.
+            .onChange(of: panelIsOpen) { _, isOpen in
+                if !isOpen { hasGoodVoice = MeditationPlayer.hasGoodVoice }
             }
             .sheet(isPresented: $showingEditor) {
                 MeditationEditorView(

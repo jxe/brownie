@@ -3,6 +3,8 @@ import SwiftUI
 extension EnvironmentValues {
     /// Opens the left panel (History and Settings) from anywhere on the main screen.
     @Entry var openPanel: () -> Void = {}
+    /// Whether the left panel is open, so the main screen can refresh what Settings may have changed.
+    @Entry var panelIsOpen = false
 }
 
 @main
@@ -52,6 +54,7 @@ struct ContentView: View {
                     MeditationListView(shelf: .home)
                 }
                 .environment(\.openPanel, { setPanel(open: true) })
+                .environment(\.panelIsOpen, panelOpen)
                 .allowsHitTesting(!panelOpen)
                 .overlay {
                     // While the panel is open, a tap or a leftward drag on the main screen closes it.
