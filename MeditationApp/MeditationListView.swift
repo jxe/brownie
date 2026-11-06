@@ -891,8 +891,7 @@ private final class ScrollTouchDelayDisablingView: UIView {
     }
 }
 
-/// The Feelings card. During a check-in it is tinted and lists that check-in's
-/// feelings. It reads the check-in itself, which changes on every chip tap, so only
+/// The Feelings card. During a check-in it lists that check-in's feelings. It reads the check-in itself, which changes on every chip tap, so only
 /// this card re-renders then.
 private struct FeelingsCard: View {
     let tappableFrames: TappableFrames
@@ -926,8 +925,10 @@ private struct FeelingsCard: View {
     }
 }
 
-/// A card that opens a page of its own, like Feelings or To-dos. A highlighted card
-/// is tinted, for something under way.
+/// A row that opens a page of its own, like Feelings or To-dos. It looks like a
+/// meditation row (same fill, shape, padding and title font), so the main list reads as
+/// one kind of thing. A highlighted row, for something under way, shows its lines in
+/// full color instead of gray.
 private struct PageCard<Trailing: View>: View {
     let emoji: String
     let title: String
@@ -943,10 +944,11 @@ private struct PageCard<Trailing: View>: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Text(emoji)
-                    .font(.title2)
+                    .font(.title3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.headline)
+                        .font(.body)
+                        .fontWeight(.medium)
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                         Text(line)
                             .font(.subheadline)
@@ -960,20 +962,30 @@ private struct PageCard<Trailing: View>: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 14 + RowFillShape.margin.width)
+            .padding(.vertical, 12 + RowFillShape.margin.height)
+            .background(
+                ZStack {
+                    RowFillShape(isGrown: false)
+                        .fill(Color("BackgroundColor"))
+                    RowFillShape(isGrown: false)
+                        .fill(Color("HighlightColor").opacity(0.3))
+                }
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MeditationRowPressStyle())
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .tracksTappableFrame("card|\(title)", in: tappableFrames)
-        .listRowBackground(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(highlighted ? Color.accentColor.opacity(0.18) : Color("HighlightColor"))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 4)
-        )
-        .listRowInsets(EdgeInsets(top: 4, leading: 30, bottom: 4, trailing: 30))
+        // Same insets as a meditation row.
+        .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(
+            top: 4 - RowFillShape.margin.height,
+            leading: 16 - RowFillShape.margin.width,
+            bottom: 4 - RowFillShape.margin.height,
+            trailing: 16 - RowFillShape.margin.width
+        ))
     }
 }
 
