@@ -394,32 +394,39 @@ struct MeditationListView: View {
             .listRowSeparator(.hidden)
     }
 
-    /// A tag picker in the middle of the top bar: Current and Always, each switched on
-    /// or off. Turning off the only one that's on does nothing, so the list never goes empty.
+    /// A title menu in the middle of the top bar: it names what's showing, and its menu
+    /// checks Current, Always, or both. Unchecking the only one that's on does nothing,
+    /// so the list never goes empty.
     private var filterBar: some View {
-        HStack(spacing: 6) {
-            filterChip("Current", isOn: showCurrent) {
-                if showAlways { showCurrent.toggle() } else { showCurrent = true }
+        Menu {
+            Toggle("Current", isOn: Binding(
+                get: { showCurrent },
+                set: { on in withAnimation(.snappy(duration: 0.25)) { showCurrent = on || !showAlways } }
+            ))
+            Toggle("Always", isOn: Binding(
+                get: { showAlways },
+                set: { on in withAnimation(.snappy(duration: 0.25)) { showAlways = on || !showCurrent } }
+            ))
+        } label: {
+            HStack(spacing: 4) {
+                Text(filterTitle)
+                    .font(.headline)
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
-            filterChip("Always", isOn: showAlways) {
-                if showCurrent { showAlways.toggle() } else { showAlways = true }
-            }
+            .foregroundStyle(.primary)
         }
+        .accessibilityLabel("Show")
+        .accessibilityValue(filterTitle)
     }
 
-    private func filterChip(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.25)) { action() }
-        } label: {
-            Text(label)
-                .font(.subheadline.weight(.medium))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .foregroundStyle(isOn ? Color.white : Color.primary)
-                .background(Capsule().fill(isOn ? Color.accentColor : Color("HighlightColor")))
+    private var filterTitle: String {
+        switch (showCurrent, showAlways) {
+        case (true, true): "Current + Always"
+        case (true, false): "Current"
+        default: "Always"
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     private func listRow(for url: URL, section: String, bringAlong: Bool = false) -> some View {
