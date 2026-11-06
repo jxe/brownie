@@ -20,9 +20,8 @@ struct MeditationListView: View {
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
     @State private var eraIndex = EraIndex()
-    /// The to-do whose form is pushed from the Current section.
-    @State private var openedTodo: FeelingTodo?
     @State private var showingFeelings = false
+    @State private var showingTodos = false
     /// The filter bar. The app opens with both on; at least one always stays on.
     @State private var showCurrent = true
     @State private var showAlways = true
@@ -116,10 +115,13 @@ struct MeditationListView: View {
                 switch shelf {
                 case .home:
                     feelingsCard
+                    // To-dos are what's pressing for now, so they go with Current.
+                    if showCurrent {
+                        todosCard
+                    }
                     if !files.isEmpty || hasOpenTodos {
                         // Current comes first: it's what's pressing right now.
                         if showCurrent {
-                            OpenTodosSection { openedTodo = $0 }
                             Section {
                                 ForEach(currentFiles, id: \.self) { url in
                                     listRow(for: url, section: "current")
@@ -185,13 +187,11 @@ struct MeditationListView: View {
             )
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(item: $openedTodo) { todo in
-                if let emotion = Emotion.named(todo.emotionName) {
-                    FeelingTodoView(emotion: emotion, todoID: todo.id)
-                }
-            }
             .navigationDestination(isPresented: $showingFeelings) {
                 CheckInView()
+            }
+            .navigationDestination(isPresented: $showingTodos) {
+                TodosView()
             }
             .toolbar {
                 if !isPast {
@@ -344,19 +344,46 @@ struct MeditationListView: View {
     /// Feelings is the timeless practice with its own screen, and checking in is how
     /// to-dos start, so it leads the main screen above the filter bar.
     private var feelingsCard: some View {
+        let emojis = store.selectedEmotionsSorted().prefix(8).map(\.emoji).joined()
+        return pageCard(
+            emoji: "🪷",
+            title: "Feelings",
+            subtitle: emojis.isEmpty ? "Check in with what you’re feeling" : emojis
+        ) {
+            showingFeelings = true
+        }
+    }
+
+    /// Open to-dos live on their own page, like Feelings.
+    private var todosCard: some View {
+        let open = store.openTodos
+        let actions = open.reduce(0) { $0 + $1.openActions.count }
+        let needingAction = open.filter { $0.openActions.isEmpty }.count
+        let parts = [
+            actions > 0 ? (actions == 1 ? "1 to-do" : "\(actions) to-dos") : nil,
+            needingAction > 0 ? "\(needingAction) need\(needingAction == 1 ? "s" : "") an action" : nil,
+        ].compactMap { $0 }
+        return pageCard(
+            emoji: "📝",
+            title: "To-dos",
+            subtitle: parts.isEmpty ? "Nothing open" : parts.joined(separator: " · ")
+        ) {
+            showingTodos = true
+        }
+    }
+
+    /// A card that opens a page of its own, like Feelings or To-dos.
+    private func pageCard(emoji: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
         // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
         // NavigationLink row's plain tap.
-        Button {
-            showingFeelings = true
-        } label: {
+        Button(action: action) {
             HStack(spacing: 12) {
-                Text("🪷")
+                Text(emoji)
                     .font(.title2)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Feelings")
+                    Text(title)
                         .font(.headline)
-                    let emojis = store.selectedEmotionsSorted().prefix(8).map(\.emoji).joined()
-                    Text(emojis.isEmpty ? "Check in with what you’re feeling" : emojis)
+                    Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -370,7 +397,7 @@ struct MeditationListView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .tracksTappableFrame("feelings", in: tappableFrames)
+        .tracksTappableFrame("card|\(title)", in: tappableFrames)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 14)
                 .fill(Color("HighlightColor"))

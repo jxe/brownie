@@ -177,7 +177,35 @@ struct JournalView: View {
     }
 }
 
-/// Open to-dos for the Current tab: one row per open action, and one row for each
+/// The To-dos page, opened from its card on the main screen.
+struct TodosView: View {
+    @Environment(EmotionStore.self) private var store
+    @State private var openedTodo: FeelingTodo?
+
+    var body: some View {
+        List {
+            OpenTodosSection { openedTodo = $0 }
+            if store.openTodos.isEmpty {
+                ContentUnavailableView(
+                    "Nothing Open",
+                    systemImage: "checkmark.circle",
+                    description: Text("Swipe a feeling left on the Feelings page to make a to-do from it.")
+                )
+                .listRowBackground(Color.clear)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color("BackgroundColor"))
+        .navigationTitle("To-dos")
+        .navigationDestination(item: $openedTodo) { todo in
+            if let emotion = Emotion.named(todo.emotionName) {
+                FeelingTodoView(emotion: emotion, todoID: todo.id)
+            }
+        }
+    }
+}
+
+/// Open to-dos for the To-dos page: one row per open action, and one row for each
 /// to-do that has no action yet.
 struct OpenTodosSection: View {
     @Environment(EmotionStore.self) private var store
