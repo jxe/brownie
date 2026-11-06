@@ -470,8 +470,8 @@ final class MedTextView: UITextView {
     /// The highlighter kerns `medChipGap` of room on each side of a target so neighbors stay clear.
     static func chipRects(for target: MedQuickEditTarget, in textView: UITextView) -> [CGRect] {
         guard target.isBlock else { return chipRects(for: target.hitRange, in: textView) }
-        // One chip around every line's text. Selection rects for whole lines run to the right
-        // edge, so measure each line's trimmed text and take the union.
+        // One full-width chip around every line's text. Selection rects for whole lines run to
+        // the right edge, so measure each line's trimmed text and take the union.
         let ns = (textView.text ?? "") as NSString
         guard NSMaxRange(target.hitRange) <= ns.length else { return [] }
         var union = CGRect.null
@@ -483,7 +483,10 @@ final class MedTextView: UITextView {
             let range = NSRange(location: lineRange.location + lead, length: trimmed.utf16.count)
             for rect in chipRects(for: range, in: textView) { union = union.union(rect) }
         }
-        return union.isNull ? [] : [union]
+        guard !union.isNull else { return [] }
+        // Full width: as far in from the right edge as the chip starts from the left.
+        union.size.width = max(union.width, textView.bounds.width - 2 * union.minX)
+        return [union]
     }
 
     static func chipRects(for range: NSRange, in textView: UITextView) -> [CGRect] {
