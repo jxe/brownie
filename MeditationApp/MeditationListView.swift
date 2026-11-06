@@ -433,6 +433,7 @@ struct MeditationListView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .tracksTappableFrame("card|\(title)", in: tappableFrames)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 14)
@@ -907,7 +908,10 @@ private struct EraEditTarget: Identifiable {
     let tags: [String]
 }
 
-private struct DisableScrollTouchDelay: UIViewRepresentable {
+/// Finds the nearest parent UIScrollView and sets delaysContentTouches = false so a
+/// press shows on touch down. Waits until it's in a window, so it also works on a
+/// pushed screen, whose views aren't in the hierarchy yet when they're made.
+struct DisableScrollTouchDelay: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = ScrollTouchDelayDisablingView(frame: .zero)
         view.isUserInteractionEnabled = false

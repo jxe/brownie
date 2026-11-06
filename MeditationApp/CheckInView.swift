@@ -1,29 +1,6 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Disable ScrollView touch delay
-
-/// Finds the nearest parent UIScrollView and sets delaysContentTouches = false
-/// so that ButtonStyle.isPressed fires immediately on touch down.
-private struct DisableScrollTouchDelay: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
-        view.isUserInteractionEnabled = false
-        DispatchQueue.main.async {
-            var current: UIView? = view.superview
-            while let parent = current {
-                if let scrollView = parent as? UIScrollView {
-                    scrollView.delaysContentTouches = false
-                    break
-                }
-                current = parent.superview
-            }
-        }
-        return view
-    }
-    func updateUIView(_ uiView: UIView, context: Context) {}
-}
-
 struct CheckInView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
