@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Pushed from the meditation list. Play, pause and stop in the title bar try out the
 /// script as it stands, saved or not, and keep playing after you go back. Any edit stops
-/// playback, so the next play starts from the top. Back without saving discards edits.
+/// playback, so the next play starts from the top. There's no Save button: Back asks
+/// whether to save when anything changed.
 struct MeditationEditorView: View {
     @Binding var content: String
     @Binding var filename: String
@@ -13,6 +14,14 @@ struct MeditationEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(MeditationPlayer.self) private var player
     @State private var pendingFix: MeditationFix? = nil
+    /// The script and filename as opened, to tell whether Back should ask to save.
+    @State private var opened: (content: String, filename: String)?
+    @State private var askingToSave = false
+
+    private var hasChanges: Bool {
+        guard let opened else { return false }
+        return opened.content != content || opened.filename != filename
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,18 +100,32 @@ struct MeditationEditorView: View {
                 Text(fix.replacement.trimmingCharacters(in: .whitespaces))
             }
         }
-        .navigationTitle(isNew ? "New Meditation" : "Edit")
         .navigationBarTitleDisplayMode(.inline)
+        // Our own Back, so it can ask about unsaved changes.
+        .navigationBarBackButtonHidden(true)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    if hasChanges { askingToSave = true } else { dismiss() }
+                } label: {
+                    Image(systemName: "chevron.backward")
+                }
+                .accessibilityLabel("Back")
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 playbackControls
             }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    onSave(filename, content)
-                    dismiss()
-                }
+        }
+        .confirmationDialog("Save your changes?", isPresented: $askingToSave, titleVisibility: .visible) {
+            Button("Save") {
+                onSave(filename, content)
+                dismiss()
             }
+            Button("Discard Changes", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        }
+        .onAppear {
+            if opened == nil { opened = (content, filename) }
         }
         // Any edit stops playback; the next play starts again from the top.
         .onChange(of: content) { stopIfPlaying() }
