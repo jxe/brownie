@@ -518,7 +518,7 @@ struct MeditationListView: View {
 
                 LastPlayedLabel(date: lastPlayed, helpedToday: hasLogToday)
                     .opacity(hasUpdate ? 0 : 1)
-                // Room for the edit pencil, which sits over the row (see below).
+                // Room for the edit button, which sits over the row (see below).
                 Color.clear
                     .frame(width: Self.editButtonWidth - 8, height: 1)
             }
@@ -550,7 +550,7 @@ struct MeditationListView: View {
         }
         .buttonStyle(MeditationRowPressStyle())
         // Over the row rather than inside its label, so they get their own taps: tapping
-        // the row plays, tapping the pencil edits.
+        // the row plays, tapping the circled chevron opens the editor.
         .overlay(alignment: .trailing) {
             HStack(spacing: 0) {
                 if hasUpdate {
@@ -570,8 +570,8 @@ struct MeditationListView: View {
                 Button {
                     editFile(url)
                 } label: {
-                    Image(systemName: "pencil")
-                        .font(.subheadline)
+                    Image(systemName: "chevron.right.circle")
+                        .font(.body)
                         .foregroundStyle(.tertiary)
                         .frame(width: Self.editButtonWidth, height: 40)
                         .contentShape(Rectangle())
