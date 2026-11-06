@@ -21,13 +21,13 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 ## Architecture
 
 ### Meditation
-- **MeditationApp.swift** - App entry point, `TabDestination` enum, `ContentView` with a `TabView` (Feelings, Meditations, Journal)
+- **MeditationApp.swift** - App entry point, `TabDestination` enum, `ContentView` with a `TabView` (Now, Always)
 - **MeditationModels.swift** - Core types: Pool, Gender, PronounResolver, MeditationStep, Meditation
 - **MeditationParser.swift** - Parses meditation script text into Meditation steps
 - **MeditationPlayer.swift** - AVSpeechSynthesizer-based playback engine (`@EnvironmentObject`)
 - **AudioRenderer.swift** - Audio rendering support
 - **StreamingPlayer.swift** - Streaming playback support
-- **MeditationListView.swift** - Main list of meditations with FAB for new meditation
+- **MeditationListView.swift** - One list per `MeditationShelf`: Now (open to-dos + this era), Always (Feelings card + timeless), or a past era opened from History
 - **MeditationEditorView.swift** - Editor for meditation scripts (presented as sheet)
 - **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count or pool opens a quick edit instead of placing the cursor
 - **MedQuickEdit.swift** - Quick edits for the editor: finds tappable times/counts/pools on a line, the value popover, and the pool list sheet that rewrites the pool block
@@ -45,15 +45,16 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 ### Emotion Tracking
 - **EmotionModels.swift** - `Emotion` struct (name, emoji, question, category), `JournalEntry`, static lists of ~45 emotions
 - **EmotionStore.swift** - `@Observable` class managing session emotion counts and persisted journal entries (JSON in Documents)
-- **CheckInView.swift** - Emotion selection grid with tap-to-increment counts; emotions sort by count
+- **CheckInView.swift** - Emotion selection grid with tap-to-increment counts; emotions sort by count. Pushed from the Feelings card on Always
 - **ReflectionView.swift** - Old free-text reflection form, unused while the to-do experiment runs
-- **FeelingTodoView.swift** - Experimental to-do form (feel it through; complaint/honor, long-term value, one local action). Opened by swiping a chip left or from Journal's Open To-dos. `FeelingTodo` lives in EmotionModels.swift and persists separately in Documents/feeling_todos.json, so removing the experiment leaves the journal file alone
-- **JournalView.swift** - Open to-dos (one row per action, tagged with its feeling), Open Feelings (one row of feelings with no actions yet) + past entries (journal entries merged with done to-dos) with share/export
+- **FeelingTodoView.swift** - Experimental to-do form (feel it through; complaint/honor, long-term value, one local action). Opened by swiping a chip left or from the to-dos on Now. `FeelingTodo` lives in EmotionModels.swift and persists separately in Documents/feeling_todos.json, so removing the experiment leaves the journal file alone
+- **JournalView.swift** - History (clock button on Now and Always): streak, past eras, past entries (journal entries merged with done to-dos) with share/export. Also `OpenTodosSection`, the to-dos shown on Now
 
 ## Navigation
-- Uses a `TabView` with tabs Feelings, Meditations, Journal (`TabDestination` in MeditationApp.swift)
-- Settings, the Store, and `MeditationEditorView` are presented as `.sheet`s from `MeditationListView`
-- `JournalView` uses an inner `NavigationStack` with `.navigationDestination(for: Emotion.self)` to push `FeelingTodoView` (CheckInView does the same)
+- A `TabView` with two tabs (`TabDestination` in MeditationApp.swift): **Now** holds what matters for this stretch (open to-dos, this era's meditations); **Always** holds the timeless practices, led by Feelings
+- Both tabs are a `MeditationListView` in a `NavigationStack`, with History (clock), Settings (gear), and the plus menu in the toolbar
+- Settings, the Store, and `MeditationEditorView` are presented as `.sheet`s from `MeditationListView`; store links open on Always
+- `FeelingTodoView` is pushed with `.navigationDestination(item:)` from CheckInView and from the Now list
 
 ## Key Patterns
 - `@EnvironmentObject` for sharing `MeditationPlayer` across views

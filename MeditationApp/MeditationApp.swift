@@ -1,9 +1,13 @@
 import SwiftUI
 
 enum TabDestination: Int {
-    case feelings
-    case meditations
-    case journal
+    case now
+    case always
+}
+
+extension EnvironmentValues {
+    /// Whether the Always tab, which holds Feelings, is the selected tab.
+    @Entry var alwaysTabIsSelected = false
 }
 
 @main
@@ -29,35 +33,36 @@ struct BrownieApp: App {
 
 struct ContentView: View {
     @Environment(MeditationPlayer.self) var player
-    @AppStorage("selectedTab") private var selectedTab: TabDestination = .feelings
+    @AppStorage("selectedTab") private var selectedTab: TabDestination = .now
     @State private var feelingsTabCenterX: CGFloat?
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            Tab("Feelings", systemImage: "heart.text.square", value: .feelings) {
-                CheckInView(isActive: selectedTab == .feelings)
-            }
-            Tab("Meditations", systemImage: "list.bullet", value: .meditations) {
+            Tab("Now", systemImage: "sun.max", value: .now) {
                 NavigationStack {
-                    MeditationListView()
+                    MeditationListView(shelf: .now)
                 }
             }
-            Tab("Journal", systemImage: "book.closed", value: .journal) {
-                JournalView()
+            Tab("Always", systemImage: "infinity", value: .always) {
+                NavigationStack {
+                    MeditationListView(shelf: .always)
+                }
             }
         }
+        // The Feelings bubble's tail points at the Always tab, where Feelings lives.
         .background(
-            TabBarCenterXReader(tabIndex: 0) { centerX in
+            TabBarCenterXReader(tabIndex: 1) { centerX in
                 if centerX != feelingsTabCenterX {
                     feelingsTabCenterX = centerX
                 }
             }
         )
         .environment(\.feelingsTabCenterX, feelingsTabCenterX)
+        .environment(\.alwaysTabIsSelected, selectedTab == .always)
         // med.nxhx.org/m/<id> universal links and brownie://m/<id> open the store item.
         .onOpenURL { url in
             guard let id = MeditationStore.recordName(from: url) else { return }
-            selectedTab = .meditations
+            selectedTab = .always
             MeditationStore.shared.openedLinkID = id
         }
     }

@@ -25,16 +25,18 @@ private struct DisableScrollTouchDelay: UIViewRepresentable {
 }
 
 struct CheckInView: View {
-    let isActive: Bool
-
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.feelingsTabCenterX) private var feelingsTabCenterX
+    @Environment(\.alwaysTabIsSelected) private var alwaysTabIsSelected
 
     @State private var showingNegativeSheet = false
     @State private var showingPositiveSheet = false
-    @State private var navigationPath = NavigationPath()
+    /// The feeling whose to-do form is pushed on top of this screen.
+    @State private var todoEmotion: Emotion?
+    /// On screen, or covered only by its own to-do form.
+    @State private var isShown = false
     @State private var destinationFrames: [String: CGRect] = [:]
     @State private var visibleChipFrames: [String: CGRect] = [:]
     @State private var scrollViewFrame: CGRect = .zero
@@ -48,6 +50,11 @@ struct CheckInView: View {
         GridItem(.flexible(), spacing: 10),
     ]
 
+    /// A feeling keeps accruing under its to-do form, but not once you go back or switch tabs.
+    private var isActive: Bool {
+        alwaysTabIsSelected && isShown
+    }
+
     private var isAccruingOnScreen: Bool {
         isActive && scenePhase == .active && store.accruingEmotionID != nil
     }
@@ -57,149 +64,151 @@ struct CheckInView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            ScrollView {
-                DisableScrollTouchDelay()
-                    .frame(width: 0, height: 0)
-                VStack(spacing: 20) {
-                    // Selected emotion chips
-                    LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(selectedEmotions) { emotion in
-                            SelectedEmotionChipView(
-                                emotion: emotion,
-                                isAccruing: store.accruingEmotionID == emotion.id,
-                                todoState: store.todoState(for: emotion),
-                                floatingTimes: floatingTimeEvents[emotion.id, default: []],
-                                onTap: { tapSelectedEmotion(emotion) },
-                                onReflect: { navigationPath.append(emotion) }
-                            )
-                            .opacity(store.inFlightEmotions.contains(emotion.id) ? 0 : 1)
-                            .transition(.asymmetric(
-                                insertion: .identity,
-                                removal: .scale(scale: 0.8).combined(with: .opacity)
-                            ))
-                        }
-                    }
-                    .padding(.horizontal)
-                    .animation(.spring(duration: 0.4, bounce: 0.3), value: selectedEmotions.map(\.id))
-                    .onPreferenceChange(ChipDestinationPreferenceKey.self) { frames in
-                        visibleChipFrames = frames
-                        if showingNegativeSheet || showingPositiveSheet {
-                            queueDestinationFrameUpdate(frames)
-                        }
+        ScrollView {
+            DisableScrollTouchDelay()
+                .frame(width: 0, height: 0)
+            VStack(spacing: 20) {
+                // Selected emotion chips
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(selectedEmotions) { emotion in
+                        SelectedEmotionChipView(
+                            emotion: emotion,
+                            isAccruing: store.accruingEmotionID == emotion.id,
+                            todoState: store.todoState(for: emotion),
+                            floatingTimes: floatingTimeEvents[emotion.id, default: []],
+                            onTap: { tapSelectedEmotion(emotion) },
+                            onReflect: { todoEmotion = emotion }
+                        )
+                        .opacity(store.inFlightEmotions.contains(emotion.id) ? 0 : 1)
+                        .transition(.asymmetric(
+                            insertion: .identity,
+                            removal: .scale(scale: 0.8).combined(with: .opacity)
+                        ))
                     }
                 }
-                // .padding(.vertical)
-                // Extra bottom padding so content doesn't hide behind floating buttons
-                // .padding(.bottom, 10)
-            }
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear {
-                            scrollViewFrame = geo.frame(in: .global)
-                        }
-                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                            scrollViewFrame = newFrame
-                        }
-                }
-            )
-            .simultaneousGesture(
-                SpatialTapGesture().onEnded { value in
-                    let globalPoint = CGPoint(
-                        x: scrollViewFrame.minX + value.location.x,
-                        y: scrollViewFrame.minY + value.location.y
-                    )
-                    stopAccruingIfBackgroundTap(at: globalPoint)
-                }
-            )
-            .safeAreaInset(edge: .bottom) {
-                GeometryReader { geo in
-                    let barHorizontalPadding: CGFloat = 40
-                    let barOriginX = geo.frame(in: .global).minX + barHorizontalPadding
-                    let barWidth = geo.size.width - barHorizontalPadding * 2
-                    // Map the feelings tab center (global X) into fraction of bar width
-                    let tabX = feelingsTabCenterX ?? geo.size.width / 6
-                    let tailFraction = max(0.08, min(0.92, (tabX - barOriginX) / barWidth))
-
-                    HStack(spacing: 0) {
-                        Button {
-                            openEmotionPicker(.negative)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.body)
-                                    .foregroundStyle(.tint)
-                                Text("Negative")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 28)
-                        }
-                        .buttonStyle(GlassPressStyle())
-
-                        Divider()
-                            .frame(height: 24)
-
-                        Button {
-                            openEmotionPicker(.positive)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.body)
-                                    .foregroundStyle(.tint)
-                                Text("Positive")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 28)
-                        }
-                        .buttonStyle(GlassPressStyle())
+                .padding(.horizontal)
+                .animation(.spring(duration: 0.4, bounce: 0.3), value: selectedEmotions.map(\.id))
+                .onPreferenceChange(ChipDestinationPreferenceKey.self) { frames in
+                    visibleChipFrames = frames
+                    if showingNegativeSheet || showingPositiveSheet {
+                        queueDestinationFrameUpdate(frames)
                     }
-                    .padding(.bottom, 10)
-                    .clipShape(SpeechBubbleShape(tailFraction: tailFraction))
-                    .contentShape(Rectangle())
-                    .glassEffect(.regular, in: SpeechBubbleShape(tailFraction: tailFraction))
-                    .padding(.horizontal, barHorizontalPadding)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
                 }
-                .frame(height: 104)
-                .padding(.bottom, 4)
             }
-            .navigationTitle("Feelings")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    LiveTimeText(isLive: isAccruingOnScreen) { store.sessionTime(asOf: $0) }
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(minWidth: 58, alignment: .trailing)
-                        .foregroundStyle(.secondary)
-                        .onTapGesture {
-                            stopAccruingAndShowCredit()
+            // .padding(.vertical)
+            // Extra bottom padding so content doesn't hide behind floating buttons
+            // .padding(.bottom, 10)
+        }
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        scrollViewFrame = geo.frame(in: .global)
+                    }
+                    .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                        scrollViewFrame = newFrame
+                    }
+            }
+        )
+        .simultaneousGesture(
+            SpatialTapGesture().onEnded { value in
+                let globalPoint = CGPoint(
+                    x: scrollViewFrame.minX + value.location.x,
+                    y: scrollViewFrame.minY + value.location.y
+                )
+                stopAccruingIfBackgroundTap(at: globalPoint)
+            }
+        )
+        .safeAreaInset(edge: .bottom) {
+            GeometryReader { geo in
+                let barHorizontalPadding: CGFloat = 40
+                let barOriginX = geo.frame(in: .global).minX + barHorizontalPadding
+                let barWidth = geo.size.width - barHorizontalPadding * 2
+                // Map the feelings tab center (global X) into fraction of bar width
+                let tabX = feelingsTabCenterX ?? geo.size.width / 6
+                let tailFraction = max(0.08, min(0.92, (tabX - barOriginX) / barWidth))
+
+                HStack(spacing: 0) {
+                    Button {
+                        openEmotionPicker(.negative)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.body)
+                                .foregroundStyle(.tint)
+                            Text("Negative")
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
                         }
-                        .contextMenu {
-                            if !store.emotionCounts.isEmpty {
-                                Button {
-                                    store.logAndClearSession()
-                                } label: {
-                                    Label("Log & clear session", systemImage: "checkmark.circle")
-                                }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 28)
+                    }
+                    .buttonStyle(GlassPressStyle())
+
+                    Divider()
+                        .frame(height: 24)
+
+                    Button {
+                        openEmotionPicker(.positive)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.body)
+                                .foregroundStyle(.tint)
+                            Text("Positive")
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 28)
+                    }
+                    .buttonStyle(GlassPressStyle())
+                }
+                .padding(.bottom, 10)
+                .clipShape(SpeechBubbleShape(tailFraction: tailFraction))
+                .contentShape(Rectangle())
+                .glassEffect(.regular, in: SpeechBubbleShape(tailFraction: tailFraction))
+                .padding(.horizontal, barHorizontalPadding)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+            }
+            .frame(height: 104)
+            .padding(.bottom, 4)
+        }
+        .navigationTitle("Feelings")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                LiveTimeText(isLive: isAccruingOnScreen) { store.sessionTime(asOf: $0) }
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 58, alignment: .trailing)
+                    .foregroundStyle(.secondary)
+                    .onTapGesture {
+                        stopAccruingAndShowCredit()
+                    }
+                    .contextMenu {
+                        if !store.emotionCounts.isEmpty {
+                            Button {
+                                store.logAndClearSession()
+                            } label: {
+                                Label("Log & clear session", systemImage: "checkmark.circle")
                             }
                         }
-                }
-                .sharedBackgroundVisibility(.hidden)
+                    }
             }
-            .navigationDestination(for: Emotion.self) { emotion in
-                FeelingTodoView(emotion: emotion)
-            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        .navigationDestination(item: $todoEmotion) { emotion in
+            FeelingTodoView(emotion: emotion)
         }
         .onAppear {
+            isShown = true
             clearStaleSessionWithoutAnimation()
             scheduleAutoStopAccruing()
+        }
+        .onDisappear {
+            if todoEmotion == nil { isShown = false }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {

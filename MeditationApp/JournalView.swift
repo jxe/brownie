@@ -2,23 +2,12 @@ import SwiftUI
 
 struct JournalView: View {
     @Environment(EmotionStore.self) private var store
-    @State private var navigationPath = NavigationPath()
+    @State private var eraIndex = EraIndex()
 
-    /// Every filled-in action of every open to-do, one row each.
-    private var openActions: [(todo: FeelingTodo, action: FeelingTodo.Action)] {
-        store.openTodos.flatMap { todo in
-            todo.openActions.map { (todo: todo, action: $0) }
-        }
-    }
-
-    /// Open feelings with no open actions: open to-dos without any, then this
-    /// session's feelings that have no to-do.
-    private var otherOpenEmotions: [Emotion] {
-        let withoutActions = store.openTodos
-            .filter { $0.openActions.isEmpty }
-            .compactMap { Emotion.named($0.emotionName) }
-        let rest = store.selectedEmotionsSorted().filter { store.openTodo(for: $0) == nil }
-        return withoutActions + rest
+    /// Eras before the current one, newest first, then "Older" for untagged meditations.
+    private var pastEras: [EraSelection] {
+        guard !eraIndex.eras.isEmpty else { return [] }
+        return eraIndex.eras.dropFirst().map { .era($0.tag) } + [.older]
     }
 
     /// Journal entries and done to-dos, newest first.
@@ -85,130 +74,168 @@ struct JournalView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            List {
-                // Streak banner
-                let streak = store.currentMeditationStreak
-                if streak >= 2 {
-                    Section {
+        List {
+            // Streak banner
+            let streak = store.currentMeditationStreak
+            if streak >= 2 {
+                Section {
+                    HStack {
+                        Text("🔥")
+                        Text("\(streak)-day meditation streak")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
+            // Earlier eras, each opening its meditations
+            if !pastEras.isEmpty {
+                Section("Past Eras") {
+                    ForEach(pastEras, id: \.self) { era in
+                        NavigationLink {
+                            MeditationListView(shelf: .past(era))
+                        } label: {
+                            Text(era.label)
+                        }
+                    }
+                }
+            }
+
+            // Past entries section
+            if !pastRows.isEmpty {
+                Section("Past Entries") {
+                    ForEach(pastRows) { row in
+                        switch row {
+                        case .todo(let todo):
+                            DoneTodoRow(todo: todo)
+                        case .entry(let entry):
+                            switch entry.content {
+                            case .reflection(let r):
+                                ReflectionEntryRow(entry: entry, reflection: r)
+                            case .meditation(let m):
+                                MeditationLogRow(entry: entry, meditation: m)
+                            case .checkInSession(let s):
+                                NavigationLink {
+                                    CheckInSessionDetailView(entry: entry, session: s)
+                                } label: {
+                                    CheckInSessionRow(entry: entry, session: s)
+                                }
+                            }
+                        }
+                    }
+                    .onDelete { indexSet in
+                        let rows = pastRows
+                        for index in indexSet {
+                            switch rows[index] {
+                            case .todo(let todo): store.deleteTodo(todo)
+                            case .entry(let entry): store.deleteEntry(entry)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Empty state
+            if pastRows.isEmpty && pastEras.isEmpty {
+                ContentUnavailableView(
+                    "Nothing Here Yet",
+                    systemImage: "clock",
+                    description: Text("Finished to-dos, check-ins, and meditations that helped show up here.")
+                )
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color("BackgroundColor"))
+        .navigationTitle("History")
+        .onAppear { eraIndex = EraIndex.load() }
+        .toolbar {
+            NavigationLink {
+                EmotionLeaderboardView()
+            } label: {
+                Label("Emotion Leaderboard", systemImage: "chart.bar.xaxis")
+            }
+
+            if !pastRows.isEmpty {
+                ShareLink(
+                    item: markdownExport,
+                    subject: Text("Emotion Journal"),
+                    message: Text("My emotional reflections")
+                )
+            }
+        }
+    }
+}
+
+/// Open to-dos (one row per action) and open feelings without actions, for the Now tab.
+struct OpenTodosSection: View {
+    @Environment(EmotionStore.self) private var store
+    var onOpen: (Emotion) -> Void
+
+    /// Every filled-in action of every open to-do, one row each.
+    private var openActions: [(todo: FeelingTodo, action: FeelingTodo.Action)] {
+        store.openTodos.flatMap { todo in
+            todo.openActions.map { (todo: todo, action: $0) }
+        }
+    }
+
+    /// Open feelings with no open actions: open to-dos without any, then this
+    /// session's feelings that have no to-do.
+    private var otherOpenEmotions: [Emotion] {
+        let withoutActions = store.openTodos
+            .filter { $0.openActions.isEmpty }
+            .compactMap { Emotion.named($0.emotionName) }
+        let rest = store.selectedEmotionsSorted().filter { store.openTodo(for: $0) == nil }
+        return withoutActions + rest
+    }
+
+    var body: some View {
+        if !openActions.isEmpty {
+            Section("To-dos") {
+                ForEach(openActions, id: \.action.id) { item in
+                    if let emotion = Emotion.named(item.todo.emotionName) {
                         HStack {
-                            Text("🔥")
-                            Text("\(streak)-day meditation streak")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Spacer()
+                            OpenActionRow(todo: item.todo, action: item.action) {
+                                store.toggleActionDone(item.action.id, in: item.todo.id)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
                         }
-                        .padding(.vertical, 4)
-                    }
-                }
-
-                // Open to-dos section
-                if !openActions.isEmpty {
-                    Section("Open To-dos") {
-                        ForEach(openActions, id: \.action.id) { item in
-                            if let emotion = Emotion.named(item.todo.emotionName) {
-                                NavigationLink(value: emotion) {
-                                    OpenActionRow(todo: item.todo, action: item.action) {
-                                        store.toggleActionDone(item.action.id, in: item.todo.id)
-                                    }
-                                }
-                                .contextMenu {
-                                    Button {
-                                        store.toggleActionDone(item.action.id, in: item.todo.id)
-                                    } label: {
-                                        Label("Mark Done", systemImage: "checkmark.circle")
-                                    }
-                                    Button {
-                                        UIPasteboard.general.string = item.action.sentence
-                                    } label: {
-                                        Label("Copy", systemImage: "doc.on.doc")
-                                    }
-                                }
-                                .swipeActions(edge: .leading) {
-                                    Button {
-                                        store.toggleActionDone(item.action.id, in: item.todo.id)
-                                    } label: {
-                                        Label("Done", systemImage: "checkmark")
-                                    }
-                                    .tint(.accentColor)
-                                }
+                        .contentShape(Rectangle())
+                        .onTapGesture { onOpen(emotion) }
+                        .listRowBackground(Color.clear)
+                        .contextMenu {
+                            Button {
+                                store.toggleActionDone(item.action.id, in: item.todo.id)
+                            } label: {
+                                Label("Mark Done", systemImage: "checkmark.circle")
+                            }
+                            Button {
+                                UIPasteboard.general.string = item.action.sentence
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
                             }
                         }
-                    }
-                }
-
-                // Feelings still open but without actions, together in one row
-                if !otherOpenEmotions.isEmpty {
-                    Section("Open Feelings") {
-                        OpenFeelingsRow(emotions: otherOpenEmotions) { emotion in
-                            navigationPath.append(emotion)
-                        }
-                    }
-                }
-
-                // Past entries section
-                if !pastRows.isEmpty {
-                    Section("Past Entries") {
-                        ForEach(pastRows) { row in
-                            switch row {
-                            case .todo(let todo):
-                                DoneTodoRow(todo: todo)
-                            case .entry(let entry):
-                                switch entry.content {
-                                case .reflection(let r):
-                                    ReflectionEntryRow(entry: entry, reflection: r)
-                                case .meditation(let m):
-                                    MeditationLogRow(entry: entry, meditation: m)
-                                case .checkInSession(let s):
-                                    NavigationLink {
-                                        CheckInSessionDetailView(entry: entry, session: s)
-                                    } label: {
-                                        CheckInSessionRow(entry: entry, session: s)
-                                    }
-                                }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                store.toggleActionDone(item.action.id, in: item.todo.id)
+                            } label: {
+                                Label("Done", systemImage: "checkmark")
                             }
-                        }
-                        .onDelete { indexSet in
-                            let rows = pastRows
-                            for index in indexSet {
-                                switch rows[index] {
-                                case .todo(let todo): store.deleteTodo(todo)
-                                case .entry(let entry): store.deleteEntry(entry)
-                                }
-                            }
+                            .tint(.accentColor)
                         }
                     }
-                }
-
-                // Empty state
-                if openActions.isEmpty && otherOpenEmotions.isEmpty && pastRows.isEmpty {
-                    ContentUnavailableView(
-                        "No Entries Yet",
-                        systemImage: "book.closed",
-                        description: Text("Start a check-in to identify what you're feeling, or mark a meditation as helpful after listening.")
-                    )
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Color("BackgroundColor"))
-            .navigationTitle("Journal")
-            .navigationDestination(for: Emotion.self) { emotion in
-                FeelingTodoView(emotion: emotion)
-            }
-            .toolbar {
-                NavigationLink {
-                    EmotionLeaderboardView()
-                } label: {
-                    Label("Emotion Leaderboard", systemImage: "chart.bar.xaxis")
-                }
+        }
 
-                if !pastRows.isEmpty {
-                    ShareLink(
-                        item: markdownExport,
-                        subject: Text("Emotion Journal"),
-                        message: Text("My emotional reflections")
-                    )
-                }
+        // Feelings still open but without actions, together in one row
+        if !otherOpenEmotions.isEmpty {
+            Section("Open Feelings") {
+                OpenFeelingsRow(emotions: otherOpenEmotions, onSelect: onOpen)
+                    .listRowBackground(Color.clear)
             }
         }
     }
