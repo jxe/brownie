@@ -51,6 +51,14 @@ struct MedTextEditor: UIViewRepresentable {
         textView.typingAttributes = medBaseAttributes
         textView.inputAccessoryView = makeToolbar(textView: textView)
         applyMedHighlights(to: textView)
+
+        // Tapping a time, repeat count or pool edits it directly instead of placing the cursor.
+        context.coordinator.textView = textView
+        let tap = UITapGestureRecognizer(target: context.coordinator,
+                                         action: #selector(Coordinator.handleQuickEditTap(_:)))
+        tap.delegate = context.coordinator
+        textView.addGestureRecognizer(tap)
+        context.coordinator.quickEditTap = tap
         return textView
     }
 
@@ -199,8 +207,13 @@ struct MedTextEditor: UIViewRepresentable {
         return bar
     }
 
-    class Coordinator: NSObject, UITextViewDelegate {
+    class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate,
+                       UIPopoverPresentationControllerDelegate {
         var text: Binding<String>
+        weak var textView: UITextView?
+        weak var quickEditTap: UITapGestureRecognizer?
+        /// What the tap in progress landed on, found when the tap is about to be recognized.
+        private var pendingTarget: MedQuickEditTarget?
 
         init(text: Binding<String>) {
             self.text = text
@@ -241,6 +254,135 @@ struct MedTextEditor: UIViewRepresentable {
             textView.replace(textView.selectedTextRange!, withText: "\n" + newIndent)
             return false
         }
+
+        // MARK: Quick edits
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === quickEditTap, let textView else { return true }
+            pendingTarget = quickEditTarget(at: gestureRecognizer.location(in: textView), in: textView)
+            return pendingTarget != nil
+        }
+
+        /// The text view's own taps wait for ours, which fails at once unless it landed on a target.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === quickEditTap, let textView,
+                  let other = otherGestureRecognizer as? UITapGestureRecognizer,
+                  other.numberOfTapsRequired == 1,
+                  let view = other.view, view.isDescendant(of: textView) else { return false }
+            return true
+        }
+
+        @objc func handleQuickEditTap(_ recognizer: UITapGestureRecognizer) {
+            guard let textView, let target = pendingTarget else { return }
+            pendingTarget = nil
+            present(target, from: textView)
+        }
+
+        /// Which target, if any, sits under `point`. The tap must be on the token's glyphs, not
+        /// just nearest to them, so taps in a line's empty space still place the cursor.
+        private func quickEditTarget(at point: CGPoint, in textView: UITextView) -> MedQuickEditTarget? {
+            guard let position = textView.closestPosition(to: point) else { return nil }
+            let offset = textView.offset(from: textView.beginningOfDocument, to: position)
+            return MedQuickEdit.targets(onLineAt: offset, in: textView.text).first { target in
+                rects(for: target.hitRange, in: textView).contains { $0.insetBy(dx: -6, dy: -4).contains(point) }
+            }
+        }
+
+        private func textRange(_ range: NSRange, in textView: UITextView) -> UITextRange? {
+            guard let start = textView.position(from: textView.beginningOfDocument, offset: range.location),
+                  let end = textView.position(from: start, offset: range.length) else { return nil }
+            return textView.textRange(from: start, to: end)
+        }
+
+        private func rects(for range: NSRange, in textView: UITextView) -> [CGRect] {
+            guard let textRange = textRange(range, in: textView) else { return [] }
+            return textView.selectionRects(for: textRange).map(\.rect).filter { !$0.isEmpty && !$0.isNull }
+        }
+
+        /// Replaces `range` with `replacement` (undoably) if the script still has `expected` there.
+        @discardableResult
+        private func replace(_ range: NSRange, expecting expected: String, with replacement: String,
+                             in textView: UITextView) -> Bool {
+            let ns = textView.text as NSString
+            guard NSMaxRange(range) <= ns.length, ns.substring(with: range) == expected,
+                  let textRange = textRange(range, in: textView) else { return false }
+            textView.replace(textRange, withText: replacement)
+            textViewDidChange(textView)
+            return true
+        }
+
+        private func present(_ target: MedQuickEditTarget, from textView: UITextView) {
+            guard let presenter = textView.medTopViewController() else { return }
+            // Typing while the popover is up would shift the text it's editing.
+            textView.resignFirstResponder()
+
+            switch target {
+            case .value(let edit):
+                var range = edit.valueRange
+                var current = (textView.text as NSString).substring(with: range)
+                let popover = MedValuePopover(edit: edit) { [weak self, weak textView] value in
+                    guard let self, let textView else { return }
+                    let replacement = edit.text(for: value)
+                    if self.replace(range, expecting: current, with: replacement, in: textView) {
+                        range.length = (replacement as NSString).length
+                        current = replacement
+                    }
+                }
+                let host = UIHostingController(rootView: popover)
+                host.sizingOptions = .preferredContentSize
+                host.modalPresentationStyle = .popover
+                if let pop = host.popoverPresentationController {
+                    pop.sourceView = textView
+                    pop.sourceRect = rects(for: edit.hitRange, in: textView).first ?? .zero
+                    pop.permittedArrowDirections = [.up, .down]
+                    pop.delegate = self
+                }
+                presenter.present(host, animated: true)
+
+            case .pool(let name, _):
+                guard let block = MedPoolBlock.find(named: name, in: textView.text) else { return }
+                let sheet = MedPoolEditorSheet(
+                    name: name, items: block.items,
+                    onDone: { [weak self, weak textView, weak presenter] items in
+                        if let self, let textView {
+                            self.replace(block.range, expecting: block.source,
+                                         with: block.text(with: items), in: textView)
+                        }
+                        presenter?.dismiss(animated: true)
+                    },
+                    onCancel: { [weak presenter] in presenter?.dismiss(animated: true) })
+                let host = UIHostingController(rootView: sheet)
+                // Swiping away would silently drop edits; Cancel and Done are explicit.
+                host.isModalInPresentation = true
+                if let sheetController = host.sheetPresentationController {
+                    sheetController.detents = [.medium(), .large()]
+                    sheetController.prefersGrabberVisible = true
+                }
+                presenter.present(host, animated: true)
+            }
+        }
+
+        /// Keep the popover a popover on iPhone instead of turning it into a sheet.
+        func adaptivePresentationStyle(for controller: UIPresentationController,
+                                       traitCollection: UITraitCollection) -> UIModalPresentationStyle {
+            .none
+        }
+    }
+}
+
+private extension UIView {
+    /// The view controller to present from: the one owning this view, or whatever it presents on top.
+    func medTopViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if var top = current as? UIViewController {
+                while let presented = top.presentedViewController { top = presented }
+                return top
+            }
+            responder = current.next
+        }
+        return nil
     }
 }
 

@@ -29,7 +29,8 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **StreamingPlayer.swift** - Streaming playback support
 - **MeditationListView.swift** - Main list of meditations with FAB for new meditation
 - **MeditationEditorView.swift** - Editor for meditation scripts (presented as sheet)
-- **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable)
+- **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count or pool opens a quick edit instead of placing the cursor
+- **MedQuickEdit.swift** - Quick edits for the editor: finds tappable times/counts/pools on a line, the value popover, and the pool list sheet that rewrites the pool block
 - **SettingsView.swift** - App settings (voice selection, speaking rate, iCloud)
 - **SampleMeditations.swift** - Installs the store's featured meditations for brand-new local libraries
 - **MeditationStore.swift** - CloudKit public-database store: browse, download, share, updates, reports. Local file ↔ record links live in UserDefaults

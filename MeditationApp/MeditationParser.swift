@@ -366,7 +366,7 @@ struct MeditationParser {
     // MARK: - Pool Definition Header
 
     /// Returns true if the line is a pool definition header: `~ name` or `~name` with nothing else.
-    private static func isPoolDefinitionHeader(_ line: String) -> Bool {
+    static func isPoolDefinitionHeader(_ line: String) -> Bool {
         guard line.hasPrefix("~") else { return false }
         let after = line.dropFirst().trimmingCharacters(in: .whitespaces)
         guard !after.isEmpty else { return false }
@@ -375,7 +375,7 @@ struct MeditationParser {
 
     // MARK: - Pool Item Parsing
 
-    private static func parsePoolItem(_ text: String) -> (String, Gender?, Int) {
+    static func parsePoolItem(_ text: String) -> (String, Gender?, Int) {
         let rock = "\u{1FAA8}"
         let rockCount = text.filter { String($0) == rock }.count
         var cleaned = text.replacingOccurrences(of: rock, with: "")

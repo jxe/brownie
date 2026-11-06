@@ -39,6 +39,7 @@
 		A10000210000000000000021 /* EraEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000210000000000000021 /* EraEditorView.swift */; };
 		A10000220000000000000022 /* MeditationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000220000000000000022 /* MeditationStore.swift */; };
 		A10000230000000000000023 /* MeditationStoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000230000000000000023 /* MeditationStoreView.swift */; };
+		A10000240000000000000024 /* MedQuickEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000240000000000000024 /* MedQuickEdit.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -76,6 +77,7 @@
 		A20000210000000000000021 /* EraEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EraEditorView.swift; sourceTree = "<group>"; };
 		A20000220000000000000022 /* MeditationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationStore.swift; sourceTree = "<group>"; };
 		A20000230000000000000023 /* MeditationStoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationStoreView.swift; sourceTree = "<group>"; };
+		A20000240000000000000024 /* MedQuickEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedQuickEdit.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Brownie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Brownie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -129,6 +131,7 @@
 				A20000210000000000000021 /* EraEditorView.swift */,
 				A20000220000000000000022 /* MeditationStore.swift */,
 				A20000230000000000000023 /* MeditationStoreView.swift */,
+				A20000240000000000000024 /* MedQuickEdit.swift */,
 				A200000A000000000000000A /* Info.plist */,
 				A200000D000000000000000D /* MeditationApp.entitlements */,
 				A200000E000000000000000E /* Assets.xcassets */,
@@ -242,6 +245,7 @@
 				A10000210000000000000021 /* EraEditorView.swift in Sources */,
 				A10000220000000000000022 /* MeditationStore.swift in Sources */,
 				A10000230000000000000023 /* MeditationStoreView.swift in Sources */,
+				A10000240000000000000024 /* MedQuickEdit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
