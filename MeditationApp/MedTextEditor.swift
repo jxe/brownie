@@ -285,7 +285,12 @@ struct MedTextEditor: UIViewRepresentable {
             guard let position = textView.closestPosition(to: point) else { return nil }
             let offset = textView.offset(from: textView.beginningOfDocument, to: position)
             return MedQuickEdit.targets(onLineAt: offset, in: textView.text).first { target in
-                rects(for: target.hitRange, in: textView).contains { $0.insetBy(dx: -6, dy: -4).contains(point) }
+                MedTextView.chipRects(for: target.hitRange, in: textView)
+                    .contains { chip in
+                        // A little beyond the chip, and at least 36pt wide so a lone dot is easy to hit.
+                        let dx = max(4, (36 - chip.width) / 2)
+                        return chip.insetBy(dx: -dx, dy: -4).contains(point)
+                    }
             }
         }
 
@@ -461,6 +466,32 @@ final class MedTextView: UITextView {
         setChipsNeedUpdate()
     }
 
+    /// The chip behind each line of `range`: the glyphs plus `medChipPadding` on every side.
+    /// The highlighter kerns `medChipGap` of room on each side of a target so neighbors stay clear.
+    static func chipRects(for range: NSRange, in textView: UITextView) -> [CGRect] {
+        guard let start = textView.position(from: textView.beginningOfDocument, offset: range.location),
+              let end = textView.position(from: start, offset: range.length),
+              let textRange = textView.textRange(from: start, to: end) else { return [] }
+        let font = textView.font ?? medFont
+        let rects = textView.selectionRects(for: textRange).map(\.rect).filter { !$0.isNull && !$0.isEmpty && $0.width > 0 }
+        // The trailing gap is kerned onto the target's last character, and selection rects
+        // include it only sometimes, so end the last rect where that character's glyph ends.
+        let ns = (textView.text ?? "") as NSString
+        let lastChar = ns.rangeOfComposedCharacterSequence(at: NSMaxRange(range) - 1)
+        var glyphEnd: CGFloat?
+        if let lastStart = textView.position(from: textView.beginningOfDocument, offset: lastChar.location) {
+            let width = ns.substring(with: lastChar).size(withAttributes: [.font: font]).width
+            glyphEnd = textView.caretRect(for: lastStart).minX + width
+        }
+        return rects.enumerated().map { index, rect in
+            var glyphs = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: font.lineHeight)
+            if index == rects.count - 1, let glyphEnd, glyphEnd > glyphs.minX {
+                glyphs.size.width = glyphEnd - glyphs.minX
+            }
+            return glyphs.insetBy(dx: -medChipPadding.width, dy: -medChipPadding.height)
+        }
+    }
+
     private func updateChips() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -472,16 +503,9 @@ final class MedTextView: UITextView {
 
         var paths: [UIColor: UIBezierPath] = [:]
         for target in MedQuickEdit.allTargets(in: text ?? "") {
-            guard let start = position(from: beginningOfDocument, offset: target.hitRange.location),
-                  let end = position(from: start, offset: target.hitRange.length),
-                  let range = textRange(from: start, to: end) else { continue }
             let path = paths[target.tapTint] ?? UIBezierPath()
-            for selectionRect in selectionRects(for: range) {
-                let rect = selectionRect.rect
-                guard !rect.isNull, !rect.isEmpty, rect.width > 0 else { continue }
-                // Hug the glyphs: a little wider than the text, and clear of the line spacing.
-                let chip = rect.insetBy(dx: -4, dy: 1.5)
-                path.append(UIBezierPath(roundedRect: chip, cornerRadius: min(7, chip.height / 2)))
+            for chip in Self.chipRects(for: target.hitRange, in: self) {
+                path.append(UIBezierPath(roundedRect: chip, cornerRadius: min(8, chip.height / 2)))
             }
             paths[target.tapTint] = path
         }
@@ -581,11 +605,15 @@ private func medIndentKern(for font: UIFont) -> CGFloat {
 
 private let medLeadingSpaces = try! NSRegularExpression(pattern: "^ +", options: [.anchorsMatchLines])
 
+// Quick-edit chips: padding around the glyphs, and the extra room kerned on each side of a target.
+private let medChipPadding = CGSize(width: 6, height: 5)
+private let medChipGap: CGFloat = 9
+
 private let medParagraphStyle: NSParagraphStyle = {
     let p = NSMutableParagraphStyle()
     p.headIndent = 24        // wrapped continuations indent by 24pt
     p.firstLineHeadIndent = 0
-    p.lineSpacing = 3
+    p.lineSpacing = 12      // room between lines for the quick-edit chips
     p.paragraphSpacing = 8
     return p
 }()
@@ -671,7 +699,19 @@ private func applyMedHighlights(to textView: UITextView) {
             }
         }
     }
-    // What a tap edits directly sits on a rounded chip, so it reads as tappable.
+    // What a tap edits directly sits on a rounded chip, so it reads as tappable. Kern room on
+    // both sides of each target so its chip's padding doesn't crowd the neighboring text.
+    let ns = text as NSString
+    func addGap(at index: Int) {
+        guard index >= 0, index < storage.length else { return }
+        let existing = (storage.attribute(.kern, at: index, effectiveRange: nil) as? CGFloat) ?? 0
+        storage.addAttribute(.kern, value: existing + medChipGap, range: NSRange(location: index, length: 1))
+    }
+    for target in MedQuickEdit.allTargets(in: text) where target.hitRange.length > 0 && NSMaxRange(target.hitRange) <= storage.length {
+        let before = target.hitRange.location - 1
+        if before >= 0, ns.character(at: before) != 10 { addGap(at: before) }
+        addGap(at: NSMaxRange(target.hitRange) - 1)
+    }
     (textView as? MedTextView)?.setChipsNeedUpdate()
     for diagnostic in MeditationParser.diagnose(text)
     where NSMaxRange(diagnostic.range) <= storage.length {
