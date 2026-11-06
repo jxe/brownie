@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Which meditations a list shows: the timeless ones, this era's (with open to-dos),
-/// or a past era's, opened from History. Always and Current both lead with Feelings.
+/// Which meditations a list shows: the main screen (Feelings, then Current and Always
+/// behind a filter bar), or a past era's, opened from History.
 enum MeditationShelf: Hashable {
-    case always, current
+    case home
     case past(EraSelection)
 }
 
@@ -14,19 +14,22 @@ struct MeditationListView: View {
     @Environment(EmotionStore.self) var store
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openPanel) private var openPanel
     @State private var files: [URL] = []
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
     @State private var eraIndex = EraIndex()
-    /// The feeling whose to-do form is pushed from the Current tab.
+    /// The to-do whose form is pushed from the Current section.
     @State private var openedTodo: FeelingTodo?
     @State private var showingFeelings = false
+    /// The filter bar. The app opens with both on; at least one always stays on.
+    @State private var showCurrent = true
+    @State private var showAlways = true
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
     @State private var isNewFile = false
-    @State private var showingSettings = false
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
     @State private var eraEditTarget: EraEditTarget? = nil
     @State private var showingNewEra = false
@@ -80,12 +83,16 @@ struct MeditationListView: View {
         }
     }
 
-    private var shelfFiles: [URL] {
-        switch shelf {
-        case .current: return hasEras ? currentEraFiles : files.filter { !isTimeless($0) }
-        case .always: return timelessFiles
-        case .past(let era): return pastFiles(era)
-        }
+    /// This era's meditations. Timeless ones tagged with the era show here only while
+    /// Always is filtered out, so nothing is listed twice.
+    private var currentFiles: [URL] {
+        let base = hasEras ? currentEraFiles : files.filter { !isTimeless($0) }
+        return showAlways ? base.filter { !isTimeless($0) } : base
+    }
+
+    private var pastShelfFiles: [URL] {
+        if case .past(let era) = shelf { return pastFiles(era) }
+        return []
     }
 
     private var isPast: Bool {
@@ -99,8 +106,7 @@ struct MeditationListView: View {
 
     private var title: String {
         switch shelf {
-        case .current: eraIndex.current?.tag ?? "Current"
-        case .always: "Always"
+        case .home: ""
         case .past(let era): era.label
         }
     }
@@ -108,13 +114,39 @@ struct MeditationListView: View {
     var body: some View {
             List {
                 switch shelf {
-                case .always:
+                case .home:
                     feelingsCard
-                case .current:
-                    feelingsCard
-                    OpenTodosSection { openedTodo = $0 }
-                case .past:
-                    if hasEras && !shelfFiles.isEmpty {
+                    filterBar
+                    if !files.isEmpty || hasOpenTodos {
+                        // Current comes first: it's what's pressing right now.
+                        if showCurrent {
+                            OpenTodosSection { openedTodo = $0 }
+                            Section {
+                                ForEach(currentFiles, id: \.self) { url in
+                                    listRow(for: url, section: "current")
+                                }
+                                if currentFiles.isEmpty {
+                                    emptyRow("Nothing in this era yet. Bring meditations along from a past era in History, or write a new one.")
+                                }
+                            } header: {
+                                Text(eraIndex.current.map { "Current · \($0.tag)" } ?? "Current")
+                            }
+                        }
+                        if showAlways {
+                            Section {
+                                ForEach(timelessFiles, id: \.self) { url in
+                                    listRow(for: url, section: "always")
+                                }
+                                if timelessFiles.isEmpty {
+                                    emptyRow("Mark a meditation Timeless from its Eras menu to keep it here.")
+                                }
+                            } header: {
+                                Text("Always")
+                            }
+                        }
+                    }
+                case .past(let era):
+                    if hasEras && !pastShelfFiles.isEmpty {
                         Text("Swipe right to bring along")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -122,31 +154,19 @@ struct MeditationListView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     }
-                }
-                Section {
-                    ForEach(shelfFiles, id: \.self) { url in
-                        listRow(for: url, bringAlong: hasEras && isPast)
+                    ForEach(pastShelfFiles, id: \.self) { url in
+                        listRow(for: url, section: "past", bringAlong: hasEras)
                     }
-                    if shelf == .always && shelfFiles.isEmpty {
-                        emptyShelf
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                    }
-                } header: {
-                    if shelf == .current && hasOpenTodos && !shelfFiles.isEmpty {
-                        Text("Meditations")
+                    if pastShelfFiles.isEmpty {
+                        emptyRow("Everything from \(era.label) has been brought along.")
                     }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .overlay {
-                if shelf == .current && files.isEmpty && !hasOpenTodos {
+                if shelf == .home && files.isEmpty && !hasOpenTodos {
                     emptyLibrary
-                } else if shelf == .current && shelfFiles.isEmpty && !hasOpenTodos {
-                    emptyShelf
-                } else if isPast && shelfFiles.isEmpty {
-                    emptyShelf
                 }
             }
             // Tapping empty space stops the current meditation, like tapping outside the
@@ -164,7 +184,6 @@ struct MeditationListView: View {
                     }
                 }
             )
-            // Current's title names the era you're in; earlier eras live in History.
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $openedTodo) { todo in
@@ -177,19 +196,12 @@ struct MeditationListView: View {
             }
             .toolbar {
                 if !isPast {
+                    // History and Settings live in the left panel.
                     ToolbarItem(placement: .topBarLeading) {
-                        NavigationLink {
-                            JournalView()
-                        } label: {
-                            Image(systemName: "clock")
-                        }
-                        .accessibilityLabel("History")
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
                         Button {
-                            showingSettings = true
+                            openPanel()
                         } label: {
-                            Image(systemName: "gear")
+                            Image(systemName: "sidebar.left")
                                 .overlay(alignment: .topTrailing) {
                                     if !hasGoodVoice {
                                         Circle()
@@ -199,6 +211,7 @@ struct MeditationListView: View {
                                     }
                                 }
                         }
+                        .accessibilityLabel("History and Settings")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -226,20 +239,9 @@ struct MeditationListView: View {
                 }
             }
             .onAppear { hasGoodVoice = MeditationPlayer.hasGoodVoice }
-            .onChange(of: showingSettings) { _, _ in
+            // Settings now lives in the panel, so watch for a voice change made there.
+            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
                 hasGoodVoice = MeditationPlayer.hasGoodVoice
-            }
-            .sheet(isPresented: $showingSettings) {
-                NavigationStack {
-                    SettingsView()
-                        .navigationTitle("Settings")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { showingSettings = false }
-                            }
-                        }
-                }
             }
             .sheet(isPresented: $showingEditor) {
                 MeditationEditorView(
@@ -255,9 +257,9 @@ struct MeditationListView: View {
             .sheet(isPresented: $showingStore) {
                 MeditationStoreView()
             }
-            // Only the Always list opens store links, so a link opens one sheet, not one per tab.
+            // Only the main list opens store links, not a past era's list pushed from History.
             .sheet(isPresented: Binding(
-                get: { shelf == .always && meditationStore.openedLinkID != nil },
+                get: { shelf == .home && meditationStore.openedLinkID != nil },
                 set: { if !$0 { meditationStore.openedLinkID = nil } }
             )) {
                 if let id = meditationStore.openedLinkID {
@@ -337,8 +339,8 @@ struct MeditationListView: View {
         }
     }
 
-    /// Feelings is the timeless practice with its own screen. It leads Always, and leads
-    /// Current too, since checking in is how to-dos start.
+    /// Feelings is the timeless practice with its own screen, and checking in is how
+    /// to-dos start, so it leads the main screen above the filter bar.
     private var feelingsCard: some View {
         // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
         // NavigationLink row's plain tap.
@@ -377,24 +379,57 @@ struct MeditationListView: View {
         .listRowSeparator(.hidden)
     }
 
-    private var emptyShelf: some View {
-        let message = switch shelf {
-        case .current: "Nothing in this era yet. Bring meditations along from a past era in History, or write a new one."
-        case .always: "Mark a meditation Timeless from its Eras menu to keep it here."
-        case .past(let era): "Everything from \(era.label) has been brought along."
-        }
-        return Text(message)
+    private func emptyRow(_ message: String) -> some View {
+        Text(message)
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 40)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
             .allowsHitTesting(false)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 
-    private func listRow(for url: URL, bringAlong: Bool = false) -> some View {
+    /// Always and Current, each switched on or off. Turning off the only one that's on
+    /// does nothing, so the list never goes empty.
+    private var filterBar: some View {
+        HStack(spacing: 8) {
+            filterChip("Current", isOn: showCurrent) {
+                if showAlways { showCurrent.toggle() } else { showCurrent = true }
+            }
+            filterChip("Always", isOn: showAlways) {
+                if showCurrent { showAlways.toggle() } else { showAlways = true }
+            }
+            Spacer()
+        }
+        .tracksTappableFrame("filters", in: tappableFrames)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    private func filterChip(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { action() }
+        } label: {
+            Text(label)
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .foregroundStyle(isOn ? Color.white : Color.primary)
+                .background(Capsule().fill(isOn ? Color.accentColor : Color("HighlightColor")))
+        }
+        // Borderless, so each chip in the shared row gets its own taps.
+        .buttonStyle(.borderless)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private func listRow(for url: URL, section: String, bringAlong: Bool = false) -> some View {
         rowView(for: url, bringAlong: bringAlong)
-            // Keyed by shelf too: a meditation can be listed on two shelves.
-            .tracksTappableFrame("\(shelf)|\(url.absoluteString)", in: tappableFrames)
+            // Keyed by section too: a meditation can be listed in two sections.
+            .tracksTappableFrame("\(section)|\(url.absoluteString)", in: tappableFrames)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             // The fill sits RowFillShape.margin inside the row, so these insets are that much
@@ -706,8 +741,8 @@ struct MeditationListView: View {
     }
 
     private func newFile() {
-        // A meditation written from Always is timeless; otherwise it joins the current era.
-        let eraSuffix = shelf == .always
+        // A meditation written while only Always shows is timeless; otherwise it joins the current era.
+        let eraSuffix = showAlways && !showCurrent
             ? " #\(EraIndex.timelessTag)"
             : eraIndex.current.map { " #\($0.tag)" } ?? ""
         editorContent = "# New Meditation\(eraSuffix)\n\n"

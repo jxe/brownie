@@ -1,5 +1,6 @@
 import SwiftUI
 
+/// The left panel: Settings, then History (streak, past eras, past entries).
 struct JournalView: View {
     @Environment(EmotionStore.self) private var store
     @State private var eraIndex = EraIndex()
@@ -75,6 +76,14 @@ struct JournalView: View {
 
     var body: some View {
         List {
+            Section {
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Label("Settings", systemImage: "gear")
+                }
+            }
+
             // Streak banner
             let streak = store.currentMeditationStreak
             if streak >= 2 {

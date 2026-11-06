@@ -28,8 +28,6 @@ struct CheckInView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.feelingsTabCenterX) private var feelingsTabCenterX
-    @Environment(\.tabIsSelected) private var tabIsSelected
 
     @State private var showingNegativeSheet = false
     @State private var showingPositiveSheet = false
@@ -50,9 +48,9 @@ struct CheckInView: View {
         GridItem(.flexible(), spacing: 10),
     ]
 
-    /// A feeling keeps accruing under its to-do form, but not once you go back or switch tabs.
+    /// A feeling keeps accruing under its to-do form, but not once you go back.
     private var isActive: Bool {
-        tabIsSelected && isShown
+        isShown
     }
 
     private var isAccruingOnScreen: Bool {
@@ -122,11 +120,8 @@ struct CheckInView: View {
         .safeAreaInset(edge: .bottom) {
             GeometryReader { geo in
                 let barHorizontalPadding: CGFloat = 40
-                let barOriginX = geo.frame(in: .global).minX + barHorizontalPadding
-                let barWidth = geo.size.width - barHorizontalPadding * 2
-                // Map the feelings tab center (global X) into fraction of bar width
-                let tabX = feelingsTabCenterX ?? geo.size.width / 6
-                let tailFraction = max(0.08, min(0.92, (tabX - barOriginX) / barWidth))
+                // No tab bar to point at any more, so the bubble has no tail.
+                let barShape = RoundedRectangle(cornerRadius: 18)
 
                 HStack(spacing: 0) {
                     Button {
@@ -164,10 +159,9 @@ struct CheckInView: View {
                     }
                     .buttonStyle(GlassPressStyle())
                 }
-                .padding(.bottom, 10)
-                .clipShape(SpeechBubbleShape(tailFraction: tailFraction))
+                .clipShape(barShape)
                 .contentShape(Rectangle())
-                .glassEffect(.regular, in: SpeechBubbleShape(tailFraction: tailFraction))
+                .glassEffect(.regular, in: barShape)
                 .padding(.horizontal, barHorizontalPadding)
                 .frame(maxHeight: .infinity, alignment: .bottom)
             }
