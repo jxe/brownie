@@ -613,8 +613,8 @@ private let medParagraphStyle: NSParagraphStyle = {
     let p = NSMutableParagraphStyle()
     p.headIndent = 24        // wrapped continuations indent by 24pt
     p.firstLineHeadIndent = 0
-    p.lineSpacing = 12      // room between lines for the quick-edit chips
-    p.paragraphSpacing = 8
+    p.lineSpacing = 11      // just enough that chips on neighboring lines keep ~1.5pt apart
+    p.paragraphSpacing = 0
     return p
 }()
 
