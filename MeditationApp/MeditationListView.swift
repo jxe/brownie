@@ -248,7 +248,7 @@ struct MeditationListView: View {
             .onChange(of: panelIsOpen) { _, isOpen in
                 if !isOpen { hasGoodVoice = MeditationPlayer.hasGoodVoice }
             }
-            .sheet(isPresented: $showingEditor) {
+            .navigationDestination(isPresented: $showingEditor) {
                 MeditationEditorView(
                     content: $editorContent,
                     filename: $editorFilename,
