@@ -29,8 +29,8 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **StreamingPlayer.swift** - Streaming playback support
 - **MeditationListView.swift** - `MeditationShelf.home` is the main screen: Feelings card and (with Current on) a To-dos card, both opening their own pages, under a Current/Always title menu (both on at launch, Current listed first); then this era's meditations and timeless ones. `.past` is a past era opened from History
 - **MeditationEditorView.swift** - Editor for meditation scripts (presented as sheet)
-- **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count, pool or the title line opens a quick edit instead of placing the cursor; tappable text sits on a rounded chip (`MedTextView`)
-- **MedQuickEdit.swift** - Quick edits for the editor: finds tappable times/counts/pools on a line, the value popover, and the pool list sheet that rewrites the pool block
+- **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count, pool reference, a whole pool definition or the title line opens a quick edit instead of placing the cursor; tappable text sits on a rounded chip (`MedTextView`), and a pool definition is one chip around all its lines
+- **MedQuickEdit.swift** - Quick edits for the editor: finds tappable times/counts/pools on a line, the value popover, and the pool list sheet that rewrites the pool block (an item's options menu sets pronouns, 🪨 weight, and comments it out as `# item`)
 - **SettingsView.swift** - App settings (voice selection, speaking rate, iCloud)
 - **SampleMeditations.swift** - Installs the store's featured meditations for brand-new local libraries
 - **MeditationStore.swift** - CloudKit public-database store: browse, download, share, updates, reports. Local file ↔ record links live in UserDefaults

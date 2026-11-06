@@ -99,8 +99,10 @@ struct MedValueEdit {
 
 enum MedQuickEditTarget {
     case value(MedValueEdit)
-    /// A pool header line or a `~name` reference to a pool the script defines.
+    /// A `~name` reference to a pool the script defines.
     case pool(name: String, hitRange: NSRange)
+    /// A whole pool definition: the `~name` line and its indented lines, drawn as one chip.
+    case poolBlock(name: String, hitRange: NSRange)
     /// The title line or a tag line under it.
     case header(hitRange: NSRange)
 
@@ -108,8 +110,15 @@ enum MedQuickEditTarget {
         switch self {
         case .value(let edit): return edit.hitRange
         case .pool(_, let range): return range
+        case .poolBlock(_, let range): return range
         case .header(let range): return range
         }
+    }
+
+    /// Spans several lines but draws and hits as one rect around all of them.
+    var isBlock: Bool {
+        if case .poolBlock = self { return true }
+        return false
     }
 }
 
@@ -175,7 +184,11 @@ enum MedQuickEdit {
         var targets: [MedQuickEditTarget] = []
         ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
                                options: [.byLines, .substringNotRequired]) { _, lineRange, _, _ in
-            targets += Self.targets(onLine: lineRange, in: text, context: context)
+            // Every line of a pool block reports the block; list it once, from its header line.
+            for target in Self.targets(onLine: lineRange, in: text, context: context)
+            where !target.isBlock || target.hitRange.location == lineRange.location {
+                targets.append(target)
+            }
         }
         return targets
     }
@@ -184,9 +197,12 @@ enum MedQuickEdit {
     private struct Context {
         let pools: Set<String>
         let header: NSRange?
+        /// Each pool definition's name and its whole block's range.
+        let poolBlocks: [(name: String, range: NSRange)]
         init(_ text: String) {
             pools = Set(MeditationParser.referenceableNames(in: text).pools)
             header = MedHeader.range(in: text)
+            poolBlocks = MedPoolBlock.blockRanges(in: text)
         }
     }
 
@@ -206,12 +222,11 @@ enum MedQuickEdit {
         if let header = context.header, NSLocationInRange(start, header) {
             return [.header(hitRange: trimmedRange)]
         }
-        if trimmed.hasPrefix("#") { return [] }
-
-        if MeditationParser.isPoolDefinitionHeader(trimmed) {
-            let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-            return [.pool(name: name, hitRange: trimmedRange)]
+        // Anywhere in a pool definition, the whole block is the one target.
+        if let block = context.poolBlocks.first(where: { NSLocationInRange(start, $0.range) }) {
+            return [.poolBlock(name: block.name, hitRange: block.range)]
         }
+        if trimmed.hasPrefix("#") { return [] }
 
         var targets: [MedQuickEditTarget] = []
 
@@ -285,24 +300,28 @@ struct MedPoolBlock {
         var gender: Gender?
         /// Extra 🪨 weight markers.
         var rocks: Int
+        /// Written as `# item`: kept in the pool but never drawn.
+        var commented: Bool
         /// The line as written, kept for an unchanged item so its spacing and marker order survive.
-        fileprivate var original: (line: String, text: String, gender: Gender?, rocks: Int)?
+        fileprivate var original: (line: String, text: String, gender: Gender?, rocks: Int, commented: Bool)?
 
-        init(text: String = "", gender: Gender? = nil, rocks: Int = 0) {
+        init(text: String = "", gender: Gender? = nil, rocks: Int = 0, commented: Bool = false) {
             self.text = text
             self.gender = gender
             self.rocks = rocks
+            self.commented = commented
         }
 
         fileprivate var isUnchanged: Bool {
             guard let original else { return false }
             return original.text == text && original.gender == gender && original.rocks == rocks
+                && original.commented == commented
         }
     }
 
     private enum Line {
         case item
-        /// A comment or blank indented line, kept where it was.
+        /// A blank indented line (or a bare `#`), kept where it was.
         case other(String)
     }
 
@@ -315,6 +334,22 @@ struct MedPoolBlock {
     private let header: String
     private let indent: String
     private let lines: [Line]
+
+    /// Every pool definition's name and block range, in script order.
+    static func blockRanges(in text: String) -> [(name: String, range: NSRange)] {
+        var blocks: [(name: String, range: NSRange)] = []
+        var seen = Set<String>()
+        let ns = text as NSString
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: [.byLines]) { line, _, _, _ in
+            let trimmed = (line ?? "").trimmingCharacters(in: .whitespaces)
+            guard MeditationParser.isPoolDefinitionHeader(trimmed) else { return }
+            let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+            guard seen.insert(name).inserted, let block = find(named: name, in: text) else { return }
+            blocks.append((name, block.range))
+        }
+        return blocks
+    }
 
     /// The first definition of pool `name` in the script.
     static func find(named name: String, in text: String) -> MedPoolBlock? {
@@ -339,14 +374,17 @@ struct MedPoolBlock {
                 let line = ns.substring(with: bodyRange)
                 guard line.hasPrefix("  ") || line.hasPrefix("\t") else { break }
                 last = bodyRange
-                let itemText = line.trimmingCharacters(in: .whitespaces)
-                if itemText.isEmpty || itemText.hasPrefix("#") {
+                var itemText = line.trimmingCharacters(in: .whitespaces)
+                // `# item` is a commented-out item: the parser skips it, the sheet can turn it back on.
+                let commented = itemText.hasPrefix("#")
+                if commented { itemText = String(itemText.drop { $0 == "#" }).trimmingCharacters(in: .whitespaces) }
+                if itemText.isEmpty {
                     lines.append(.other(line))
                     continue
                 }
                 let (text, gender, weight) = MeditationParser.parsePoolItem(itemText)
-                var item = Item(text: text, gender: gender, rocks: weight - 1)
-                item.original = (line, text, gender, weight - 1)
+                var item = Item(text: text, gender: gender, rocks: weight - 1, commented: commented)
+                item.original = (line, text, gender, weight - 1, commented)
                 items.append(item)
                 lines.append(.item)
                 if indent == nil { indent = String(line.prefix { $0 == " " || $0 == "\t" }) }
@@ -385,7 +423,7 @@ struct MedPoolBlock {
 
     private func render(_ item: Item) -> String {
         if item.isUnchanged, let original = item.original { return original.line }
-        var line = indent + item.text
+        var line = indent + (item.commented ? "# " : "") + item.text
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
         switch item.gender {
@@ -487,6 +525,8 @@ struct MedPoolEditorSheet: View {
                     ForEach($items) { $item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             TextField("New item", text: $item.text)
+                                .foregroundStyle(item.commented ? .secondary : .primary)
+                                .strikethrough(item.commented, color: .secondary)
                                 .focused($focused, equals: item.id)
                                 .submitLabel(.next)
                                 .onSubmit { addItem(after: item.id) }
@@ -502,7 +542,7 @@ struct MedPoolEditorSheet: View {
                         Label("Add item", systemImage: "plus")
                     }
                 } footer: {
-                    Text("Each ~\(name) draws one of these at random. Swipe to delete, Return for the next item.")
+                    Text("Each ~\(name) draws one of these at random; commented-out items are skipped. Swipe to delete, Return for the next item.")
                 }
             }
             .navigationTitle("~\(name)")
@@ -524,6 +564,15 @@ struct MedPoolEditorSheet: View {
 
     private func markerMenu(_ item: Binding<MedPoolBlock.Item>) -> some View {
         Menu {
+            Button {
+                item.wrappedValue.commented.toggle()
+            } label: {
+                if item.wrappedValue.commented {
+                    Label("Uncomment", systemImage: "text.badge.checkmark")
+                } else {
+                    Label("Comment Out", systemImage: "number")
+                }
+            }
             Picker("Pronouns", selection: item.gender) {
                 Text("No pronouns").tag(Gender?.none)
                 Text("♀ she / her").tag(Gender?.some(.female))
@@ -544,11 +593,11 @@ struct MedPoolEditorSheet: View {
                 Text(markers)
             }
         }
-        .accessibilityLabel("Pronouns and weight")
+        .accessibilityLabel("Comment, pronouns and weight")
     }
 
     private func markerText(_ item: MedPoolBlock.Item) -> String {
-        var parts: [String] = []
+        var parts: [String] = item.commented ? ["#"] : []
         switch item.gender {
         case .female: parts.append("♀")
         case .male: parts.append("♂")
