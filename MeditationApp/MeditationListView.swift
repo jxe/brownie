@@ -132,7 +132,7 @@ struct MeditationListView: View {
                                     emptyRow("Nothing in this era yet. Bring meditations along from a past era in History, or write a new one.")
                                 }
                             } header: {
-                                Text(eraIndex.current.map { "Current · \($0.tag)" } ?? "Current")
+                                Text(eraIndex.current.map { "This Era · \($0.tag)" } ?? "This Era")
                             }
                         }
                         if showAlways {
@@ -141,10 +141,10 @@ struct MeditationListView: View {
                                     listRow(for: url, section: "always")
                                 }
                                 if timelessFiles.isEmpty {
-                                    emptyRow("Mark a meditation Timeless from its Eras menu to keep it here.")
+                                    emptyRow("Mark a meditation as a Foundation from its Eras menu to keep it here.")
                                 }
                             } header: {
-                                Text("Always")
+                                Text("Foundations")
                             }
                         }
                     }
@@ -412,11 +412,11 @@ struct MeditationListView: View {
     /// so the list never goes empty.
     private var filterBar: some View {
         Menu {
-            Toggle("Current", isOn: Binding(
+            Toggle("This Era", isOn: Binding(
                 get: { showCurrent },
                 set: { on in withAnimation(.snappy(duration: 0.25)) { showCurrent = on || !showAlways } }
             ))
-            Toggle("Always", isOn: Binding(
+            Toggle("Foundations", isOn: Binding(
                 get: { showAlways },
                 set: { on in withAnimation(.snappy(duration: 0.25)) { showAlways = on || !showCurrent } }
             ))
@@ -436,9 +436,11 @@ struct MeditationListView: View {
 
     private var filterTitle: String {
         switch (showCurrent, showAlways) {
-        case (true, true): "Current + Always"
-        case (true, false): "Current"
-        default: "Always"
+        // Timeframes: this era alone, or everything, the longer view. Foundations alone
+        // are the meditations kept across eras.
+        case (true, true): "Everything"
+        case (true, false): "This Era"
+        default: "Foundations"
         }
     }
 

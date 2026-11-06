@@ -20,9 +20,9 @@ struct EraEditorView: View {
         NavigationStack {
             Form {
                 Section {
-                    toggle(EraIndex.timelessTag, label: "Timeless")
+                    toggle(EraIndex.timelessTag, label: "Foundation")
                 } footer: {
-                    Text("Timeless meditations are always shown, whatever era you're in.")
+                    Text("Foundations are always shown, whatever era you're in.")
                 }
                 if !eras.isEmpty {
                     Section("Eras") {
