@@ -32,16 +32,21 @@ struct ContentView: View {
     @State private var panelOpen = false
     /// How far a drag has moved the main screen, while one is under way.
     @State private var dragOffset: CGFloat = 0
+    /// Whether History is built at all. It stays up through the closing slide, then goes,
+    /// so nothing behind the main screen re-renders as the store changes.
+    @State private var panelMounted = false
 
     var body: some View {
         GeometryReader { geo in
             let panelWidth = min(geo.size.width * 0.85, 380)
             let offset = max(0, min(panelWidth, (panelOpen ? panelWidth : 0) + dragOffset))
             ZStack(alignment: .leading) {
-                NavigationStack {
-                    JournalView()
+                if panelMounted {
+                    NavigationStack {
+                        JournalView()
+                    }
+                    .frame(width: panelWidth)
                 }
-                .frame(width: panelWidth)
 
                 NavigationStack {
                     MeditationListView(shelf: .home)
@@ -56,7 +61,16 @@ struct ContentView: View {
                             .gesture(closeDrag(panelWidth: panelWidth))
                     }
                 }
-                .shadow(color: .black.opacity(offset > 0 ? 0.18 : 0), radius: 12)
+                // The shadow comes from a plain shape behind the screen: a shadow on the
+                // whole NavigationStack would re-render offscreen on every change.
+                .background {
+                    if offset > 0 {
+                        Rectangle()
+                            .fill(Color("BackgroundColor"))
+                            .shadow(color: .black.opacity(0.18), radius: 12)
+                            .ignoresSafeArea()
+                    }
+                }
                 .offset(x: offset)
             }
         }
@@ -69,9 +83,12 @@ struct ContentView: View {
     }
 
     private func setPanel(open: Bool) {
+        if open { panelMounted = true }
         withAnimation(.snappy(duration: 0.3)) {
             panelOpen = open
             dragOffset = 0
+        } completion: {
+            if !panelOpen { panelMounted = false }
         }
     }
 

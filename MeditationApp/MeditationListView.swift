@@ -342,31 +342,10 @@ struct MeditationListView: View {
     }
 
     /// Feelings is the timeless practice with its own screen, and checking in is how
-    /// to-dos start, so it leads the main screen. During a check-in it is tinted and lists
-    /// that check-in's feelings.
+    /// to-dos start, so it leads the main screen. Its own view, so a chip tap on the
+    /// check-in screen re-renders just this card, not the whole list beneath it.
     private var feelingsCard: some View {
-        let feelings = store.selectedEmotionsSorted()
-        let inSession = !feelings.isEmpty
-        let names = feelings.prefix(4).map { "\($0.emoji) \($0.name)" }
-        let more = feelings.count > 4 ? ["+\(feelings.count - 4)"] : []
-        return pageCard(
-            emoji: "🪷",
-            title: "Feelings",
-            lines: inSession
-                ? [(names + more).joined(separator: " · ")]
-                : ["Check in with what you’re feeling"],
-            highlighted: inSession
-        ) {
-            showingFeelings = true
-        } trailing: {
-            // This check-in's time, live while a feeling is accruing.
-            if inSession {
-                LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-        }
+        FeelingsCard(tappableFrames: tappableFrames) { showingFeelings = true }
     }
 
     /// Open to-dos live on their own page, like Feelings. The card counts them and
@@ -397,8 +376,6 @@ struct MeditationListView: View {
         }
     }
 
-    /// A card that opens a page of its own, like Feelings or To-dos. A highlighted card
-    /// is tinted, for something under way.
     private func pageCard<Trailing: View>(
         emoji: String,
         title: String,
@@ -407,42 +384,10 @@ struct MeditationListView: View {
         action: @escaping () -> Void,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
-        // NavigationLink row's plain tap.
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Text(emoji)
-                    .font(.title2)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.subheadline)
-                            .foregroundStyle(highlighted ? .primary : .secondary)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer()
-                trailing()
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
-        .tracksTappableFrame("card|\(title)", in: tappableFrames)
-        .listRowBackground(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(highlighted ? Color.accentColor.opacity(0.18) : Color("HighlightColor"))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 4)
+        PageCard(
+            emoji: emoji, title: title, lines: lines, highlighted: highlighted,
+            tappableFrames: tappableFrames, action: action, trailing: trailing()
         )
-        .listRowInsets(EdgeInsets(top: 4, leading: 30, bottom: 4, trailing: 30))
-        .listRowSeparator(.hidden)
     }
 
     private func emptyRow(_ message: String) -> some View {
@@ -940,6 +885,92 @@ private final class ScrollTouchDelayDisablingView: UIView {
             }
             current = parent.superview
         }
+    }
+}
+
+/// The Feelings card. During a check-in it is tinted and lists that check-in's
+/// feelings. It reads the check-in itself, which changes on every chip tap, so only
+/// this card re-renders then.
+private struct FeelingsCard: View {
+    let tappableFrames: TappableFrames
+    let action: () -> Void
+    @Environment(EmotionStore.self) private var store
+
+    var body: some View {
+        let feelings = store.selectedEmotionsSorted()
+        let inSession = !feelings.isEmpty
+        let names = feelings.prefix(4).map { "\($0.emoji) \($0.name)" }
+        let more = feelings.count > 4 ? ["+\(feelings.count - 4)"] : []
+        PageCard(
+            emoji: "🪷",
+            title: "Feelings",
+            lines: inSession
+                ? [(names + more).joined(separator: " · ")]
+                : ["Check in with what you’re feeling"],
+            highlighted: inSession,
+            tappableFrames: tappableFrames,
+            action: action,
+            // This check-in's time, live while a feeling is accruing.
+            trailing: Group {
+                if inSession {
+                    LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+        )
+    }
+}
+
+/// A card that opens a page of its own, like Feelings or To-dos. A highlighted card
+/// is tinted, for something under way.
+private struct PageCard<Trailing: View>: View {
+    let emoji: String
+    let title: String
+    let lines: [String]
+    let highlighted: Bool
+    let tappableFrames: TappableFrames
+    let action: () -> Void
+    let trailing: Trailing
+
+    var body: some View {
+        // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
+        // NavigationLink row's plain tap.
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Text(emoji)
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.subheadline)
+                            .foregroundStyle(highlighted ? .primary : .secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                trailing
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
+        .tracksTappableFrame("card|\(title)", in: tappableFrames)
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(highlighted ? Color.accentColor.opacity(0.18) : Color("HighlightColor"))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
+        )
+        .listRowInsets(EdgeInsets(top: 4, leading: 30, bottom: 4, trailing: 30))
+        .listRowSeparator(.hidden)
     }
 }
 
