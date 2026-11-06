@@ -132,7 +132,8 @@ struct MeditationListView: View {
                                     emptyRow("Nothing in this era yet. Bring meditations along from a past era in History, or write a new one.")
                                 }
                             } header: {
-                                Text(eraIndex.current.map { "This Era · \($0.tag)" } ?? "This Era")
+                                // Just the era's own name; "This Era" only when there are no eras yet.
+                                Text(eraIndex.current?.tag ?? "This Era")
                             }
                         }
                         if showAlways {
