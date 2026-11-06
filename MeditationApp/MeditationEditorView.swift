@@ -129,20 +129,10 @@ struct MeditationEditorView: View {
         }
         // Edge swipe: the system's own swipe back while nothing changed; with changes,
         // the same swipe asks first, like Back.
-        .background(SwipeBackEnabler(isEnabled: !hasChanges).frame(width: 0, height: 0))
-        .overlay(alignment: .leading) {
-            if hasChanges {
-                Color.clear
-                    .frame(width: 20)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 15)
-                            .onEnded { value in
-                                if value.translation.width > 60 { askingToSave = true }
-                            }
-                    )
-            }
-        }
+        .background(
+            SwipeBackEnabler(isEnabled: !hasChanges) { askingToSave = true }
+                .frame(width: 0, height: 0)
+        )
         // Any edit stops playback; the next play starts again from the top.
         .onChange(of: content) { stopIfPlaying() }
         .onChange(of: filename) { stopIfPlaying() }
@@ -192,9 +182,11 @@ struct MeditationEditorView: View {
 }
 
 /// Keeps the system's edge swipe back working although the editor hides the standard Back
-/// button (which turns the swipe off), and switches it off while `isEnabled` is false.
+/// button (which turns the swipe off). While `isEnabled` is false the swipe doesn't leave;
+/// starting one calls `onBlockedSwipe` instead, from the system's own edge detection.
 private struct SwipeBackEnabler: UIViewRepresentable {
     let isEnabled: Bool
+    let onBlockedSwipe: () -> Void
 
     func makeUIView(context: Context) -> SwipeBackView {
         let view = SwipeBackView()
@@ -204,12 +196,14 @@ private struct SwipeBackEnabler: UIViewRepresentable {
 
     func updateUIView(_ view: SwipeBackView, context: Context) {
         view.isSwipeEnabled = isEnabled
+        view.onBlockedSwipe = onBlockedSwipe
         view.apply()
     }
 }
 
-private final class SwipeBackView: UIView {
+private final class SwipeBackView: UIView, UIGestureRecognizerDelegate {
     var isSwipeEnabled = true
+    var onBlockedSwipe: () -> Void = {}
     private weak var navigationController: UINavigationController?
     private weak var savedDelegate: UIGestureRecognizerDelegate?
     private var didSaveDelegate = false
@@ -230,9 +224,15 @@ private final class SwipeBackView: UIView {
             savedDelegate = gesture.delegate
             didSaveDelegate = true
         }
-        // The navigation controller's own delegate refuses the swipe when Back is hidden.
-        gesture.delegate = nil
-        gesture.isEnabled = isSwipeEnabled
+        // The navigation controller's own delegate refuses the swipe when Back is hidden,
+        // so this view decides instead.
+        gesture.delegate = self
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if isSwipeEnabled { return true }
+        onBlockedSwipe()
+        return false
     }
 
     /// Hands the swipe back to the navigation controller as it was, so the screens
@@ -240,7 +240,6 @@ private final class SwipeBackView: UIView {
     private func restore() {
         guard didSaveDelegate, let gesture = navigationController?.interactivePopGestureRecognizer else { return }
         gesture.delegate = savedDelegate
-        gesture.isEnabled = true
         didSaveDelegate = false
     }
 
