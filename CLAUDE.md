@@ -27,7 +27,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **MeditationPlayer.swift** - AVSpeechSynthesizer-based playback engine (`@EnvironmentObject`)
 - **AudioRenderer.swift** - Audio rendering support
 - **StreamingPlayer.swift** - Streaming playback support
-- **MeditationListView.swift** - `MeditationShelf.home` is the main screen: Feelings card, an Always/Current filter bar (both on at launch, Current listed first), open to-dos and this era's meditations, then timeless ones. `.past` is a past era opened from History
+- **MeditationListView.swift** - `MeditationShelf.home` is the main screen: Feelings card under a Current/Always tag picker in the top bar (both on at launch, Current listed first), open to-dos and this era's meditations, then timeless ones. `.past` is a past era opened from History
 - **MeditationEditorView.swift** - Editor for meditation scripts (presented as sheet)
 - **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count, pool or the title line opens a quick edit instead of placing the cursor; tappable text sits on a rounded chip (`MedTextView`)
 - **MedQuickEdit.swift** - Quick edits for the editor: finds tappable times/counts/pools on a line, the value popover, and the pool list sheet that rewrites the pool block
@@ -52,7 +52,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 
 ## Navigation
 - No tab bar. `ContentView` shows one `MeditationListView(shelf: .home)` in a `NavigationStack`, with a second `NavigationStack` (JournalView: Settings + History) behind it on the left. The sidebar button (`openPanel` environment action) slides the main screen right; a tap or leftward drag on it closes the panel
-- The main screen's filter bar shows Current, Always, or both (never neither); it isn't remembered between launches
+- The Current/Always tag picker sits in the middle of the main screen's top bar and shows Current, Always, or both (never neither); it isn't remembered between launches
 - The Store, `MeditationEditorView`, and new-era sheets are presented from `MeditationListView`; store links open on the main screen
 - `FeelingTodoView` is pushed with `.navigationDestination(item:)` from CheckInView and from the main list
 

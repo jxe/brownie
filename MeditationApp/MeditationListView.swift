@@ -116,7 +116,6 @@ struct MeditationListView: View {
                 switch shelf {
                 case .home:
                     feelingsCard
-                    filterBar
                     if !files.isEmpty || hasOpenTodos {
                         // Current comes first: it's what's pressing right now.
                         if showCurrent {
@@ -212,6 +211,9 @@ struct MeditationListView: View {
                                 }
                         }
                         .accessibilityLabel("History and Settings")
+                    }
+                    ToolbarItem(placement: .principal) {
+                        filterBar
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -392,22 +394,17 @@ struct MeditationListView: View {
             .listRowSeparator(.hidden)
     }
 
-    /// Always and Current, each switched on or off. Turning off the only one that's on
-    /// does nothing, so the list never goes empty.
+    /// A tag picker in the middle of the top bar: Current and Always, each switched on
+    /// or off. Turning off the only one that's on does nothing, so the list never goes empty.
     private var filterBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             filterChip("Current", isOn: showCurrent) {
                 if showAlways { showCurrent.toggle() } else { showCurrent = true }
             }
             filterChip("Always", isOn: showAlways) {
                 if showCurrent { showAlways.toggle() } else { showAlways = true }
             }
-            Spacer()
         }
-        .tracksTappableFrame("filters", in: tappableFrames)
-        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
     }
 
     private func filterChip(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -421,8 +418,7 @@ struct MeditationListView: View {
                 .foregroundStyle(isOn ? Color.white : Color.primary)
                 .background(Capsule().fill(isOn ? Color.accentColor : Color("HighlightColor")))
         }
-        // Borderless, so each chip in the shared row gets its own taps.
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
