@@ -29,7 +29,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **StreamingPlayer.swift** - Streaming playback support
 - **MeditationListView.swift** - One list per `MeditationShelf`: Always (Feelings card + timeless), Current (Feelings card, open to-dos, this era), or a past era opened from History
 - **MeditationEditorView.swift** - Editor for meditation scripts (presented as sheet)
-- **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count or pool opens a quick edit instead of placing the cursor
+- **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count, pool or the title line opens a quick edit instead of placing the cursor; tappable text gets a light tinted background
 - **MedQuickEdit.swift** - Quick edits for the editor: finds tappable times/counts/pools on a line, the value popover, and the pool list sheet that rewrites the pool block
 - **SettingsView.swift** - App settings (voice selection, speaking rate, iCloud)
 - **SampleMeditations.swift** - Installs the store's featured meditations for brand-new local libraries

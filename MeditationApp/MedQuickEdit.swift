@@ -101,12 +101,46 @@ enum MedQuickEditTarget {
     case value(MedValueEdit)
     /// A pool header line or a `~name` reference to a pool the script defines.
     case pool(name: String, hitRange: NSRange)
+    /// The title line or a tag line under it.
+    case header(hitRange: NSRange)
 
     var hitRange: NSRange {
         switch self {
         case .value(let edit): return edit.hitRange
         case .pool(_, let range): return range
+        case .header(let range): return range
         }
+    }
+}
+
+// MARK: - Title and tags
+
+/// The script's `# Title #tag` line and any pure `#tag` lines right under it.
+enum MedHeader {
+    /// Same lines MeditationMetadataWriter replaces: the title line and tag lines at the very top.
+    static func range(in text: String) -> NSRange? {
+        let ns = text as NSString
+        var end: Int?
+        var titleSeen = false
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: [.byLines]) { line, lineRange, _, stop in
+            let trimmed = (line ?? "").trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("#") else { stop.pointee = true; return }
+            let words = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            let isTagLine = words.allSatisfy { $0 == "#" || ($0.hasPrefix("#") && $0.count > 1) }
+            if !isTagLine {
+                if titleSeen { stop.pointee = true; return }
+                titleSeen = true
+            }
+            end = NSMaxRange(lineRange)
+        }
+        guard let end else { return nil }
+        return NSRange(location: 0, length: end)
+    }
+
+    /// Era tags (and `timeless`) to offer, since those are the tags the list shows.
+    static func suggestedTags() -> [String] {
+        EraIndex.load().eras.map(\.tag) + [EraIndex.timelessTag]
     }
 }
 
@@ -130,18 +164,53 @@ enum MedQuickEdit {
         var start = 0, end = 0, contentsEnd = 0
         ns.getLineStart(&start, end: &end, contentsEnd: &contentsEnd,
                         for: NSRange(location: min(max(offset, 0), ns.length), length: 0))
-        let line = ns.substring(with: NSRange(location: start, length: contentsEnd - start))
+        return targets(onLine: NSRange(location: start, length: contentsEnd - start), in: text,
+                       context: Context(text))
+    }
+
+    /// Everything editable in the script, for showing what can be tapped.
+    static func allTargets(in text: String) -> [MedQuickEditTarget] {
+        let ns = text as NSString
+        let context = Context(text)
+        var targets: [MedQuickEditTarget] = []
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: [.byLines, .substringNotRequired]) { _, lineRange, _, _ in
+            targets += Self.targets(onLine: lineRange, in: text, context: context)
+        }
+        return targets
+    }
+
+    /// What a line's targets depend on elsewhere in the script, worked out once per script.
+    private struct Context {
+        let pools: Set<String>
+        let header: NSRange?
+        init(_ text: String) {
+            pools = Set(MeditationParser.referenceableNames(in: text).pools)
+            header = MedHeader.range(in: text)
+        }
+    }
+
+    private static func targets(onLine lineRange: NSRange, in text: String, context: Context) -> [MedQuickEditTarget] {
+        let ns = text as NSString
+        let start = lineRange.location
+        let line = ns.substring(with: lineRange)
         let lineNS = line as NSString
         let full = NSRange(location: 0, length: lineNS.length)
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty || trimmed.hasPrefix("#") { return [] }
+        if trimmed.isEmpty { return [] }
 
         func shifted(_ r: NSRange) -> NSRange { NSRange(location: r.location + start, length: r.length) }
+        let lead = (line.prefix { $0 == " " || $0 == "\t" } as Substring).utf16.count
+        let trimmedRange = shifted(NSRange(location: lead, length: trimmed.utf16.count))
+
+        if let header = context.header, NSLocationInRange(start, header) {
+            return [.header(hitRange: trimmedRange)]
+        }
+        if trimmed.hasPrefix("#") { return [] }
 
         if MeditationParser.isPoolDefinitionHeader(trimmed) {
             let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-            let lead = (line.prefix { $0 == " " || $0 == "\t" } as Substring).utf16.count
-            return [.pool(name: name, hitRange: shifted(NSRange(location: lead, length: trimmed.utf16.count)))]
+            return [.pool(name: name, hitRange: trimmedRange)]
         }
 
         var targets: [MedQuickEditTarget] = []
@@ -182,7 +251,7 @@ enum MedQuickEdit {
                 repeatSign: lineNS.substring(with: m.range(at: 1)))))
         }
 
-        let pools = Set(MeditationParser.referenceableNames(in: text).pools)
+        let pools = context.pools
         for m in refRegex.matches(in: line, range: full) {
             let name = lineNS.substring(with: m.range(at: 1))
             let source = m.range(at: 2).location != NSNotFound ? lineNS.substring(with: m.range(at: 2)) : name

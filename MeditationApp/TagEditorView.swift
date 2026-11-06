@@ -1,18 +1,25 @@
 import SwiftUI
 
+/// Edits a meditation's tags, and its title too when given one.
 struct TagEditorView: View {
     let title: String
     let suggestions: [String]
-    let onSave: ([String]) -> Void
+    let onSave: (_ name: String?, _ tags: [String]) -> Void
+    /// Closes the editor when it's hosted from UIKit; otherwise the environment's dismiss does.
+    var onClose: (() -> Void)?
 
+    @State private var name: String?
     @State private var tags: [String]
     @State private var newTag: String = ""
     @Environment(\.dismiss) private var dismiss
 
-    init(title: String, initialTags: [String], suggestions: [String], onSave: @escaping ([String]) -> Void) {
+    init(title: String, initialName: String? = nil, initialTags: [String], suggestions: [String],
+         onSave: @escaping (_ name: String?, _ tags: [String]) -> Void, onClose: (() -> Void)? = nil) {
         self.title = title
         self.suggestions = suggestions
         self.onSave = onSave
+        self.onClose = onClose
+        _name = State(initialValue: initialName)
         _tags = State(initialValue: initialTags)
     }
 
@@ -23,6 +30,12 @@ struct TagEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if let current = name {
+                    Section("Title") {
+                        TextField("Title", text: Binding(get: { current }, set: { name = $0 }))
+                    }
+                }
+
                 Section("Tags") {
                     if tags.isEmpty {
                         Text("No tags")
@@ -58,17 +71,21 @@ struct TagEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { close() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         commitNewTag()
-                        onSave(tags)
-                        dismiss()
+                        onSave(name, tags)
+                        close()
                     }
                 }
             }
         }
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
     }
 
     private var normalizedNewTag: String {

@@ -360,6 +360,29 @@ struct MedTextEditor: UIViewRepresentable {
                     sheetController.prefersGrabberVisible = true
                 }
                 presenter.present(host, animated: true)
+
+            case .header:
+                let script = textView.text ?? ""
+                guard let headerRange = MedHeader.range(in: script) else { return }
+                let source = (script as NSString).substring(with: headerRange)
+                let meta = MeditationParser.parseMetadata(script)
+                let editor = TagEditorView(
+                    title: "Title & Tags", initialName: meta.title, initialTags: meta.tags,
+                    suggestions: MedHeader.suggestedTags(),
+                    onSave: { [weak self, weak textView] name, tags in
+                        let title = name?.trimmingCharacters(in: .whitespaces) ?? meta.title
+                        guard let self, let textView, title != meta.title || tags != meta.tags else { return }
+                        let header = MeditationMetadataWriter.rewrite(source: source, title: title, tags: tags)
+                        self.replace(headerRange, expecting: source, with: header, in: textView)
+                    },
+                    onClose: { [weak presenter] in presenter?.dismiss(animated: true) })
+                let host = UIHostingController(rootView: editor)
+                host.isModalInPresentation = true
+                if let sheetController = host.sheetPresentationController {
+                    sheetController.detents = [.medium(), .large()]
+                    sheetController.prefersGrabberVisible = true
+                }
+                presenter.present(host, animated: true)
             }
         }
 
@@ -383,6 +406,21 @@ private extension UIView {
             responder = current.next
         }
         return nil
+    }
+}
+
+private extension MedQuickEditTarget {
+    var tapTint: UIColor {
+        let base: UIColor
+        switch self {
+        case .value(let edit):
+            base = edit.kind == .dots || edit.valueRange.length == 0 ? .systemOrange : .systemBlue
+        case .pool:
+            base = .systemPurple
+        case .header:
+            base = .systemGray
+        }
+        return base.withAlphaComponent(0.14)
     }
 }
 
@@ -558,6 +596,10 @@ private func applyMedHighlights(to textView: UITextView) {
                 storage.addAttribute(.foregroundColor, value: color, range: r)
             }
         }
+    }
+    // A light wash behind what a tap edits directly, so it reads as tappable.
+    for target in MedQuickEdit.allTargets(in: text) where NSMaxRange(target.hitRange) <= storage.length {
+        storage.addAttribute(.backgroundColor, value: target.tapTint, range: target.hitRange)
     }
     for diagnostic in MeditationParser.diagnose(text)
     where NSMaxRange(diagnostic.range) <= storage.length {
