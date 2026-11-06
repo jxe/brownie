@@ -365,7 +365,6 @@ struct MeditationListView: View {
         ].compactMap { $0 }
         let previews = actions.prefix(2).map { "\($0.0.emoji) \($0.1.sentence)" }
         return pageCard(
-            emoji: "📝",
             title: "To-dos",
             lines: counts.isEmpty ? ["Nothing open"] : previews + [counts.joined(separator: " · ")],
             highlighted: false
@@ -382,7 +381,6 @@ struct MeditationListView: View {
     }
 
     private func pageCard<Trailing: View>(
-        emoji: String,
         title: String,
         lines: [String],
         highlighted: Bool,
@@ -390,7 +388,7 @@ struct MeditationListView: View {
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         PageCard(
-            emoji: emoji, title: title, lines: lines, highlighted: highlighted,
+            title: title, lines: lines, highlighted: highlighted,
             tappableFrames: tappableFrames, action: action, trailing: trailing()
         )
     }
@@ -909,7 +907,6 @@ private struct FeelingsCard: View {
         let names = feelings.prefix(4).map { "\($0.emoji) \($0.name)" }
         let more = feelings.count > 4 ? ["+\(feelings.count - 4)"] : []
         PageCard(
-            emoji: "🪷",
             title: "Feelings",
             lines: inSession
                 ? [(names + more).joined(separator: " · ")]
@@ -931,11 +928,10 @@ private struct FeelingsCard: View {
 }
 
 /// A row that opens a page of its own, like Feelings or To-dos. It looks like a
-/// meditation row (same fill, shape, padding and title font), so the main list reads as
+/// meditation row (same fill, shape, padding and title font, no icon), so the main list reads as
 /// one kind of thing. A highlighted row, for something under way, shows its lines in
 /// full color instead of gray.
 private struct PageCard<Trailing: View>: View {
-    let emoji: String
     let title: String
     let lines: [String]
     let highlighted: Bool
@@ -948,8 +944,6 @@ private struct PageCard<Trailing: View>: View {
         // NavigationLink row's plain tap.
         Button(action: action) {
             HStack(spacing: 12) {
-                Text(emoji)
-                    .font(.title3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.body)
