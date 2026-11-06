@@ -30,6 +30,7 @@ struct MeditationListView: View {
     @State private var editorContent = ""
     @State private var editorFilename = ""
     @State private var isNewFile = false
+    @State private var editorURL: URL?
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
     @State private var eraEditTarget: EraEditTarget? = nil
     @State private var showingNewEra = false
@@ -252,7 +253,8 @@ struct MeditationListView: View {
                 MeditationEditorView(
                     content: $editorContent,
                     filename: $editorFilename,
-                    isNew: $isNewFile
+                    isNew: $isNewFile,
+                    sourceURL: editorURL
                 ) { savedFilename, savedContent in
                     player.stop()
                     _ = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
@@ -680,6 +682,7 @@ struct MeditationListView: View {
         player.stop()
         editorContent = fileContents[url] ?? FileManager.default.readMeditation(at: url) ?? ""
         editorFilename = url.deletingPathExtension().lastPathComponent
+        editorURL = url
         isNewFile = false
         showingEditor = true
     }
@@ -734,6 +737,7 @@ struct MeditationListView: View {
         // Open the editor on the new copy
         editorContent = copyContent
         editorFilename = candidate
+        editorURL = files.first { $0.deletingPathExtension().lastPathComponent == candidate }
         isNewFile = false
         showingEditor = true
     }
@@ -764,6 +768,7 @@ struct MeditationListView: View {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         editorFilename = dateFormatter.string(from: Date())
+        editorURL = nil
         isNewFile = true
         showingEditor = true
     }
