@@ -201,9 +201,11 @@ private struct SwipeBackEnabler: UIViewRepresentable {
     }
 }
 
-private final class SwipeBackView: UIView, UIGestureRecognizerDelegate {
+private final class SwipeBackView: UIView {
     var isSwipeEnabled = true
     var onBlockedSwipe: () -> Void = {}
+    /// A separate object, since UIView already has its own gestureRecognizerShouldBegin(_:).
+    private lazy var swipeDelegate = SwipeDelegate(view: self)
     private weak var navigationController: UINavigationController?
     private weak var savedDelegate: UIGestureRecognizerDelegate?
     private var didSaveDelegate = false
@@ -226,13 +228,20 @@ private final class SwipeBackView: UIView, UIGestureRecognizerDelegate {
         }
         // The navigation controller's own delegate refuses the swipe when Back is hidden,
         // so this view decides instead.
-        gesture.delegate = self
+        gesture.delegate = swipeDelegate
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        if isSwipeEnabled { return true }
-        onBlockedSwipe()
-        return false
+    private final class SwipeDelegate: NSObject, UIGestureRecognizerDelegate {
+        weak var view: SwipeBackView?
+
+        init(view: SwipeBackView) { self.view = view }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let view else { return true }
+            if view.isSwipeEnabled { return true }
+            view.onBlockedSwipe()
+            return false
+        }
     }
 
     /// Hands the swipe back to the navigation controller as it was, so the screens
