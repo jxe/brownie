@@ -38,7 +38,7 @@ struct MedTextEditor: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+        let textView = MedTextView()
         textView.font = medFont
         textView.autocorrectionType = .no
         textView.autocapitalizationType = .none
@@ -420,7 +420,81 @@ private extension MedQuickEditTarget {
         case .header:
             base = .systemGray
         }
-        return base.withAlphaComponent(0.14)
+        return base
+    }
+}
+
+/// The script editor's text view: draws a rounded chip behind each quick-edit target.
+final class MedTextView: UITextView {
+    private let chipView = UIView()
+    private var chipLayers: [CAShapeLayer] = []
+    private var chipsNeedUpdate = true
+    private var chipWidth: CGFloat = 0
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        chipView.isUserInteractionEnabled = false
+        chipView.backgroundColor = .clear
+        // Behind the text, and scrolling with it since it's in content coordinates.
+        insertSubview(chipView, at: 0)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func setChipsNeedUpdate() {
+        chipsNeedUpdate = true
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if chipView.superview === self { sendSubviewToBack(chipView) }
+        // layoutSubviews runs on every scroll, so only redo the chips when text or width changed.
+        guard chipsNeedUpdate || bounds.width != chipWidth else { return }
+        chipsNeedUpdate = false
+        chipWidth = bounds.width
+        updateChips()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        setChipsNeedUpdate()
+    }
+
+    private func updateChips() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        chipLayers.forEach { $0.removeFromSuperlayer() }
+        chipLayers = []
+        chipView.frame = CGRect(origin: .zero, size: CGSize(width: bounds.width, height: max(contentSize.height, bounds.height)))
+
+        var paths: [UIColor: UIBezierPath] = [:]
+        for target in MedQuickEdit.allTargets(in: text ?? "") {
+            guard let start = position(from: beginningOfDocument, offset: target.hitRange.location),
+                  let end = position(from: start, offset: target.hitRange.length),
+                  let range = textRange(from: start, to: end) else { continue }
+            let path = paths[target.tapTint] ?? UIBezierPath()
+            for selectionRect in selectionRects(for: range) {
+                let rect = selectionRect.rect
+                guard !rect.isNull, !rect.isEmpty, rect.width > 0 else { continue }
+                // Hug the glyphs: a little wider than the text, and clear of the line spacing.
+                let chip = rect.insetBy(dx: -4, dy: 1.5)
+                path.append(UIBezierPath(roundedRect: chip, cornerRadius: min(7, chip.height / 2)))
+            }
+            paths[target.tapTint] = path
+        }
+        for (color, path) in paths {
+            let resolved = color.resolvedColor(with: traitCollection)
+            let layer = CAShapeLayer()
+            layer.path = path.cgPath
+            layer.fillColor = resolved.withAlphaComponent(0.10).cgColor
+            layer.strokeColor = resolved.withAlphaComponent(0.35).cgColor
+            layer.lineWidth = 0.75
+            chipView.layer.addSublayer(layer)
+            chipLayers.append(layer)
+        }
     }
 }
 
@@ -597,10 +671,8 @@ private func applyMedHighlights(to textView: UITextView) {
             }
         }
     }
-    // A light wash behind what a tap edits directly, so it reads as tappable.
-    for target in MedQuickEdit.allTargets(in: text) where NSMaxRange(target.hitRange) <= storage.length {
-        storage.addAttribute(.backgroundColor, value: target.tapTint, range: target.hitRange)
-    }
+    // What a tap edits directly sits on a rounded chip, so it reads as tappable.
+    (textView as? MedTextView)?.setChipsNeedUpdate()
     for diagnostic in MeditationParser.diagnose(text)
     where NSMaxRange(diagnostic.range) <= storage.length {
         if diagnostic.isDeprecation {
