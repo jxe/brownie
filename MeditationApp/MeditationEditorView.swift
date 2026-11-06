@@ -127,6 +127,22 @@ struct MeditationEditorView: View {
         .onAppear {
             if opened == nil { opened = (content, filename) }
         }
+        // Edge swipe: the system's own swipe back while nothing changed; with changes,
+        // the same swipe asks first, like Back.
+        .background(SwipeBackEnabler(isEnabled: !hasChanges).frame(width: 0, height: 0))
+        .overlay(alignment: .leading) {
+            if hasChanges {
+                Color.clear
+                    .frame(width: 20)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 15)
+                            .onEnded { value in
+                                if value.translation.width > 60 { askingToSave = true }
+                            }
+                    )
+            }
+        }
         // Any edit stops playback; the next play starts again from the top.
         .onChange(of: content) { stopIfPlaying() }
         .onChange(of: filename) { stopIfPlaying() }
@@ -172,5 +188,70 @@ struct MeditationEditorView: View {
         // The script may have changed since the dialog opened; skip a fix that no longer fits.
         guard NSMaxRange(fix.range) <= ns.length else { return }
         content = ns.replacingCharacters(in: fix.range, with: fix.replacement)
+    }
+}
+
+/// Keeps the system's edge swipe back working although the editor hides the standard Back
+/// button (which turns the swipe off), and switches it off while `isEnabled` is false.
+private struct SwipeBackEnabler: UIViewRepresentable {
+    let isEnabled: Bool
+
+    func makeUIView(context: Context) -> SwipeBackView {
+        let view = SwipeBackView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: SwipeBackView, context: Context) {
+        view.isSwipeEnabled = isEnabled
+        view.apply()
+    }
+}
+
+private final class SwipeBackView: UIView {
+    var isSwipeEnabled = true
+    private weak var navigationController: UINavigationController?
+    private weak var savedDelegate: UIGestureRecognizerDelegate?
+    private var didSaveDelegate = false
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            navigationController = findNavigationController()
+            apply()
+        } else {
+            restore()
+        }
+    }
+
+    func apply() {
+        guard let gesture = navigationController?.interactivePopGestureRecognizer else { return }
+        if !didSaveDelegate {
+            savedDelegate = gesture.delegate
+            didSaveDelegate = true
+        }
+        // The navigation controller's own delegate refuses the swipe when Back is hidden.
+        gesture.delegate = nil
+        gesture.isEnabled = isSwipeEnabled
+    }
+
+    /// Hands the swipe back to the navigation controller as it was, so the screens
+    /// under the editor behave normally.
+    private func restore() {
+        guard didSaveDelegate, let gesture = navigationController?.interactivePopGestureRecognizer else { return }
+        gesture.delegate = savedDelegate
+        gesture.isEnabled = true
+        didSaveDelegate = false
+    }
+
+    private func findNavigationController() -> UINavigationController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController, let nav = controller.navigationController {
+                return nav
+            }
+            responder = current.next
+        }
+        return nil
     }
 }
