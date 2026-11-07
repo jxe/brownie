@@ -210,8 +210,6 @@ enum MedQuickEdit {
         let ns = text as NSString
         let start = lineRange.location
         let line = ns.substring(with: lineRange)
-        let lineNS = line as NSString
-        let full = NSRange(location: 0, length: lineNS.length)
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return [] }
 
@@ -222,11 +220,24 @@ enum MedQuickEdit {
         if let header = context.header, NSLocationInRange(start, header) {
             return [.header(hitRange: trimmedRange)]
         }
-        // Anywhere in a pool definition, the whole block is the one target.
+        // Anywhere in a pool definition, the whole block is a target. An item's own times, dots
+        // and ~refs come first, so a tap on one of them edits it rather than the pool.
         if let block = context.poolBlocks.first(where: { NSLocationInRange(start, $0.range) }) {
-            return [.poolBlock(name: block.name, hitRange: block.range)]
+            let blockTarget = MedQuickEditTarget.poolBlock(name: block.name, hitRange: block.range)
+            let isHeader = start == block.range.location
+            if isHeader || trimmed.hasPrefix("#") { return [blockTarget] }
+            return tokenTargets(onLine: line, at: start, in: text, context: context) + [blockTarget]
         }
         if trimmed.hasPrefix("#") { return [] }
+        return tokenTargets(onLine: line, at: start, in: text, context: context)
+    }
+
+    /// The times, dots, repeat counts and pool references on one line.
+    private static func tokenTargets(onLine line: String, at start: Int, in text: String,
+                                     context: Context) -> [MedQuickEditTarget] {
+        let lineNS = line as NSString
+        let full = NSRange(location: 0, length: lineNS.length)
+        func shifted(_ r: NSRange) -> NSRange { NSRange(location: r.location + start, length: r.length) }
 
         var targets: [MedQuickEditTarget] = []
 

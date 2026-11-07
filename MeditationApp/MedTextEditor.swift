@@ -531,15 +531,17 @@ final class MedTextView: UITextView {
         chipLayers = []
         chipView.frame = CGRect(origin: .zero, size: CGSize(width: bounds.width, height: max(contentSize.height, bounds.height)))
 
+        // Pool blocks get their own layers, added first, so the chips inside them draw on top.
+        var blockPaths: [UIColor: UIBezierPath] = [:]
         var paths: [UIColor: UIBezierPath] = [:]
         for target in MedQuickEdit.allTargets(in: text ?? "") {
-            let path = paths[target.tapTint] ?? UIBezierPath()
+            let path = (target.isBlock ? blockPaths : paths)[target.tapTint] ?? UIBezierPath()
             for chip in Self.chipRects(for: target, in: self) {
                 path.append(UIBezierPath(roundedRect: chip, cornerRadius: min(8, chip.height / 2)))
             }
-            paths[target.tapTint] = path
+            if target.isBlock { blockPaths[target.tapTint] = path } else { paths[target.tapTint] = path }
         }
-        for (color, path) in paths {
+        for (color, path) in Array(blockPaths) + Array(paths) {
             let resolved = color.resolvedColor(with: traitCollection)
             let layer = CAShapeLayer()
             layer.path = path.cgPath
