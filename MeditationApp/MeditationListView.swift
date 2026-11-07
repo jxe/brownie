@@ -142,7 +142,7 @@ struct MeditationListView: View {
                                     listRow(for: url, section: "always")
                                 }
                                 if timelessFiles.isEmpty {
-                                    emptyRow("Mark a meditation as a Foundation from its Eras menu to keep it here.")
+                                    emptyRow("Long-press a meditation and choose Eras… to make it a Foundation.")
                                 }
                             } header: {
                                 Text("Foundations")
@@ -585,17 +585,13 @@ struct MeditationListView: View {
             }
             .tint(.orange)
         }
+        // No leading swipe on the main screen: a swipe from the left edge opens the panel there.
         .swipeActions(edge: .leading) {
             if bringAlong {
                 Button { bringAlongToCurrentEra(url) } label: {
                     Label("Bring Along", systemImage: "arrow.up.circle")
                 }
                 .tint(.green)
-            } else {
-                Button { editEras(url) } label: {
-                    Label("Eras", systemImage: "sparkles")
-                }
-                .tint(.accentColor)
             }
         }
         .contextMenu {
@@ -605,12 +601,15 @@ struct MeditationListView: View {
                 }
                 Divider()
             }
-            // A row tap plays, and a leading swipe edits eras, so the menu skips both.
+            // A row tap plays, so the menu skips that.
             Button { editFile(url) } label: {
                 Label("Edit", systemImage: "pencil")
             }
             Button { editCopy(url) } label: {
                 Label("Edit a Copy", systemImage: "doc.badge.plus")
+            }
+            Button { editEras(url) } label: {
+                Label("Eras…", systemImage: "sparkles")
             }
             if hasUpdate {
                 Button { updateTarget = filename } label: {

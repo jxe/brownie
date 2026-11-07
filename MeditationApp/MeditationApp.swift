@@ -52,6 +52,17 @@ struct ContentView: View {
 
                 NavigationStack {
                     MeditationListView(shelf: .home)
+                        // A swipe in from the left edge pulls the panel out, but only on the
+                        // main screen itself: anywhere deeper, that swipe goes back.
+                        .background(
+                            PanelEdgePan(isEnabled: !panelOpen) { translation in
+                                if !panelMounted { panelMounted = true }
+                                dragOffset = max(0, translation)
+                            } onEnded: { translation, velocity in
+                                setPanel(open: translation + velocity * 0.2 > panelWidth / 3)
+                            }
+                            .frame(width: 0, height: 0)
+                        )
                 }
                 .environment(\.openPanel, { setPanel(open: true) })
                 .environment(\.panelIsOpen, panelOpen)
@@ -91,7 +102,7 @@ struct ContentView: View {
             panelOpen = open
             dragOffset = 0
         } completion: {
-            if !panelOpen { panelMounted = false }
+            if !panelOpen && dragOffset == 0 { panelMounted = false }
         }
     }
 
@@ -103,5 +114,82 @@ struct ContentView: View {
             .onEnded { value in
                 setPanel(open: value.predictedEndTranslation.width > -panelWidth / 3)
             }
+    }
+}
+
+/// Pulls the panel out with a swipe from the screen's left edge. It hangs a UIKit edge-pan
+/// recognizer on the main screen's navigation controller, so it never holds up the list's
+/// scrolling, and it only starts while the main screen is the top page and nothing covers it.
+struct PanelEdgePan: UIViewRepresentable {
+    var isEnabled: Bool
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (_ translation: CGFloat, _ velocity: CGFloat) -> Void
+
+    func makeUIView(context: Context) -> PanelEdgePanView {
+        let view = PanelEdgePanView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: PanelEdgePanView, context: Context) {
+        uiView.isEnabled = isEnabled
+        uiView.onChanged = onChanged
+        uiView.onEnded = onEnded
+    }
+
+    final class PanelEdgePanView: UIView, UIGestureRecognizerDelegate {
+        var isEnabled = true
+        var onChanged: (CGFloat) -> Void = { _ in }
+        var onEnded: (CGFloat, CGFloat) -> Void = { _, _ in }
+        private var recognizer: UIScreenEdgePanGestureRecognizer?
+        private weak var navigationController: UINavigationController?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            // Once added, it stays on the navigation controller even while this view is
+            // out of the window behind a pushed page; shouldBegin keeps it quiet then.
+            guard window != nil, recognizer == nil else { return }
+            DispatchQueue.main.async { [weak self] in self?.attach() }
+        }
+
+        private func attach() {
+            guard recognizer == nil, let nav = owningNavigationController() else { return }
+            let pan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handle(_:)))
+            pan.edges = .left
+            pan.delegate = self
+            nav.view.addGestureRecognizer(pan)
+            recognizer = pan
+            navigationController = nav
+        }
+
+        private func owningNavigationController() -> UINavigationController? {
+            var responder: UIResponder? = self
+            while let current = responder {
+                if let vc = current as? UIViewController, let nav = vc.navigationController {
+                    return nav
+                }
+                responder = current.next
+            }
+            return nil
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard isEnabled, let nav = navigationController else { return false }
+            return nav.viewControllers.count == 1 && nav.presentedViewController == nil
+        }
+
+        @objc private func handle(_ pan: UIScreenEdgePanGestureRecognizer) {
+            let translation = pan.translation(in: pan.view).x
+            switch pan.state {
+            case .began, .changed:
+                onChanged(translation)
+            case .ended:
+                onEnded(translation, pan.velocity(in: pan.view).x)
+            case .cancelled, .failed:
+                onEnded(0, 0)
+            default:
+                break
+            }
+        }
     }
 }

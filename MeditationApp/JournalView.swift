@@ -76,14 +76,6 @@ struct JournalView: View {
 
     var body: some View {
         List {
-            Section {
-                NavigationLink {
-                    SettingsView()
-                } label: {
-                    Label("Settings", systemImage: "gear")
-                }
-            }
-
             // Streak banner
             let streak = store.currentMeditationStreak
             if streak >= 2 {
@@ -157,6 +149,31 @@ struct JournalView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color("BackgroundColor"))
+        // Settings stays put at the bottom of the panel, below everything History scrolls.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "gear")
+                            .foregroundStyle(.secondary)
+                        Text("Settings")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .background(Color("BackgroundColor"))
+        }
         .navigationTitle("History")
         .onAppear { eraIndex = EraIndex.load() }
         .toolbar {
