@@ -137,8 +137,10 @@ struct PanelEdgePan: UIViewRepresentable {
         uiView.onEnded = onEnded
     }
 
-    final class PanelEdgePanView: UIView, UIGestureRecognizerDelegate {
+    final class PanelEdgePanView: UIView {
         var isEnabled = true
+        /// A separate object, since UIView already has its own gestureRecognizerShouldBegin(_:).
+        private lazy var panDelegate = PanDelegate(view: self)
         var onChanged: (CGFloat) -> Void = { _ in }
         var onEnded: (CGFloat, CGFloat) -> Void = { _, _ in }
         private var recognizer: UIScreenEdgePanGestureRecognizer?
@@ -156,7 +158,7 @@ struct PanelEdgePan: UIViewRepresentable {
             guard recognizer == nil, let nav = owningNavigationController() else { return }
             let pan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handle(_:)))
             pan.edges = .left
-            pan.delegate = self
+            pan.delegate = panDelegate
             nav.view.addGestureRecognizer(pan)
             recognizer = pan
             navigationController = nav
@@ -173,9 +175,20 @@ struct PanelEdgePan: UIViewRepresentable {
             return nil
         }
 
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        /// Only on the main screen itself: not behind a pushed page or a sheet.
+        fileprivate var shouldBeginPan: Bool {
             guard isEnabled, let nav = navigationController else { return false }
             return nav.viewControllers.count == 1 && nav.presentedViewController == nil
+        }
+
+        private final class PanDelegate: NSObject, UIGestureRecognizerDelegate {
+            weak var view: PanelEdgePanView?
+
+            init(view: PanelEdgePanView) { self.view = view }
+
+            func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+                view?.shouldBeginPan ?? false
+            }
         }
 
         @objc private func handle(_ pan: UIScreenEdgePanGestureRecognizer) {
