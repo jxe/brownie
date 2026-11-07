@@ -959,7 +959,12 @@ private struct PageCard<Trailing: View>: View {
     var body: some View {
         // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
         // NavigationLink row's plain tap.
-        Button(action: action) {
+        Button {
+            // Opening Feelings or To-dos leaves a playing meditation playing: mark the tap
+            // so the list's tap-to-stop lets it be, even if this row's frame went stale.
+            tappableFrames.noteRowTap()
+            action()
+        } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     // The same shade as an idle meditation row's title.
