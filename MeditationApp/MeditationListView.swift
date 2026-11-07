@@ -365,20 +365,14 @@ struct MeditationListView: View {
             actions.isEmpty ? nil : (actions.count == 1 ? "1 to-do" : "\(actions.count) to-dos"),
             needingAction > 0 ? "\(needingAction) need\(needingAction == 1 ? "s" : "") an action" : nil,
         ].compactMap { $0 }
-        let previews = actions.prefix(2).map { "\($0.0.emoji) \($0.1.sentence)" }
         return pageCard(
             title: "To-dos",
-            lines: counts.isEmpty ? ["Nothing open"] : previews + [counts.joined(separator: " · ")],
+            lines: [counts.isEmpty ? "Nothing open" : counts.joined(separator: " · ")],
             highlighted: false
         ) {
             showingTodos = true
         } trailing: {
-            if !actions.isEmpty {
-                Text("\(actions.count)")
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
+            EmptyView()
         }
     }
 
@@ -462,7 +456,7 @@ struct MeditationListView: View {
     }
 
     private static let timeSlotHeight: CGFloat = 17
-    private static let editButtonWidth: CGFloat = 36
+    static let editButtonWidth: CGFloat = 36
 
     @ViewBuilder
     private func rowView(for url: URL, bringAlong: Bool = false) -> some View {
@@ -939,8 +933,10 @@ private struct FeelingsCard: View {
             // This check-in's time, live while a feeling is accruing.
             trailing: Group {
                 if inSession {
+                    // Styled like a meditation row's last-played label.
                     LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
-                        .font(.subheadline)
+                        .font(.caption)
+                        .fontWeight(.semibold)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
@@ -970,20 +966,25 @@ private struct PageCard<Trailing: View>: View {
                     Text(title)
                         .font(.body)
                         .fontWeight(.medium)
+                    // Sized like the playing meditation's time line, so the rows match in height.
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                         Text(line)
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundStyle(highlighted ? .primary : .secondary)
                             .lineLimit(1)
                     }
                 }
                 Spacer()
                 trailing
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
+                // The same circled chevron, in the same place, as a meditation row's edit
+                // button; here the whole row opens the page.
+                Image(systemName: "chevron.right.circle")
+                    .font(.body)
                     .foregroundStyle(.tertiary)
+                    .frame(width: MeditationListView.editButtonWidth)
             }
-            .padding(.horizontal, 14 + RowFillShape.margin.width)
+            .padding(.leading, 14 + RowFillShape.margin.width)
+            .padding(.trailing, 6 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
             .background(
                 ZStack {
