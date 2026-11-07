@@ -145,6 +145,8 @@ struct CheckInView: View {
             .frame(height: 104)
             .padding(.bottom, 4)
         }
+        // The same background as the main screen it opens from.
+        .background(Color("BackgroundColor").ignoresSafeArea())
         .navigationTitle("Feelings")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

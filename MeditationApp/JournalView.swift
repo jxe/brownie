@@ -414,6 +414,8 @@ private struct EmotionLeaderboardView: View {
                 Text("Totals from completed check-ins. Emotions not yet used appear with zero totals; historical emotions remain visible.")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("BackgroundColor"))
         .navigationTitle("Emotion Leaderboard")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -609,6 +611,8 @@ private struct CheckInSessionDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("BackgroundColor"))
         .navigationTitle("Check-in")
         .navigationBarTitleDisplayMode(.inline)
     }
