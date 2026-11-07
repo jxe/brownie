@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Pushed from the meditation list. Play, pause and stop in the title bar try out the
 /// script as it stands, saved or not, and keep playing after you go back. Any edit stops
-/// playback, so the next play starts from the top. There's no Save button: Back asks
-/// whether to save when anything changed.
+/// playback, so the next play starts from the top. While anything is unsaved, a Save
+/// button sits next to Back; Back (or the edge swipe) asks whether to save.
 struct MeditationEditorView: View {
     @Binding var content: String
     @Binding var filename: String
@@ -112,6 +112,13 @@ struct MeditationEditorView: View {
                 }
                 .accessibilityLabel("Back")
             }
+            // Only while something is unsaved: save and stay, so Back no longer needs to ask.
+            if hasChanges {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Save", action: saveInPlace)
+                        .fontWeight(.semibold)
+                }
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 playbackControls
             }
@@ -167,6 +174,13 @@ struct MeditationEditorView: View {
         case .playing, .paused, .preparing: true
         case .idle, .finished: false
         }
+    }
+
+    private func saveInPlace() {
+        onSave(filename, content)
+        opened = (content, filename)
+        // Saved under this name now, so later saves go to the same file.
+        isNew = false
     }
 
     private func stopIfPlaying() {
