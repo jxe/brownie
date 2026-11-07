@@ -317,7 +317,8 @@ struct MeditationListView: View {
             } message: {
                 Text("iOS didn't produce speech for its first line. Try again, or pick another voice in Settings.\n\n\(player.speechFailure ?? "")")
             }
-            .background(Color("BackgroundColor"))
+            // The panel's pages (a past era opens from History) keep its warmer background.
+            .background(isPast ? Color("PanelBackgroundColor") : Color("BackgroundColor"))
             .onAppear { refreshFiles() }
             .task { await meditationStore.checkForUpdates() }
             .onChange(of: scenePhase) { _, newPhase in

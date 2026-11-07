@@ -32,6 +32,9 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **MedTextEditor.swift** - Custom text editor component (UITextViewRepresentable). A tap on a time, repeat count, pool reference, a whole pool definition or the title line opens a quick edit instead of placing the cursor; tappable text sits on a rounded chip (`MedTextView`), and a pool definition is one chip around all its lines
 - **MedQuickEdit.swift** - Quick edits for the editor: finds tappable times/counts/pools on a line, the value popover, and the pool list sheet that rewrites the pool block (an item's options menu sets pronouns, 🪨 weight, and comments it out as `# item`)
 - **SettingsView.swift** - App settings (voice selection, speaking rate, iCloud)
+
+### Colors
+- `BackgroundColor` is plain white/black for the main screen and everything pushed from it; the left panel and its pages (History, Settings, past eras, Archived, Leaderboard) use the warmer `PanelBackgroundColor`
 - **SampleMeditations.swift** - Installs the store's featured meditations for brand-new local libraries
 - **MeditationStore.swift** - CloudKit public-database store: browse, download, share, updates, reports. Local file ↔ record links live in UserDefaults
 - **MeditationStoreView.swift** - Store sheet (opened from the Meditations plus menu or the empty-library screen) and the Share to Store sheet

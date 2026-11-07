@@ -157,7 +157,7 @@ struct SettingsView: View {
 
         }
         .scrollContentBackground(.hidden)
-        .background(Color("BackgroundColor"))
+        .background(Color("PanelBackgroundColor"))
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(

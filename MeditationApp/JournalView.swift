@@ -148,7 +148,7 @@ struct JournalView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("BackgroundColor"))
+        .background(Color("PanelBackgroundColor"))
         // Settings stays put at the bottom of the panel, below everything History scrolls.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
@@ -172,7 +172,7 @@ struct JournalView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color("BackgroundColor"))
+            .background(Color("PanelBackgroundColor"))
         }
         .navigationTitle("History")
         .onAppear { eraIndex = EraIndex.load() }
@@ -415,7 +415,7 @@ private struct EmotionLeaderboardView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("BackgroundColor"))
+        .background(Color("PanelBackgroundColor"))
         .navigationTitle("Emotion Leaderboard")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -612,7 +612,7 @@ private struct CheckInSessionDetailView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("BackgroundColor"))
+        .background(Color("PanelBackgroundColor"))
         .navigationTitle("Check-in")
         .navigationBarTitleDisplayMode(.inline)
     }

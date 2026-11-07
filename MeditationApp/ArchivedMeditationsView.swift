@@ -37,6 +37,8 @@ struct ArchivedMeditationsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("PanelBackgroundColor"))
         .navigationTitle("Archived")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: reload)
