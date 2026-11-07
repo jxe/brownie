@@ -349,6 +349,7 @@ struct MedTextEditor: UIViewRepresentable {
                 guard let block = MedPoolBlock.find(named: name, in: textView.text) else { return }
                 let sheet = MedPoolEditorSheet(
                     name: name, items: block.items,
+                    references: MeditationParser.referenceableNames(in: textView.text),
                     onDone: { [weak self, weak textView, weak presenter] items in
                         if let self, let textView {
                             self.replace(block.range, expecting: block.source,
@@ -765,4 +766,175 @@ private func applyMedHighlights(to textView: UITextView) {
     storage.endEditing()
     textView.selectedRange = savedSelection
     textView.typingAttributes = medBaseAttributes
+}
+
+// MARK: - Pool item field
+
+/// A one-item text field for the pool sheet: script syntax colors, Return for the next item, and
+/// a keyboard bar with the pool menu and the pause symbols an item most often needs.
+struct MedItemField: UIViewRepresentable {
+    @Binding var text: String
+    /// Pools and remembered picks the script defines, for the `~…` menu.
+    let references: (pools: [String], picks: [String])
+    /// Commented-out items read as off: dimmed and struck through.
+    var dimmed = false
+    /// Becomes first responder when this turns true.
+    var focused = false
+    var onFocus: () -> Void = {}
+    var onBlur: () -> Void = {}
+    var onSubmit: () -> Void = {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UITextView {
+        let field = UITextView()
+        field.isScrollEnabled = false
+        field.backgroundColor = .clear
+        field.textContainerInset = .zero
+        field.textContainer.lineFragmentPadding = 0
+        field.autocorrectionType = .no
+        field.autocapitalizationType = .none
+        field.smartQuotesType = .no
+        field.smartDashesType = .no
+        field.returnKeyType = .next
+        field.delegate = context.coordinator
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.inputAccessoryView = makeItemToolbar(for: field, references: references)
+        field.text = text
+        context.coordinator.recolor(field)
+        return field
+    }
+
+    func updateUIView(_ field: UITextView, context: Context) {
+        context.coordinator.parent = self
+        // While typing, the field is the source of truth; a stale binding must not reset it.
+        if field.text != text, !field.isFirstResponder {
+            field.text = text
+        }
+        context.coordinator.recolor(field)
+        if focused, !field.isFirstResponder {
+            DispatchQueue.main.async { field.becomeFirstResponder() }
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? 300
+        let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: max(fitted.height, medFont.lineHeight))
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: MedItemField
+        init(_ parent: MedItemField) { self.parent = parent }
+
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            guard text.contains("\n") else { return true }
+            parent.onSubmit()
+            return false
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            parent.text = textView.text
+            recolor(textView)
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) { parent.onFocus() }
+        func textViewDidEndEditing(_ textView: UITextView) { parent.onBlur() }
+
+        func recolor(_ field: UITextView) {
+            let storage = field.textStorage
+            let full = NSRange(location: 0, length: storage.length)
+            let base: [NSAttributedString.Key: Any] = [
+                .font: medFont,
+                .foregroundColor: parent.dimmed ? UIColor.secondaryLabel : UIColor.label,
+            ]
+            field.typingAttributes = base
+            guard full.length > 0 else { return }
+            let selection = field.selectedRange
+            let text = field.text ?? ""
+            storage.beginEditing()
+            storage.setAttributes(base, range: full)
+            if parent.dimmed {
+                storage.addAttributes([.strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                                       .strikethroughColor: UIColor.secondaryLabel], range: full)
+            } else {
+                for rule in medSyntaxRules {
+                    rule.regex.enumerateMatches(in: text, options: [], range: full) { match, _, _ in
+                        guard let match else { return }
+                        for (group, color) in rule.groupColors where group < match.numberOfRanges {
+                            let r = match.range(at: group)
+                            guard r.location != NSNotFound, r.length > 0 else { continue }
+                            storage.addAttribute(.foregroundColor, value: color, range: r)
+                        }
+                    }
+                }
+            }
+            storage.endEditing()
+            field.selectedRange = selection
+        }
+    }
+}
+
+private func makeItemToolbar(for field: UITextView, references: (pools: [String], picks: [String])) -> UIView {
+    let bar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    bar.backgroundColor = .systemBackground.withAlphaComponent(0.55)
+    bar.clipsToBounds = true
+
+    let stack = UIStackView()
+    stack.axis = .horizontal
+    stack.alignment = .center
+    stack.spacing = 2
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    bar.contentView.addSubview(stack)
+
+    let pools = SymbolButton(label: "~…", accessibilityLabel: "Insert a pool reference") {}
+    pools.showsMenuAsPrimaryAction = true
+    func insertAction(_ name: String) -> UIAction {
+        UIAction(title: "~\(name)") { [weak field] _ in field?.insertText("~\(name)") }
+    }
+    var sections: [UIMenuElement] = []
+    if !references.pools.isEmpty {
+        sections.append(UIMenu(title: "Pools", options: .displayInline, children: references.pools.map(insertAction)))
+    }
+    if !references.picks.isEmpty {
+        sections.append(UIMenu(title: "Remembered picks", options: .displayInline, children: references.picks.map(insertAction)))
+    }
+    if sections.isEmpty {
+        sections.append(UIAction(title: "No pools defined yet", attributes: .disabled) { _ in })
+    }
+    pools.menu = UIMenu(children: sections)
+    stack.addArrangedSubview(pools)
+    stack.addArrangedSubview(AccessoryGap(width: 12))
+    for (label, char, name) in [("·", "·", "One second pause"), ("″", "\u{2033}", "Seconds marker")] {
+        stack.addArrangedSubview(SymbolButton(label: label, accessibilityLabel: name) { [weak field] in
+            field?.insertText(char)
+        })
+    }
+
+    let done = AccessoryIconButton(systemName: "keyboard.chevron.compact.down")
+    done.accessibilityLabel = "Dismiss keyboard"
+    done.translatesAutoresizingMaskIntoConstraints = false
+    done.addAction(UIAction { [weak field] _ in field?.resignFirstResponder() }, for: .touchUpInside)
+    bar.contentView.addSubview(done)
+
+    let topRule = UIView()
+    topRule.translatesAutoresizingMaskIntoConstraints = false
+    topRule.backgroundColor = .separator.withAlphaComponent(0.35)
+    bar.contentView.addSubview(topRule)
+
+    NSLayoutConstraint.activate([
+        topRule.leadingAnchor.constraint(equalTo: bar.contentView.leadingAnchor),
+        topRule.trailingAnchor.constraint(equalTo: bar.contentView.trailingAnchor),
+        topRule.topAnchor.constraint(equalTo: bar.contentView.topAnchor),
+        topRule.heightAnchor.constraint(equalToConstant: 0.5),
+        stack.leadingAnchor.constraint(equalTo: bar.contentView.leadingAnchor, constant: 8),
+        stack.topAnchor.constraint(equalTo: bar.contentView.topAnchor),
+        stack.bottomAnchor.constraint(equalTo: bar.contentView.bottomAnchor),
+        done.trailingAnchor.constraint(equalTo: bar.contentView.trailingAnchor, constant: -4),
+        done.centerYAnchor.constraint(equalTo: bar.contentView.centerYAnchor),
+        done.widthAnchor.constraint(equalToConstant: 48),
+        done.heightAnchor.constraint(equalToConstant: 42),
+    ])
+    bar.frame = CGRect(x: 0, y: 0, width: 0, height: 48)
+    return bar
 }

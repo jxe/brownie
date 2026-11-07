@@ -516,14 +516,17 @@ struct MedValuePopover: View {
 
 struct MedPoolEditorSheet: View {
     let name: String
+    /// The script's pools and remembered picks, for the item fields' `~…` menu.
+    let references: (pools: [String], picks: [String])
     let onDone: ([MedPoolBlock.Item]) -> Void
     let onCancel: () -> Void
     @State private var items: [MedPoolBlock.Item]
-    @FocusState private var focused: UUID?
+    @State private var focused: UUID?
 
-    init(name: String, items: [MedPoolBlock.Item],
+    init(name: String, items: [MedPoolBlock.Item], references: (pools: [String], picks: [String]),
          onDone: @escaping ([MedPoolBlock.Item]) -> Void, onCancel: @escaping () -> Void) {
         self.name = name
+        self.references = references
         self.onDone = onDone
         self.onCancel = onCancel
         _items = State(initialValue: items)
@@ -534,13 +537,17 @@ struct MedPoolEditorSheet: View {
             List {
                 Section {
                     ForEach($items) { $item in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            TextField("New item", text: $item.text)
-                                .foregroundStyle(item.commented ? .secondary : .primary)
-                                .strikethrough(item.commented, color: .secondary)
-                                .focused($focused, equals: item.id)
-                                .submitLabel(.next)
-                                .onSubmit { addItem(after: item.id) }
+                        HStack(alignment: .center, spacing: 8) {
+                            MedItemField(text: $item.text, references: references,
+                                         dimmed: item.commented, focused: focused == item.id,
+                                         onFocus: { focused = item.id },
+                                         onBlur: { if focused == item.id { focused = nil } },
+                                         onSubmit: { addItem(after: item.id) })
+                                .overlay(alignment: .leading) {
+                                    if item.text.isEmpty {
+                                        Text("New item").foregroundStyle(.tertiary).allowsHitTesting(false)
+                                    }
+                                }
                             markerMenu($item)
                         }
                     }
