@@ -963,9 +963,11 @@ private struct PageCard<Trailing: View>: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
+                    // The same shade as an idle meditation row's title.
                     Text(title)
                         .font(.body)
                         .fontWeight(.medium)
+                        .foregroundStyle(Color.primary.opacity(0.88))
                     // Sized like the playing meditation's time line, so the rows match in height.
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                         Text(line)
@@ -976,10 +978,10 @@ private struct PageCard<Trailing: View>: View {
                 }
                 Spacer()
                 trailing
-                // The same circled chevron, in the same place, as a meditation row's edit
-                // button; here the whole row opens the page.
-                Image(systemName: "chevron.right.circle")
-                    .font(.body)
+                // A plain chevron, since the whole row opens the page; the circled one on
+                // meditation rows is a separate button. Same column as that button.
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .frame(width: MeditationListView.editButtonWidth)
             }
