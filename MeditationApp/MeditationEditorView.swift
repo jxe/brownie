@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Pushed from the meditation list. Play, pause and stop in the title bar try out the
-/// script as it stands, saved or not, and keep playing after you go back. Any edit stops
-/// playback, so the next play starts from the top. While anything is unsaved, a Save
-/// button sits next to Back; Back (or the edge swipe) asks whether to save.
+/// script as it stands, and keep playing after you go back. Any edit stops playback, so the
+/// next play starts from the top. Edits save themselves a moment after you stop typing,
+/// and again on leaving the page or the app.
 struct MeditationEditorView: View {
     @Binding var content: String
     @Binding var filename: String
@@ -11,21 +11,25 @@ struct MeditationEditorView: View {
     /// The file being edited, so the list shows its row as playing; nil for a new one.
     let sourceURL: URL?
     let onSave: (_ filename: String, _ content: String) -> Void
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(MeditationPlayer.self) private var player
     @State private var pendingFix: MeditationFix? = nil
-    /// The script and filename as opened, to tell whether Back should ask to save.
-    @State private var opened: (content: String, filename: String)?
-    @State private var askingToSave = false
+    /// The script and filename as last written to disk (or as opened).
+    @State private var saved: (content: String, filename: String)?
+    /// Set when the page opens, so a new meditation's filename field doesn't vanish
+    /// mid-typing once the first autosave has written the file.
+    @State private var showsFilename = false
+    /// Whether this page has written its file yet, so a rename knows there's an old file to remove.
+    @State private var wroteFile = false
 
     private var hasChanges: Bool {
-        guard let opened else { return false }
-        return opened.content != content || opened.filename != filename
+        guard let saved else { return false }
+        return saved.content != content || saved.filename != filename
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if isNew {
+            if showsFilename {
                 TextField("filename", text: $filename)
                     .textFieldStyle(.roundedBorder)
                     .padding()
@@ -101,45 +105,28 @@ struct MeditationEditorView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        // Our own Back, so it can ask about unsaved changes.
-        .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    if hasChanges { askingToSave = true } else { dismiss() }
-                } label: {
-                    Image(systemName: "chevron.backward")
-                }
-                .accessibilityLabel("Back")
-            }
-            // Only while something is unsaved: save and stay, so Back no longer needs to ask.
-            if hasChanges {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Save", action: saveInPlace)
-                        .fontWeight(.semibold)
-                }
-            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 playbackControls
             }
         }
-        .confirmationDialog("Save your changes?", isPresented: $askingToSave, titleVisibility: .visible) {
-            Button("Save") {
-                onSave(filename, content)
-                dismiss()
-            }
-            Button("Discard Changes", role: .destructive) { dismiss() }
-            Button("Keep Editing", role: .cancel) {}
-        }
         .onAppear {
-            if opened == nil { opened = (content, filename) }
+            if saved == nil {
+                saved = (content, filename)
+                showsFilename = isNew
+            }
         }
-        // Edge swipe: the system's own swipe back while nothing changed; with changes,
-        // the same swipe asks first, like Back.
-        .background(
-            SwipeBackEnabler(isEnabled: !hasChanges) { askingToSave = true }
-                .frame(width: 0, height: 0)
-        )
+        // Autosave once typing pauses. Changing either restarts the wait.
+        .task(id: "\(filename)\u{0}\(content)") {
+            guard hasChanges else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            saveIfNeeded()
+        }
+        .onDisappear { saveIfNeeded() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { saveIfNeeded() }
+        }
         // Any edit stops playback; the next play starts again from the top.
         .onChange(of: content) { stopIfPlaying() }
         .onChange(of: filename) { stopIfPlaying() }
@@ -176,10 +163,21 @@ struct MeditationEditorView: View {
         }
     }
 
-    private func saveInPlace() {
-        onSave(filename, content)
-        opened = (content, filename)
-        // Saved under this name now, so later saves go to the same file.
+    private func saveIfNeeded() {
+        guard let saved, hasChanges else { return }
+        let name = filename.trimmingCharacters(in: .whitespaces)
+        // A new meditation needs a name first; wait until it has one.
+        guard !name.isEmpty else { return }
+        onSave(name, content)
+        // A renamed file was saved under its new name; remove the old one so it isn't doubled.
+        // Only once this page has written the file itself (or it already existed).
+        let oldName = saved.filename.trimmingCharacters(in: .whitespaces)
+        if oldName != name, !oldName.isEmpty, !isNew || self.wroteFile {
+            let old = FileManager.default.meditationsDirectory.appendingPathComponent("\(oldName).med")
+            FileManager.default.deleteMeditation(at: old)
+        }
+        self.saved = (content, filename)
+        wroteFile = true
         isNew = false
     }
 
@@ -192,88 +190,5 @@ struct MeditationEditorView: View {
         // The script may have changed since the dialog opened; skip a fix that no longer fits.
         guard NSMaxRange(fix.range) <= ns.length else { return }
         content = ns.replacingCharacters(in: fix.range, with: fix.replacement)
-    }
-}
-
-/// Keeps the system's edge swipe back working although the editor hides the standard Back
-/// button (which turns the swipe off). While `isEnabled` is false the swipe doesn't leave;
-/// starting one calls `onBlockedSwipe` instead, from the system's own edge detection.
-private struct SwipeBackEnabler: UIViewRepresentable {
-    let isEnabled: Bool
-    let onBlockedSwipe: () -> Void
-
-    func makeUIView(context: Context) -> SwipeBackView {
-        let view = SwipeBackView()
-        view.isUserInteractionEnabled = false
-        return view
-    }
-
-    func updateUIView(_ view: SwipeBackView, context: Context) {
-        view.isSwipeEnabled = isEnabled
-        view.onBlockedSwipe = onBlockedSwipe
-        view.apply()
-    }
-}
-
-private final class SwipeBackView: UIView {
-    var isSwipeEnabled = true
-    var onBlockedSwipe: () -> Void = {}
-    /// A separate object, since UIView already has its own gestureRecognizerShouldBegin(_:).
-    private lazy var swipeDelegate = SwipeDelegate(view: self)
-    private weak var navigationController: UINavigationController?
-    private weak var savedDelegate: UIGestureRecognizerDelegate?
-    private var didSaveDelegate = false
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window != nil {
-            navigationController = findNavigationController()
-            apply()
-        } else {
-            restore()
-        }
-    }
-
-    func apply() {
-        guard let gesture = navigationController?.interactivePopGestureRecognizer else { return }
-        if !didSaveDelegate {
-            savedDelegate = gesture.delegate
-            didSaveDelegate = true
-        }
-        // The navigation controller's own delegate refuses the swipe when Back is hidden,
-        // so this view decides instead.
-        gesture.delegate = swipeDelegate
-    }
-
-    private final class SwipeDelegate: NSObject, UIGestureRecognizerDelegate {
-        weak var view: SwipeBackView?
-
-        init(view: SwipeBackView) { self.view = view }
-
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard let view else { return true }
-            if view.isSwipeEnabled { return true }
-            view.onBlockedSwipe()
-            return false
-        }
-    }
-
-    /// Hands the swipe back to the navigation controller as it was, so the screens
-    /// under the editor behave normally.
-    private func restore() {
-        guard didSaveDelegate, let gesture = navigationController?.interactivePopGestureRecognizer else { return }
-        gesture.delegate = savedDelegate
-        didSaveDelegate = false
-    }
-
-    private func findNavigationController() -> UINavigationController? {
-        var responder: UIResponder? = self
-        while let current = responder {
-            if let controller = current as? UIViewController, let nav = controller.navigationController {
-                return nav
-            }
-            responder = current.next
-        }
-        return nil
     }
 }
