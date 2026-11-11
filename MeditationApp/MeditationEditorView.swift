@@ -19,8 +19,9 @@ struct MeditationEditorView: View {
     /// Set when the page opens, so a new meditation's filename field doesn't vanish
     /// mid-typing once the first autosave has written the file.
     @State private var showsFilename = false
-    /// Whether this page has written its file yet, so a rename knows there's an old file to remove.
-    @State private var wroteFile = false
+    /// The name this page's file has on disk: the opened file's, or what autosave last wrote.
+    /// A rename removes it; a name that belongs to some other meditation is never written over.
+    @State private var diskName: String?
 
     private var hasChanges: Bool {
         guard let saved else { return false }
@@ -114,6 +115,7 @@ struct MeditationEditorView: View {
             if saved == nil {
                 saved = (content, filename)
                 showsFilename = isNew
+                if !isNew { diskName = filename.trimmingCharacters(in: .whitespaces) }
             }
         }
         // Autosave once typing pauses. Changing either restarts the wait.
@@ -164,21 +166,38 @@ struct MeditationEditorView: View {
     }
 
     private func saveIfNeeded() {
-        guard let saved, hasChanges else { return }
+        guard hasChanges else { return }
         let name = filename.trimmingCharacters(in: .whitespaces)
         // A new meditation needs a name first; wait until it has one.
         guard !name.isEmpty else { return }
-        onSave(name, content)
-        // A renamed file was saved under its new name; remove the old one so it isn't doubled.
-        // Only once this page has written the file itself (or it already existed).
-        let oldName = saved.filename.trimmingCharacters(in: .whitespaces)
-        if oldName != name, !oldName.isEmpty, !isNew || self.wroteFile {
-            let old = FileManager.default.meditationsDirectory.appendingPathComponent("\(oldName).med")
+        // Autosave runs mid-typing, so the name may match another meditation (two new ones on
+        // the same day both start as the date). Never write over it: use the next free name.
+        let target = freeName(for: name)
+        onSave(target, content)
+        // Renamed: the file was written under its new name, so remove the old one.
+        if let diskName, diskName != target {
+            let old = FileManager.default.meditationsDirectory.appendingPathComponent("\(diskName).med")
             FileManager.default.deleteMeditation(at: old)
         }
-        self.saved = (content, filename)
-        wroteFile = true
+        diskName = target
+        saved = (content, filename)
         isNew = false
+    }
+
+    /// `name`, or `name 2`, `name 3`… when another meditation already has it.
+    private func freeName(for name: String) -> String {
+        let dir = FileManager.default.meditationsDirectory
+        func taken(_ candidate: String) -> Bool {
+            candidate != diskName
+                && FileManager.default.fileExists(atPath: dir.appendingPathComponent("\(candidate).med").path)
+        }
+        var candidate = name
+        var n = 2
+        while taken(candidate) {
+            candidate = "\(name) \(n)"
+            n += 1
+        }
+        return candidate
     }
 
     private func stopIfPlaying() {
