@@ -21,6 +21,11 @@ struct MeditationListView: View {
     @State private var fileTitles: [URL: String] = [:]
     @State private var fileTags: [URL: [String]] = [:]
     @State private var eraIndex = EraIndex()
+    /// The library reload in flight, so a burst of requests (a save, then the iCloud watcher
+    /// noticing that same save) becomes one reload instead of several.
+    @State private var refreshTask: Task<Void, Never>?
+    /// Set once the list has loaded, so coming back from a pushed page doesn't reload it.
+    @State private var hasLoaded = false
     @State private var showingFeelings = false
     @State private var showingTodos = false
     /// The filter bar. The app opens with both on; at least one always stays on.
@@ -259,8 +264,14 @@ struct MeditationListView: View {
                 ) { savedFilename, savedContent in
                     // No stop here: any edit already stopped playback, so whatever is
                     // playing now is the script being saved.
-                    _ = FileManager.default.saveMeditation(savedContent, filename: savedFilename)
-                    refreshFiles()
+                    // Update just this file's row; a new or renamed file also needs the
+                    // file list redone, which happens off the main thread.
+                    if let url = FileManager.default.saveMeditation(savedContent, filename: savedFilename) {
+                        updateEntry(for: url, content: savedContent)
+                        if !files.contains(url) { refreshFiles() }
+                    } else {
+                        refreshFiles()
+                    }
                 }
             }
             .sheet(isPresented: $showingStore) {
@@ -319,7 +330,15 @@ struct MeditationListView: View {
             }
             // The panel's pages (a past era opens from History) keep its warmer background.
             .background(isPast ? Color("PanelBackgroundColor") : Color("BackgroundColor"))
-            .onAppear { refreshFiles() }
+            // Only the first time: returning from a pushed page (the editor, Feelings) shows the
+            // list as a back swipe starts, and saves and the iCloud watcher keep it current anyway.
+            .onAppear {
+                if !hasLoaded {
+                    hasLoaded = true
+                    // Right away the first time, so the list never flashes empty.
+                    apply(LoadedLibrary.load())
+                }
+            }
             .task { await meditationStore.checkForUpdates() }
             .onChange(of: scenePhase) { _, newPhase in
                 // Defensive refresh on returning to foreground in case the watcher missed
@@ -651,27 +670,37 @@ struct MeditationListView: View {
         }
     }
 
-    private func refreshFiles() {
-        files = FileManager.default.meditationFiles()
-        var contentMap: [URL: String] = [:]
-        var titleMap: [URL: String] = [:]
-        var tagMap: [URL: [String]] = [:]
-        for url in files {
-            let loadedContent = FileManager.default.readMeditation(at: url)
-            let content = loadedContent ?? ""
-            if let loadedContent {
-                contentMap[url] = loadedContent
-            }
-            let meta = MeditationParser.parseMetadata(content)
-            let title = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
-            let tags = meta.tags
-            titleMap[url] = title
-            tagMap[url] = tags
+    /// Reloads the library in the background and applies it on the main thread. Reading goes
+    /// through iCloud file coordination one file at a time, so doing it here on the main thread
+    /// used to stall whatever was animating, a back swipe most of all.
+    private func refreshFiles(animation: Animation? = nil) {
+        refreshTask?.cancel()
+        refreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            let started = Date()
+            let library = await Task.detached(priority: .userInitiated) { LoadedLibrary.load() }.value
+            guard !Task.isCancelled else { return }
+            withAnimation(animation) { apply(library) }
+            PerfLog.note(String(format: "library reload: %d files, %.0f ms off the main thread",
+                                library.files.count, Date().timeIntervalSince(started) * 1000))
         }
-        fileContents = contentMap
-        fileTitles = titleMap
-        fileTags = tagMap
-        eraIndex = EraIndex.load()
+    }
+
+    private func apply(_ library: LoadedLibrary) {
+        files = library.files
+        fileContents = library.contents
+        fileTitles = library.titles
+        fileTags = library.tags
+        eraIndex = library.eraIndex
+    }
+
+    /// Refreshes one saved file's row without rereading the rest.
+    private func updateEntry(for url: URL, content: String) {
+        let meta = MeditationParser.parseMetadata(content)
+        fileContents[url] = content
+        fileTitles[url] = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
+        fileTags[url] = meta.tags
     }
 
     private func metadataFor(_ url: URL) -> (title: String, tags: [String]) {
@@ -806,9 +835,7 @@ struct MeditationListView: View {
         let (_, tags) = metadataFor(url)
         guard !tags.contains(current.tag) else { return }
         writeTags(tags + [current.tag], for: url)
-        withAnimation(.snappy(duration: 0.25)) {
-            refreshFiles()
-        }
+        refreshFiles(animation: .snappy(duration: 0.25))
     }
 
     private func editEras(_ url: URL) {
@@ -1278,4 +1305,49 @@ private struct ShareTarget: Identifiable {
     let title: String
     let content: String
     var id: String { filename }
+}
+
+/// Everything the list reads from disk, loaded together off the main thread.
+private struct LoadedLibrary: Sendable {
+    var files: [URL] = []
+    var contents: [URL: String] = [:]
+    var titles: [URL: String] = [:]
+    var tags: [URL: [String]] = [:]
+    var eraIndex = EraIndex()
+
+    static func load() -> LoadedLibrary {
+        var library = LoadedLibrary()
+        library.files = FileManager.default.meditationFiles()
+        for url in library.files {
+            let loaded = FileManager.default.readMeditation(at: url)
+            if let loaded { library.contents[url] = loaded }
+            let meta = MeditationParser.parseMetadata(loaded ?? "")
+            library.titles[url] = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
+            library.tags[url] = meta.tags
+        }
+        library.eraIndex = EraIndex.load()
+        return library
+    }
+}
+
+/// Timing notes for checking performance on a device: printed, and appended to
+/// Library/Caches/perf.log, which `xcrun devicectl device copy from` can fetch.
+enum PerfLog {
+    private static let queue = DispatchQueue(label: "PerfLog")
+
+    static func note(_ message: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+        print(line, terminator: "")
+        queue.async {
+            guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
+            let url = dir.appendingPathComponent("perf.log")
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile()
+                handle.write(Data(line.utf8))
+                try? handle.close()
+            } else {
+                try? Data(line.utf8).write(to: url)
+            }
+        }
+    }
 }
