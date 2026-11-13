@@ -99,6 +99,8 @@ struct JournalView: View {
                         Button { openFromPanel(.era(era)) } label: {
                             PanelLinkLabel { Text(era.label) }
                         }
+                        // A list tints button text with the accent color; these read as plain rows.
+                        .tint(.primary)
                     }
                 }
             }
@@ -120,6 +122,8 @@ struct JournalView: View {
                                 Button { openFromPanel(.checkIn(entry.id)) } label: {
                                     PanelLinkLabel { CheckInSessionRow(entry: entry, session: s) }
                                 }
+                                // A list tints button text with the accent color; these read as plain rows.
+                                .tint(.primary)
                             }
                         }
                     }
@@ -743,7 +747,6 @@ private struct PanelLinkLabel<Content: View>: View {
     var body: some View {
         HStack {
             content
-                .foregroundStyle(.primary)
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
