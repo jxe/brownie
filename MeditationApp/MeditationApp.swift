@@ -5,6 +5,39 @@ extension EnvironmentValues {
     @Entry var openPanel: () -> Void = {}
     /// Whether the left panel is open, so the main screen can refresh what Settings may have changed.
     @Entry var panelIsOpen = false
+    /// Closes the left panel and opens one of its pages on the main screen.
+    @Entry var openFromPanel: (PanelPage) -> Void = { _ in }
+}
+
+/// A page the left panel opens. It opens on the main screen, not inside the panel.
+enum PanelPage: Hashable {
+    case settings
+    case leaderboard
+    case era(EraSelection)
+    case checkIn(UUID)
+}
+
+private struct PanelPageView: View {
+    @Environment(EmotionStore.self) private var store
+    let page: PanelPage
+
+    var body: some View {
+        switch page {
+        case .settings:
+            SettingsView()
+        case .leaderboard:
+            EmotionLeaderboardView()
+        case .era(let era):
+            MeditationListView(shelf: .past(era))
+        case .checkIn(let id):
+            if let entry = store.journalEntries.first(where: { $0.id == id }),
+               case .checkInSession(let session) = entry.content {
+                CheckInSessionDetailView(entry: entry, session: session)
+            } else {
+                ContentUnavailableView("Check-in Not Found", systemImage: "clock")
+            }
+        }
+    }
 }
 
 @main
@@ -37,6 +70,8 @@ struct ContentView: View {
     /// Whether History is built at all. It stays up through the closing slide, then goes,
     /// so nothing behind the main screen re-renders as the store changes.
     @State private var panelMounted = false
+    /// The main screen's pushed pages that came from the panel.
+    @State private var mainPath: [PanelPage] = []
 
     var body: some View {
         GeometryReader { geo in
@@ -47,11 +82,16 @@ struct ContentView: View {
                     NavigationStack {
                         JournalView()
                     }
+                    .environment(\.openFromPanel, { page in
+                        mainPath = [page]
+                        setPanel(open: false)
+                    })
                     .frame(width: panelWidth)
                 }
 
-                NavigationStack {
+                NavigationStack(path: $mainPath) {
                     MeditationListView(shelf: .home)
+                        .navigationDestination(for: PanelPage.self) { PanelPageView(page: $0) }
                         // A swipe in from the left edge pulls the panel out, but only on the
                         // main screen itself: anywhere deeper, that swipe goes back.
                         .background(

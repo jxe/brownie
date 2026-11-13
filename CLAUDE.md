@@ -55,6 +55,7 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 
 ## Navigation
 - No tab bar. `ContentView` shows one `MeditationListView(shelf: .home)` in a `NavigationStack`, with a second `NavigationStack` (JournalView: Settings + History) behind it on the left. The sidebar button (`openPanel` environment action) or a swipe from the left edge (`PanelEdgePan`, a UIKit edge-pan on the main navigation controller, only while the main screen is the top page) slides the main screen right; a tap or leftward drag on it closes the panel. Meditation rows on the main screen have no leading swipe, so they don't fight that edge swipe; Eras… is in the long-press menu. Settings is a fixed row at the bottom of the panel
+- The panel's pages (Settings, Emotion Leaderboard, a past era, a past check-in) open on the main screen, not inside the panel: the panel calls the `openFromPanel` environment action with a `PanelPage`, which closes the panel and sets the main `NavigationStack`'s path. Rows there are Buttons (`PanelLinkLabel`), not NavigationLinks
 - The main screen's title is a menu ("Everything ▾") that shows This Era, Foundations, or both as Everything (never neither); it isn't remembered between launches
 - The Store and new-era sheets are presented from `MeditationListView`, and `MeditationEditorView` is pushed from it; store links open on the main screen
 - `FeelingTodoView` is pushed with `.navigationDestination(item:)` from CheckInView and from TodosView

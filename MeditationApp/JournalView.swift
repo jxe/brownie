@@ -3,6 +3,7 @@ import SwiftUI
 /// The left panel: Settings, then History (streak, past eras, past entries).
 struct JournalView: View {
     @Environment(EmotionStore.self) private var store
+    @Environment(\.openFromPanel) private var openFromPanel
     @State private var eraIndex = EraIndex()
 
     /// Eras before the current one, newest first, then "Older" for untagged meditations.
@@ -95,10 +96,8 @@ struct JournalView: View {
             if !pastEras.isEmpty {
                 Section("Past Eras") {
                     ForEach(pastEras, id: \.self) { era in
-                        NavigationLink {
-                            MeditationListView(shelf: .past(era))
-                        } label: {
-                            Text(era.label)
+                        Button { openFromPanel(.era(era)) } label: {
+                            PanelLinkLabel { Text(era.label) }
                         }
                     }
                 }
@@ -118,10 +117,8 @@ struct JournalView: View {
                             case .meditation(let m):
                                 MeditationLogRow(entry: entry, meditation: m)
                             case .checkInSession(let s):
-                                NavigationLink {
-                                    CheckInSessionDetailView(entry: entry, session: s)
-                                } label: {
-                                    CheckInSessionRow(entry: entry, session: s)
+                                Button { openFromPanel(.checkIn(entry.id)) } label: {
+                                    PanelLinkLabel { CheckInSessionRow(entry: entry, session: s) }
                                 }
                             }
                         }
@@ -153,9 +150,7 @@ struct JournalView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider()
-                NavigationLink {
-                    SettingsView()
-                } label: {
+                Button { openFromPanel(.settings) } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "gear")
                             .foregroundStyle(.secondary)
@@ -177,9 +172,7 @@ struct JournalView: View {
         .navigationTitle("History")
         .onAppear { eraIndex = EraIndex.load() }
         .toolbar {
-            NavigationLink {
-                EmotionLeaderboardView()
-            } label: {
+            Button { openFromPanel(.leaderboard) } label: {
                 Label("Emotion Leaderboard", systemImage: "chart.bar.xaxis")
             }
 
@@ -740,5 +733,22 @@ private struct DoneTodoRow: View {
                 Label("Reopen", systemImage: "arrow.uturn.backward")
             }
         }
+    }
+}
+
+/// A panel row that opens a page on the main screen: a button drawn like a NavigationLink row.
+private struct PanelLinkLabel<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack {
+            content
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
     }
 }
