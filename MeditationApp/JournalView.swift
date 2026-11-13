@@ -297,7 +297,7 @@ struct OpenTodosSection: View {
     }
 }
 
-private struct EmotionLeaderboardView: View {
+struct EmotionLeaderboardView: View {
     @Environment(EmotionStore.self) private var store
     @State private var metric: Metric = .time
     @State private var order: Order = .most
@@ -560,7 +560,7 @@ private struct CheckInSessionRow: View {
     }
 }
 
-private struct CheckInSessionDetailView: View {
+struct CheckInSessionDetailView: View {
     let entry: JournalEntry
     let session: JournalEntry.Content.CheckInSession
 
