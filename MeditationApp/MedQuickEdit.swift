@@ -518,17 +518,26 @@ struct MedPoolEditorSheet: View {
     let name: String
     /// The script's pools and remembered picks, for the item fields' `~…` menu.
     let references: (pools: [String], picks: [String])
+    /// No line draws from this pool.
+    let isUnused: Bool
     let onDone: ([MedPoolBlock.Item]) -> Void
     let onCancel: () -> Void
+    /// Removes the whole pool, its `~name` line and items, from the script.
+    let onDelete: () -> Void
     @State private var items: [MedPoolBlock.Item]
     @State private var focused: UUID?
+    @State private var confirmingDelete = false
 
     init(name: String, items: [MedPoolBlock.Item], references: (pools: [String], picks: [String]),
-         onDone: @escaping ([MedPoolBlock.Item]) -> Void, onCancel: @escaping () -> Void) {
+         isUnused: Bool = false,
+         onDone: @escaping ([MedPoolBlock.Item]) -> Void, onCancel: @escaping () -> Void,
+         onDelete: @escaping () -> Void = {}) {
         self.name = name
         self.references = references
+        self.isUnused = isUnused
         self.onDone = onDone
         self.onCancel = onCancel
+        self.onDelete = onDelete
         _items = State(initialValue: items)
     }
 
@@ -562,6 +571,23 @@ struct MedPoolEditorSheet: View {
                 } footer: {
                     Text("Each ~\(name) draws one of these at random; commented-out items are skipped. Swipe to delete, Return for the next item.")
                 }
+
+                Section {
+                    Button(role: .destructive) {
+                        confirmingDelete = true
+                    } label: {
+                        Label("Delete Pool", systemImage: "trash")
+                    }
+                } footer: {
+                    if isUnused {
+                        Text("Nothing in the script uses ~\(name).")
+                    }
+                }
+            }
+            .confirmationDialog("Delete ~\(name) and its \(items.count) items?",
+                                isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button("Delete Pool", role: .destructive, action: onDelete)
+                Button("Cancel", role: .cancel) {}
             }
             .navigationTitle("~\(name)")
             .navigationBarTitleDisplayMode(.inline)

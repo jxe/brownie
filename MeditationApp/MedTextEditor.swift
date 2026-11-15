@@ -224,7 +224,49 @@ struct MedTextEditor: UIViewRepresentable {
             applyMedHighlights(to: textView)
         }
 
+        /// The caret never rests inside a folded pool: it goes to the end of the pool's `~name`
+        /// line. Leaving a blank stretch between pools, opened for typing, folds it away again.
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard let medView = textView as? MedTextView, !medView.isAdjustingSelection,
+                  medView.foldedText == textView.text else { return }
+            let selection = textView.selectedRange
+            if let open = medView.folds.compactMap(\.openedBlanks).first,
+               !(open.location...NSMaxRange(open)).contains(selection.location) {
+                applyMedHighlights(to: textView)
+            }
+            guard selection.length == 0,
+                  let fold = medView.folds.first(where: { $0.hidesCaret(at: selection.location) }) else { return }
+            medView.adjustSelection(to: fold.headerEnd)
+        }
+
+        /// Edits that would reach into a folded pool from outside stop at its `~name` line
+        /// instead; Return there starts a new line under the whole pool.
+        private func handleFoldedEdit(_ textView: UITextView, range: NSRange, text: String) -> Bool? {
+            guard let medView = textView as? MedTextView, !medView.isAdjustingSelection,
+                  medView.foldedText == textView.text else { return nil }
+            for fold in medView.folds {
+                let protected = fold.protectedRange(textLength: (textView.text as NSString).length)
+                guard protected.length > 0 else { continue }
+                if text == "\n" && range.length == 0 && range.location == fold.headerEnd {
+                    medView.adjustSelection(to: fold.blockEnd)
+                    medView.isAdjustingSelection = true
+                    if let caret = textView.selectedTextRange { textView.replace(caret, withText: "\n") }
+                    medView.isAdjustingSelection = false
+                    textViewDidChange(textView)
+                    return false
+                }
+                let overlap = NSIntersectionRange(range, protected).length > 0
+                let coversAll = range.location <= protected.location && NSMaxRange(range) >= NSMaxRange(protected)
+                if (overlap && !coversAll) || (range.length == 0 && fold.hidesCaret(at: range.location)) {
+                    medView.adjustSelection(to: fold.headerEnd)
+                    return false
+                }
+            }
+            return nil
+        }
+
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            if let handled = handleFoldedEdit(textView, range: range, text: text) { return handled }
             guard text == "\n" else { return true }
 
             let content = textView.text as NSString
@@ -350,6 +392,7 @@ struct MedTextEditor: UIViewRepresentable {
                 let sheet = MedPoolEditorSheet(
                     name: name, items: block.items,
                     references: MeditationParser.referenceableNames(in: textView.text),
+                    isUnused: MeditationParser.unusedPoolNames(in: textView.text).contains(name),
                     onDone: { [weak self, weak textView, weak presenter] items in
                         if let self, let textView {
                             self.replace(block.range, expecting: block.source,
@@ -357,7 +400,21 @@ struct MedTextEditor: UIViewRepresentable {
                         }
                         presenter?.dismiss(animated: true)
                     },
-                    onCancel: { [weak presenter] in presenter?.dismiss(animated: true) })
+                    onCancel: { [weak presenter] in presenter?.dismiss(animated: true) },
+                    onDelete: { [weak self, weak textView, weak presenter] in
+                        if let self, let textView {
+                            // The block and its line break, so no empty line is left behind.
+                            let ns = textView.text as NSString
+                            var range = block.range
+                            if NSMaxRange(range) < ns.length {
+                                range.length += 1
+                            } else if range.location > 0 {
+                                range = NSRange(location: range.location - 1, length: range.length + 1)
+                            }
+                            self.replace(range, expecting: ns.substring(with: range), with: "", in: textView)
+                        }
+                        presenter?.dismiss(animated: true)
+                    })
                 let host = UIHostingController(rootView: sheet)
                 // Swiping away would silently drop edits; Cancel and Done are explicit.
                 host.isModalInPresentation = true
@@ -432,8 +489,13 @@ private extension MedQuickEditTarget {
 
 /// The script editor's text view: draws a rounded chip behind each quick-edit target.
 final class MedTextView: UITextView {
+    /// The folded pools, and the text they were worked out for (stale while an edit is under way).
+    var folds: [MedFold] = []
+    var foldedText: String?
+    /// Set while the caret is being moved on purpose, so the move isn't corrected again.
+    var isAdjustingSelection = false
     private let chipView = UIView()
-    private var chipLayers: [CAShapeLayer] = []
+    private var chipLayers: [CALayer] = []
     private var chipsNeedUpdate = true
     private var chipWidth: CGFloat = 0
 
@@ -446,6 +508,12 @@ final class MedTextView: UITextView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    func adjustSelection(to location: Int) {
+        isAdjustingSelection = true
+        selectedRange = NSRange(location: location, length: 0)
+        isAdjustingSelection = false
+    }
 
     func setChipsNeedUpdate() {
         chipsNeedUpdate = true
@@ -471,12 +539,13 @@ final class MedTextView: UITextView {
     /// The highlighter kerns `medChipGap` of room on each side of a target so neighbors stay clear.
     static func chipRects(for target: MedQuickEditTarget, in textView: UITextView) -> [CGRect] {
         guard target.isBlock else { return chipRects(for: target.hitRange, in: textView) }
-        // One full-width chip around every line's text. Selection rects for whole lines run to
-        // the right edge, so measure each line's trimmed text and take the union.
+        // A folded pool is one row: a full-width chip around its `~name` line. Selection rects
+        // for whole lines run to the right edge, so measure the trimmed text.
         let ns = (textView.text ?? "") as NSString
         guard NSMaxRange(target.hitRange) <= ns.length else { return [] }
         var union = CGRect.null
-        ns.enumerateSubstrings(in: target.hitRange, options: [.byLines]) { line, lineRange, _, _ in
+        ns.enumerateSubstrings(in: target.hitRange, options: [.byLines]) { line, lineRange, _, stop in
+            stop.pointee = true
             let line = line ?? ""
             let lead = line.prefix { $0 == " " || $0 == "\t" }.utf16.count
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -535,12 +604,39 @@ final class MedTextView: UITextView {
         // Pool blocks get their own layers, added first, so the chips inside them draw on top.
         var blockPaths: [UIColor: UIBezierPath] = [:]
         var paths: [UIColor: UIBezierPath] = [:]
+        let currentFolds = foldedText == text ? folds : []
         for target in MedQuickEdit.allTargets(in: text ?? "") {
-            let path = (target.isBlock ? blockPaths : paths)[target.tapTint] ?? UIBezierPath()
-            for chip in Self.chipRects(for: target, in: self) {
+            // Folded items have no chips of their own.
+            if !target.isBlock, currentFolds.contains(where: { NSLocationInRange(target.hitRange.location, $0.itemsRange) }) {
+                continue
+            }
+            var tint = target.tapTint
+            if case .poolBlock(let name, _) = target, currentFolds.first(where: { $0.name == name })?.isUnused == true {
+                tint = .systemGray
+            }
+            let path = (target.isBlock ? blockPaths : paths)[tint] ?? UIBezierPath()
+            let chips = Self.chipRects(for: target, in: self)
+            for chip in chips {
                 path.append(UIBezierPath(roundedRect: chip, cornerRadius: min(8, chip.height / 2)))
             }
-            if target.isBlock { blockPaths[target.tapTint] = path } else { paths[target.tapTint] = path }
+            if target.isBlock { blockPaths[tint] = path } else { paths[tint] = path }
+            // A folded pool says how many items it holds, at the right end of its row.
+            if case .poolBlock(let name, _) = target, let fold = currentFolds.first(where: { $0.name == name }),
+               let chip = chips.first {
+                let label = CATextLayer()
+                let font = UIFont.preferredFont(forTextStyle: .footnote)
+                label.string = NSAttributedString(string: fold.summary, attributes: [
+                    .font: font,
+                    .foregroundColor: UIColor.secondaryLabel.resolvedColor(with: traitCollection),
+                ])
+                label.contentsScale = traitCollection.displayScale
+                label.alignmentMode = .right
+                let height = font.lineHeight
+                label.frame = CGRect(x: chip.minX + 8, y: chip.midY - height / 2,
+                                     width: chip.width - 20, height: height)
+                chipView.layer.addSublayer(label)
+                chipLayers.append(label)
+            }
         }
         for (color, path) in Array(blockPaths) + Array(paths) {
             let resolved = color.resolvedColor(with: traitCollection)
@@ -763,10 +859,110 @@ private func applyMedHighlights(to textView: UITextView) {
             .underlineColor: UIColor.systemRed,
         ], range: diagnostic.range)
     }
+    // Fold pools into one-line rows, last, so nothing above draws into the folded lines.
+    let folds = MedFold.folds(in: text, caret: savedSelection.location)
+    for fold in folds {
+        if fold.itemsRange.length > 0 { storage.setAttributes(medFoldedAttributes, range: fold.itemsRange) }
+        if let blanks = fold.blanks { storage.setAttributes(medFoldedAttributes, range: blanks) }
+        if fold.isUnused {
+            let header = ns.lineRange(for: NSRange(location: fold.headerEnd, length: 0))
+            let headerText = NSRange(location: header.location, length: fold.headerEnd - header.location)
+            storage.addAttribute(.foregroundColor, value: UIColor.tertiaryLabel, range: headerText)
+        }
+    }
+    let medView = textView as? MedTextView
+    medView?.folds = folds
+    medView?.foldedText = text
     storage.endEditing()
+    medView?.isAdjustingSelection = true
     textView.selectedRange = savedSelection
+    medView?.isAdjustingSelection = false
     textView.typingAttributes = medBaseAttributes
 }
+
+// MARK: - Folded pools
+
+/// A pool definition shown as one row: its `~name` line stays, its item lines are drawn at no
+/// height, and so are blank lines between it and a pool right after it, so a run of pools reads
+/// as an even stack. Only the drawing changes; the text keeps every line.
+struct MedFold {
+    let name: String
+    /// End of the `~name` line's text, where the caret goes instead of into the fold.
+    let headerEnd: Int
+    /// End of the block's last line, before its line break.
+    let blockEnd: Int
+    /// Blank lines folded away between this pool and the next one, if any.
+    let blanks: NSRange?
+    /// Blank lines between this pool and the next that the caret is on, so left showing.
+    let openedBlanks: NSRange?
+    let itemCount: Int
+    let isUnused: Bool
+
+    /// The item lines, from the `~name` line's break to the block's end.
+    var itemsRange: NSRange { NSRange(location: headerEnd, length: blockEnd - headerEnd) }
+
+    /// The last caret position that isn't drawn.
+    private var lastHidden: Int { blanks.map { NSMaxRange($0) - 1 } ?? blockEnd }
+
+    func hidesCaret(at location: Int) -> Bool {
+        location > headerEnd && location <= lastHidden
+    }
+
+    /// The folded characters, which an edit from outside mustn't cut into.
+    func protectedRange(textLength: Int) -> NSRange {
+        guard lastHidden > headerEnd else { return NSRange(location: headerEnd, length: 0) }
+        return NSRange(location: headerEnd, length: min(lastHidden + 1, textLength) - headerEnd)
+    }
+
+    var summary: String {
+        let items = itemCount == 1 ? "1 item" : "\(itemCount) items"
+        return isUnused ? "unused · \(items)" : items
+    }
+
+    static func folds(in text: String, caret: Int) -> [MedFold] {
+        let ns = text as NSString
+        let blocks = MedPoolBlock.blockRanges(in: text)
+        let unused = MeditationParser.unusedPoolNames(in: text)
+        var folds: [MedFold] = []
+        for (index, block) in blocks.enumerated() {
+            var headerStart = 0, headerLineEnd = 0, headerEnd = 0
+            ns.getLineStart(&headerStart, end: &headerLineEnd, contentsEnd: &headerEnd,
+                            for: NSRange(location: block.range.location, length: 0))
+            let blockEnd = NSMaxRange(block.range)
+            var blanks: NSRange?
+            var opened: NSRange?
+            if index + 1 < blocks.count, blockEnd < ns.length {
+                let gapStart = blockEnd + 1
+                let nextStart = blocks[index + 1].range.location
+                if nextStart > gapStart,
+                   ns.substring(with: NSRange(location: gapStart, length: nextStart - gapStart))
+                       .allSatisfy({ $0.isWhitespace }) {
+                    let gap = NSRange(location: gapStart, length: nextStart - gapStart)
+                    if caret >= gapStart && caret < nextStart { opened = gap } else { blanks = gap }
+                }
+            }
+            let items = MedPoolBlock.find(named: block.name, in: text)?.items.filter { !$0.commented }.count ?? 0
+            folds.append(MedFold(name: block.name, headerEnd: headerEnd, blockEnd: blockEnd,
+                                 blanks: blanks, openedBlanks: opened, itemCount: items,
+                                 isUnused: unused.contains(block.name)))
+        }
+        return folds
+    }
+}
+
+/// Drawn at no height and no width: what a folded pool hides.
+private let medFoldedAttributes: [NSAttributedString.Key: Any] = {
+    let p = NSMutableParagraphStyle()
+    p.maximumLineHeight = 0.01
+    p.minimumLineHeight = 0
+    p.lineSpacing = 0
+    p.paragraphSpacing = 0
+    return [
+        .font: UIFont.systemFont(ofSize: 0.01),
+        .foregroundColor: UIColor.clear,
+        .paragraphStyle: p,
+    ]
+}()
 
 // MARK: - Pool item field
 
