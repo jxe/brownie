@@ -921,8 +921,19 @@ private struct FeelingsCard: View {
     let tappableFrames: TappableFrames
     let action: () -> Void
     @Environment(EmotionStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        card
+            // An old check-in ends here too, not only once Feelings opens, so this row
+            // never shows feelings that opening the page would clear.
+            .onAppear { store.clearSessionIfStale() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { store.clearSessionIfStale() }
+            }
+    }
+
+    @ViewBuilder private var card: some View {
         let feelings = store.selectedEmotionsSorted()
         let inSession = !feelings.isEmpty
         let names = feelings.prefix(4).map { "\($0.emoji) \($0.name)" }
