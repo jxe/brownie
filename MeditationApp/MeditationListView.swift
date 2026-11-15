@@ -1311,7 +1311,7 @@ struct PlayingPulseDot: UIViewRepresentable {
     }
 }
 
-private final class PulseDotView: UIView {
+final class PulseDotView: UIView {
     private static let animationKey = "pulse"
     private let dot = CALayer()
 
