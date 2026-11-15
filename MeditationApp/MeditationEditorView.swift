@@ -101,7 +101,11 @@ struct MeditationEditorView: View {
             titleVisibility: .visible,
             presenting: pendingFix
         ) { fix in
-            Button("Fix") { apply(fix) }
+            if fix.replacement.isEmpty {
+                Button("Delete", role: .destructive) { apply(fix) }
+            } else {
+                Button("Fix") { apply(fix) }
+            }
             Button("Cancel", role: .cancel) {}
         } message: { fix in
             if !fix.replacement.isEmpty {
@@ -132,7 +136,7 @@ struct MeditationEditorView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { saveIfNeeded() }
         }
-        // Any edit stops playback; the next play starts again from the top.
+        // Any edit stops this script's playback; the next play starts again from the top.
         .onChange(of: content) { stopIfPlaying() }
         .onChange(of: filename) { stopIfPlaying() }
     }
@@ -198,8 +202,9 @@ struct MeditationEditorView: View {
         return candidate
     }
 
+    /// Stops this script if it's what's playing; something else playing carries on.
     private func stopIfPlaying() {
-        if player.state != .idle { player.stop() }
+        if isPlayingThisScript { player.stop() }
     }
 
     private func apply(_ fix: MeditationFix) {

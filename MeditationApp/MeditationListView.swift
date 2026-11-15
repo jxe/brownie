@@ -259,8 +259,7 @@ struct MeditationListView: View {
                     isNew: $isNewFile,
                     sourceURL: editorURL
                 ) { savedFilename, savedContent in
-                    // No stop here: any edit already stopped playback, so whatever is
-                    // playing now is the script being saved.
+                    // No stop here: an edit already stopped this script if it was playing.
                     // Update just this file's row; a new or renamed file also needs the
                     // file list redone, which happens off the main thread.
                     if let url = FileManager.default.saveMeditation(savedContent, filename: savedFilename) {
@@ -702,7 +701,6 @@ struct MeditationListView: View {
     }
 
     private func editFile(_ url: URL) {
-        player.stop()
         editorContent = fileContents[url] ?? FileManager.default.readMeditation(at: url) ?? ""
         editorFilename = url.deletingPathExtension().lastPathComponent
         editorURL = url
@@ -711,7 +709,6 @@ struct MeditationListView: View {
     }
 
     private func editCopy(_ url: URL) {
-        player.stop()
         guard let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) else { return }
         let baseName = url.deletingPathExtension().lastPathComponent
 
@@ -1172,15 +1169,18 @@ private struct LastPlayedLabel: View {
     }
 }
 
-/// Sits under every page of the main screen, the editor included, while a meditation is
-/// starting, playing or paused: what's playing, how far along it is, and pause and stop. It
-/// reads the player itself, so its changes don't re-render the screen it sits under.
+/// Sits under the pages pushed onto the main screen, the editor included, while a meditation
+/// is starting, playing or paused: what's playing, how far along it is, and pause and stop.
+/// Not on the main screen itself, where the playing row already shows all that. It reads the
+/// player itself, so its changes don't re-render the screen it sits under.
 struct NowPlayingInset: View {
+    /// Whether the main screen is the top page, so the bar stays out of the way.
+    var isHidden = false
     @Environment(MeditationPlayer.self) private var player
 
     var body: some View {
         let isShowing = switch player.state {
-        case .preparing, .playing, .paused: true
+        case .preparing, .playing, .paused: !isHidden
         case .idle, .finished: false
         }
         VStack(spacing: 0) {

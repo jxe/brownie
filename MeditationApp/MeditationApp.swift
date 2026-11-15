@@ -72,6 +72,8 @@ struct ContentView: View {
     @State private var panelMounted = false
     /// The main screen's pushed pages that came from the panel.
     @State private var mainPath: [PanelPage] = []
+    /// Whether the main screen is showing, rather than a page pushed on top of it.
+    @State private var mainScreenOnTop = true
 
     var body: some View {
         GeometryReader { geo in
@@ -91,6 +93,9 @@ struct ContentView: View {
 
                 NavigationStack(path: $mainPath) {
                     MeditationListView(shelf: .home)
+                        // Covered by a pushed page or back on top, for the now-playing bar.
+                        .onAppear { mainScreenOnTop = true }
+                        .onDisappear { mainScreenOnTop = false }
                         .navigationDestination(for: PanelPage.self) { PanelPageView(page: $0) }
                         // A swipe in from the left edge pulls the panel out, but only on the
                         // main screen itself: anywhere deeper, that swipe goes back.
@@ -104,8 +109,9 @@ struct ContentView: View {
                             .frame(width: 0, height: 0)
                         )
                 }
-                // Under every page of the main screen, so pause and stop are always in one place.
-                .safeAreaInset(edge: .bottom, spacing: 0) { NowPlayingInset() }
+                // Under every page pushed onto the main screen, so pause and stop are in one
+                // place there. The main screen itself has the playing row instead.
+                .safeAreaInset(edge: .bottom, spacing: 0) { NowPlayingInset(isHidden: mainScreenOnTop) }
                 .environment(\.openPanel, { setPanel(open: true) })
                 .environment(\.panelIsOpen, panelOpen)
                 .allowsHitTesting(!panelOpen)

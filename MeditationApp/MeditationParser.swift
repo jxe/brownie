@@ -151,6 +151,43 @@ struct MeditationParser {
 
     /// Finds the script problems most likely to go unnoticed until playback, such as a
     /// `~ref` that would be spoken literally because no pool by that name exists yet.
+    /// A pool no line draws from, with a fix that deletes its whole block: the `~ name` line
+    /// and the indented items (commented-out ones too) under it.
+    private static func unusedPoolDiagnostics(_ lines: [(text: String, range: NSRange)], in ns: NSString) -> [MeditationDiagnostic] {
+        var used: Set<String> = []
+        for line in lines {
+            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
+            if isPoolDefinitionHeader(trimmed) { continue }
+            let lineNS = line.text as NSString
+            for match in refRegex.matches(in: line.text, range: NSRange(location: 0, length: lineNS.length)) {
+                let poolRange = match.range(at: 2)
+                used.insert(lineNS.substring(with: poolRange.location != NSNotFound ? poolRange : match.range(at: 1)))
+            }
+        }
+        var diagnostics: [MeditationDiagnostic] = []
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
+            guard isPoolDefinitionHeader(trimmed) else { continue }
+            let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+            guard !used.contains(name) else { continue }
+            var last = index
+            while last + 1 < lines.count,
+                  lines[last + 1].text.hasPrefix("  ") || lines[last + 1].text.hasPrefix("\t") {
+                last += 1
+            }
+            // Through the last item's line break, so no empty line is left behind.
+            let start = lines[index].range.location
+            let end = NSMaxRange(ns.lineRange(for: lines[last].range))
+            let block = NSRange(location: start, length: end - start)
+            diagnostics.append(MeditationDiagnostic(
+                line: index + 1,
+                range: line.range,
+                message: "Nothing uses pool ~\(name).",
+                fix: MeditationFix(title: "Delete pool ~\(name)?", range: block, replacement: "")))
+        }
+        return diagnostics
+    }
+
     static func diagnose(_ source: String) -> [MeditationDiagnostic] {
         let ns = source as NSString
         var lines: [(text: String, range: NSRange)] = []
@@ -266,6 +303,7 @@ struct MeditationParser {
             }
         }
         closeOpenPool()
+        diagnostics += unusedPoolDiagnostics(lines, in: ns)
         for bracket in openBrackets {
             diagnostics.append(MeditationDiagnostic(line: bracket.line, range: bracket.range,
                                                     message: "This [ is never closed, so it runs to the end. Add ] ×N after what it repeats."))
