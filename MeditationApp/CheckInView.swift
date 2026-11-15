@@ -5,6 +5,7 @@ struct CheckInView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.hidesNowPlayingBar) private var hidesNowPlayingBar
 
     @State private var showingNegativeSheet = false
     @State private var showingPositiveSheet = false
@@ -95,56 +96,62 @@ struct CheckInView: View {
             }
         )
         .safeAreaInset(edge: .bottom) {
-            GeometryReader { geo in
-                let barHorizontalPadding: CGFloat = 40
-                // No tab bar to point at any more, so the bubble has no tail.
-                let barShape = RoundedRectangle(cornerRadius: 18)
+            VStack(spacing: 0) {
+                // The shared bar would sit over Negative and Positive, so it goes above them here.
+                NowPlayingInset()
+                GeometryReader { geo in
+                    let barHorizontalPadding: CGFloat = 40
+                    // No tab bar to point at any more, so the bubble has no tail.
+                    let barShape = RoundedRectangle(cornerRadius: 18)
 
-                HStack(spacing: 0) {
-                    Button {
-                        openEmotionPicker(.negative)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.body)
-                                .foregroundStyle(.tint)
-                            Text("Negative")
-                                .font(.subheadline)
-                                .foregroundStyle(.primary)
+                    HStack(spacing: 0) {
+                        Button {
+                            openEmotionPicker(.negative)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.body)
+                                    .foregroundStyle(.tint)
+                                Text("Negative")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 28)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 28)
-                    }
-                    .buttonStyle(GlassPressStyle())
+                        .buttonStyle(GlassPressStyle())
 
-                    Divider()
-                        .frame(height: 24)
+                        Divider()
+                            .frame(height: 24)
 
-                    Button {
-                        openEmotionPicker(.positive)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.body)
-                                .foregroundStyle(.tint)
-                            Text("Positive")
-                                .font(.subheadline)
-                                .foregroundStyle(.primary)
+                        Button {
+                            openEmotionPicker(.positive)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.body)
+                                    .foregroundStyle(.tint)
+                                Text("Positive")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 28)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 28)
+                        .buttonStyle(GlassPressStyle())
                     }
-                    .buttonStyle(GlassPressStyle())
+                    .clipShape(barShape)
+                    .contentShape(Rectangle())
+                    .glassEffect(.regular, in: barShape)
+                    .padding(.horizontal, barHorizontalPadding)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
                 }
-                .clipShape(barShape)
-                .contentShape(Rectangle())
-                .glassEffect(.regular, in: barShape)
-                .padding(.horizontal, barHorizontalPadding)
-                .frame(maxHeight: .infinity, alignment: .bottom)
+                .frame(height: 104)
+                .padding(.bottom, 4)
             }
-            .frame(height: 104)
-            .padding(.bottom, 4)
         }
+        .onAppear { hidesNowPlayingBar("feelings", true) }
+        .onDisappear { hidesNowPlayingBar("feelings", false) }
         // The same background as the main screen it opens from.
         .background(Color("BackgroundColor").ignoresSafeArea())
         .navigationTitle("Feelings")
