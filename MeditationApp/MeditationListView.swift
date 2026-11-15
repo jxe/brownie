@@ -1172,9 +1172,108 @@ private struct LastPlayedLabel: View {
     }
 }
 
+/// Sits under every page of the main screen, the editor included, while a meditation is
+/// starting, playing or paused: what's playing, how far along it is, and pause and stop. It
+/// reads the player itself, so its changes don't re-render the screen it sits under.
+struct NowPlayingInset: View {
+    @Environment(MeditationPlayer.self) private var player
+
+    var body: some View {
+        let isShowing = switch player.state {
+        case .preparing, .playing, .paused: true
+        case .idle, .finished: false
+        }
+        VStack(spacing: 0) {
+            if isShowing {
+                NowPlayingBar()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.3, bounce: 0.2), value: isShowing)
+    }
+}
+
+/// Drawn like a playing meditation row: the same rounded accent fill, lift and pulsing dot.
+private struct NowPlayingBar: View {
+    @Environment(MeditationPlayer.self) private var player
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var title: String {
+        if !player.currentTitle.isEmpty { return player.currentTitle }
+        return player.currentSourceURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+    }
+
+    var body: some View {
+        let fill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.65)
+        let liftShadow = colorScheme == .dark ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.18)
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        HStack(spacing: 10) {
+            PlayingPulseDot(isPulsing: player.isPlaying)
+                .frame(width: 12, height: 12)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                if player.isPreparing {
+                    Text("Starting…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    PlaybackTimeLabel()
+                }
+            }
+            Spacer(minLength: 8)
+            Group {
+                if player.isPreparing {
+                    ProgressView()
+                } else {
+                    Button {
+                        player.togglePause()
+                    } label: {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .contentTransition(.symbolEffect(.replace))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(player.isPlaying ? "Pause" : "Resume")
+                }
+            }
+            .frame(width: 44, height: 44)
+            Button {
+                player.stop()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Stop")
+        }
+        .font(.title3)
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.primary)
+        .padding(.leading, 16)
+        .padding(.trailing, 6)
+        .padding(.vertical, 4)
+        .contentShape(shape)
+        .background {
+            ZStack {
+                shape.fill(Color("BackgroundColor"))
+                shape.fill(fill)
+            }
+            .shadow(color: liftShadow, radius: colorScheme == .dark ? 8 : 7, y: colorScheme == .dark ? 0 : 3)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+        .frame(maxWidth: 720)
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// Elapsed time and total length of the current meditation. Kept in its own view so the
 /// once-a-second elapsedSeconds tick only re-renders this label, not the list.
-private struct PlaybackTimeLabel: View {
+struct PlaybackTimeLabel: View {
     @Environment(MeditationPlayer.self) private var player
 
     var body: some View {
@@ -1197,7 +1296,7 @@ private struct PlaybackTimeLabel: View {
 
 /// Pulsing "now playing" dot. The pulse is a Core Animation layer animation, so it runs in the
 /// render server with no per-frame work in the app, and exists only while actually pulsing.
-private struct PlayingPulseDot: UIViewRepresentable {
+struct PlayingPulseDot: UIViewRepresentable {
     let isPulsing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

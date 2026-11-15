@@ -104,6 +104,8 @@ struct ContentView: View {
                             .frame(width: 0, height: 0)
                         )
                 }
+                // Under every page of the main screen, so pause and stop are always in one place.
+                .safeAreaInset(edge: .bottom, spacing: 0) { NowPlayingInset() }
                 .environment(\.openPanel, { setPanel(open: true) })
                 .environment(\.panelIsOpen, panelOpen)
                 .allowsHitTesting(!panelOpen)

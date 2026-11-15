@@ -98,7 +98,8 @@ class MeditationPlayer: NSObject {
     @ObservationIgnored private var renderTask: Task<Void, Never>?
     @ObservationIgnored private var stateBeforeInterruption: State?
     @ObservationIgnored private var currentMeditation: Meditation?
-    @ObservationIgnored private var currentTitle = ""
+    /// The playing meditation's title, for the now-playing bar and the lock screen.
+    private(set) var currentTitle = ""
     @ObservationIgnored private var playbackStarted = false
     @ObservationIgnored private var playbackGeneration = 0
     @ObservationIgnored private var isAppInForeground = true

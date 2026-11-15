@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Pushed from the meditation list. Play, pause and stop in the title bar try out the
-/// script as it stands, and keep playing after you go back. Any edit stops playback, so the
+/// Pushed from the meditation list. Play in the title bar tries out the script as it stands;
+/// pause and stop are on the now-playing bar, and it keeps playing after you go back. Any edit stops playback, so the
 /// next play starts from the top. Edits save themselves a moment after you stop typing,
 /// and again on leaving the page or the app.
 struct MeditationEditorView: View {
@@ -22,6 +22,9 @@ struct MeditationEditorView: View {
     /// The name this page's file has on disk: the opened file's, or what autosave last wrote.
     /// A rename removes it; a name that belongs to some other meditation is never written over.
     @State private var diskName: String?
+    /// Set once this page plays its script, so a new meditation (no file yet) knows it's the
+    /// one playing.
+    @State private var startedHere = false
 
     private var hasChanges: Bool {
         guard let saved else { return false }
@@ -134,34 +137,29 @@ struct MeditationEditorView: View {
         .onChange(of: filename) { stopIfPlaying() }
     }
 
+    /// Plays the script as it stands. Pause and stop are on the now-playing bar at the bottom,
+    /// as on every other page, so this steps aside while this script is the one playing.
     @ViewBuilder
     private var playbackControls: some View {
-        Button {
-            switch player.state {
-            case .playing: player.pause()
-            case .paused: player.resume()
-            default: player.play(MeditationParser.parse(content), sourceURL: sourceURL)
-            }
-        } label: {
-            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-        }
-        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-        .disabled(player.isPreparing)
-
-        if isActive {
+        if !isPlayingThisScript {
             Button {
-                player.stop()
+                startedHere = true
+                player.play(MeditationParser.parse(content), sourceURL: sourceURL)
             } label: {
-                Image(systemName: "stop.fill")
+                Image(systemName: "play.fill")
             }
-            .accessibilityLabel("Stop")
+            .accessibilityLabel("Play")
         }
     }
 
-    private var isActive: Bool {
+    /// Whether what's playing (or paused, or starting) came from this page's script.
+    private var isPlayingThisScript: Bool {
         switch player.state {
-        case .playing, .paused, .preparing: true
-        case .idle, .finished: false
+        case .playing, .paused, .preparing:
+            if let sourceURL { return player.currentSourceURL == sourceURL }
+            return startedHere && player.currentSourceURL == nil
+        case .idle, .finished:
+            return false
         }
     }
 
