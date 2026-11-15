@@ -54,6 +54,9 @@ struct MedTextEditor: UIViewRepresentable {
 
         // Tapping a time, repeat count or pool edits it directly instead of placing the cursor.
         context.coordinator.textView = textView
+        textView.onNewPool = { [weak coordinator = context.coordinator, weak textView] in
+            if let coordinator, let textView { coordinator.startNewPool(in: textView) }
+        }
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                          action: #selector(Coordinator.handleQuickEditTap(_:)))
         tap.delegate = context.coordinator
@@ -79,7 +82,15 @@ struct MedTextEditor: UIViewRepresentable {
                 func insertAction(_ name: String) -> UIAction {
                     UIAction(title: "~\(name)") { _ in textView?.insertText("~\(name)") }
                 }
-                var sections: [UIMenuElement] = []
+                var sections: [UIMenuElement] = [
+                    // Defined right where it's first used: names it, puts the ~name here, and
+                    // opens the new pool's sheet for its items.
+                    UIMenu(options: .displayInline, children: [
+                        UIAction(title: "New Pool…", image: UIImage(systemName: "plus")) { _ in
+                            (textView as? MedTextView)?.onNewPool?()
+                        }
+                    ])
+                ]
                 if !names.pools.isEmpty {
                     sections.append(UIMenu(title: "Pools", options: .displayInline,
                                            children: names.pools.map(insertAction)))
@@ -87,9 +98,6 @@ struct MedTextEditor: UIViewRepresentable {
                 if !names.picks.isEmpty {
                     sections.append(UIMenu(title: "Remembered picks", options: .displayInline,
                                            children: names.picks.map(insertAction)))
-                }
-                if sections.isEmpty {
-                    sections.append(UIAction(title: "No pools defined yet", attributes: .disabled) { _ in })
                 }
                 completion(sections)
             }
@@ -449,6 +457,80 @@ struct MedTextEditor: UIViewRepresentable {
             }
         }
 
+        // MARK: New pool
+
+        /// Asks for a name, then puts `~name` where the caret was and opens the new pool's sheet.
+        func startNewPool(in textView: UITextView) {
+            guard let presenter = textView.medTopViewController() else { return }
+            let caret = textView.selectedRange
+            let alert = UIAlertController(title: "New Pool", message: "A ~name goes here, and its items go in the pool.",
+                                          preferredStyle: .alert)
+            alert.addTextField { field in
+                field.placeholder = "name"
+                field.autocapitalizationType = .none
+                field.autocorrectionType = .no
+            }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            alert.addAction(UIAlertAction(title: "Create", style: .default) { [weak self, weak textView, weak alert] _ in
+                guard let self, let textView, let name = Self.poolName(from: alert?.textFields?.first?.text ?? "") else { return }
+                self.createPool(named: name, at: caret, in: textView)
+            })
+            presenter.present(alert, animated: true)
+        }
+
+        /// What was typed, made into a pool name: spaces become `_`, anything else odd is dropped.
+        static func poolName(from typed: String) -> String? {
+            let cleaned = typed.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: " ", with: "_")
+                .filter { ($0.isASCII && ($0.isLetter || $0.isNumber)) || $0 == "_" }
+            guard let first = cleaned.first else { return nil }
+            return first.isNumber ? "_" + cleaned : cleaned
+        }
+
+        private func createPool(named name: String, at caret: NSRange, in textView: UITextView) {
+            let medView = textView as? MedTextView
+            medView?.isAdjustingSelection = true
+            defer { medView?.isAdjustingSelection = false }
+            var ns = textView.text as NSString
+            guard NSMaxRange(caret) <= ns.length else { return }
+
+            // The reference, where the caret was. A ~ typed just before it is taken in.
+            var refRange = caret
+            if refRange.location > 0, ns.character(at: refRange.location - 1) == 0x7E {
+                refRange = NSRange(location: refRange.location - 1, length: refRange.length + 1)
+            }
+            let reference = "~\(name)"
+            guard let refText = textRange(refRange, in: textView) else { return }
+            textView.replace(refText, withText: reference)
+            var caretAfter = refRange.location + (reference as NSString).length
+
+            let text = textView.text ?? ""
+            ns = text as NSString
+            if !MeditationParser.referenceableNames(in: text).pools.contains(name) {
+                // Defined before its first use: after the last pool above this line, so pools stay
+                // together, or else on its own line just above (above the pool it's used in, if any).
+                let lineStart = ns.lineRange(for: NSRange(location: refRange.location, length: 0)).location
+                let blocks = MedPoolBlock.blockRanges(in: text)
+                var anchor = blocks.first { NSLocationInRange(lineStart, $0.range) }?.range.location ?? lineStart
+                if let header = MedHeader.range(in: text), anchor < NSMaxRange(header) {
+                    anchor = NSMaxRange(header)
+                }
+                let insertion: (at: Int, text: String)
+                if let previous = blocks.last(where: { NSMaxRange($0.range) <= anchor }) {
+                    insertion = (NSMaxRange(previous.range), "\n~ \(name)")
+                } else {
+                    insertion = (anchor, "~ \(name)\n\n")
+                }
+                if let range = textRange(NSRange(location: insertion.at, length: 0), in: textView) {
+                    textView.replace(range, withText: insertion.text)
+                    if insertion.at <= refRange.location { caretAfter += (insertion.text as NSString).length }
+                }
+            }
+            textView.selectedRange = NSRange(location: caretAfter, length: 0)
+            textViewDidChange(textView)
+            present(.poolBlock(name: name, hitRange: NSRange(location: 0, length: 0)), from: textView)
+        }
+
         /// Keep the popover a popover on iPhone instead of turning it into a sheet.
         func adaptivePresentationStyle(for controller: UIPresentationController,
                                        traitCollection: UITraitCollection) -> UIModalPresentationStyle {
@@ -491,6 +573,8 @@ private extension MedQuickEditTarget {
 final class MedTextView: UITextView {
     /// The folded pools, and the text they were worked out for (stale while an edit is under way).
     var folds: [MedFold] = []
+    /// The ~ menu's New Pool…, handled by the editor's coordinator.
+    var onNewPool: (() -> Void)?
     var foldedText: String?
     /// Set while the caret is being moved on purpose, so the move isn't corrected again.
     var isAdjustingSelection = false

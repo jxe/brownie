@@ -13,6 +13,7 @@ struct MeditationEditorView: View {
     let onSave: (_ filename: String, _ content: String) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @Environment(MeditationPlayer.self) private var player
+    @Environment(EmotionStore.self) private var store
     @State private var pendingFix: MeditationFix? = nil
     /// The script and filename as last written to disk (or as opened).
     @State private var saved: (content: String, filename: String)?
@@ -148,6 +149,10 @@ struct MeditationEditorView: View {
         if !isPlayingThisScript {
             Button {
                 startedHere = true
+                // Counts like a play from the list, so the row's last-played time updates.
+                if let sourceURL {
+                    store.markMeditationPlayed(filename: sourceURL.deletingPathExtension().lastPathComponent)
+                }
                 player.play(MeditationParser.parse(content), sourceURL: sourceURL)
             } label: {
                 Image(systemName: "play.fill")

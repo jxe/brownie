@@ -584,6 +584,8 @@ struct MedPoolEditorSheet: View {
                     }
                 }
             }
+            // A new pool opens ready for its first item.
+            .onAppear { if items.isEmpty { addItem(after: nil) } }
             .confirmationDialog("Delete ~\(name) and its \(items.count) items?",
                                 isPresented: $confirmingDelete, titleVisibility: .visible) {
                 Button("Delete Pool", role: .destructive, action: onDelete)
