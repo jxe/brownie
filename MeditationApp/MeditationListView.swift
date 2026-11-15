@@ -29,8 +29,10 @@ struct MeditationListView: View {
     @State private var showingFeelings = false
     @State private var showingTodos = false
     /// The filter bar. The app opens with both on; at least one always stays on.
-    @State private var showCurrent = true
-    @State private var showAlways = true
+    /// Whether each section of the main screen is open. Both always show; their headers
+    /// fold them away, and the app remembers how they were left.
+    @AppStorage("homeCurrentExpanded") private var currentExpanded = true
+    @AppStorage("homeFoundationsExpanded") private var foundationsExpanded = true
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
@@ -93,7 +95,8 @@ struct MeditationListView: View {
     /// Always is filtered out, so nothing is listed twice.
     private var currentFiles: [URL] {
         let base = hasEras ? currentEraFiles : files.filter { !isTimeless($0) }
-        return showAlways ? base.filter { !isTimeless($0) } : base
+        // A foundation tagged with this era is listed once, under Foundations.
+        return base.filter { !isTimeless($0) }
     }
 
     private var pastShelfFiles: [URL] {
@@ -122,36 +125,33 @@ struct MeditationListView: View {
                 switch shelf {
                 case .home:
                     feelingsCard
-                    // To-dos are what's pressing for now, so they go with Current.
-                    if showCurrent {
-                        todosCard
-                    }
+                    todosCard
                     if !files.isEmpty || hasOpenTodos {
                         // Current comes first: it's what's pressing right now.
-                        if showCurrent {
-                            Section {
+                        Section {
+                            if currentExpanded {
                                 ForEach(currentFiles, id: \.self) { url in
                                     listRow(for: url, section: "current")
                                 }
                                 if currentFiles.isEmpty {
                                     emptyRow("Nothing in this era yet. Bring meditations along from a past era in History, or write a new one.")
                                 }
-                            } header: {
-                                // Just the era's own name; "This Era" only when there are no eras yet.
-                                Text(eraIndex.current?.tag ?? "This Era")
                             }
+                        } header: {
+                            // Just the era's own name; "This Era" only when there are no eras yet.
+                            sectionToggle(eraIndex.current?.tag ?? "This Era", isExpanded: $currentExpanded)
                         }
-                        if showAlways {
-                            Section {
+                        Section {
+                            if foundationsExpanded {
                                 ForEach(timelessFiles, id: \.self) { url in
                                     listRow(for: url, section: "always")
                                 }
                                 if timelessFiles.isEmpty {
                                     emptyRow("Long-press a meditation and choose Eras… to make it a Foundation.")
                                 }
-                            } header: {
-                                Text("Foundations")
                             }
+                        } header: {
+                            sectionToggle("Foundations", isExpanded: $foundationsExpanded)
                         }
                     }
                 case .past(let era):
@@ -219,9 +219,6 @@ struct MeditationListView: View {
                                 }
                         }
                         .accessibilityLabel("History and Settings")
-                    }
-                    ToolbarItem(placement: .principal) {
-                        filterBar
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -422,41 +419,24 @@ struct MeditationListView: View {
             .listRowSeparator(.hidden)
     }
 
-    /// A title menu in the middle of the top bar: it names what's showing, and its menu
-    /// checks Current, Always, or both. Unchecking the only one that's on does nothing,
-    /// so the list never goes empty.
-    private var filterBar: some View {
-        Menu {
-            Toggle("This Era", isOn: Binding(
-                get: { showCurrent },
-                set: { on in withAnimation(.snappy(duration: 0.25)) { showCurrent = on || !showAlways } }
-            ))
-            Toggle("Foundations", isOn: Binding(
-                get: { showAlways },
-                set: { on in withAnimation(.snappy(duration: 0.25)) { showAlways = on || !showCurrent } }
-            ))
+    /// A section header that folds its section away, like a disclosure group.
+    private func sectionToggle(_ title: String, isExpanded: Binding<Bool>) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { isExpanded.wrappedValue.toggle() }
         } label: {
-            HStack(spacing: 4) {
-                Text(filterTitle)
-                    .font(.headline)
-                Image(systemName: "chevron.down")
+            HStack(spacing: 6) {
+                Text(title)
+                Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded.wrappedValue ? 90 : 0))
+                Spacer()
             }
-            .foregroundStyle(.primary)
+            .contentShape(Rectangle())
         }
-        .accessibilityLabel("Show")
-        .accessibilityValue(filterTitle)
-    }
-
-    private var filterTitle: String {
-        switch (showCurrent, showAlways) {
-        // Timeframes: this era alone, or everything, the longer view. Foundations alone
-        // are the meditations kept across eras.
-        case (true, true): "Everything"
-        case (true, false): "This Era"
-        default: "Foundations"
-        }
+        .buttonStyle(.plain)
+        // Not a tap on empty space, so it never stops a playing meditation.
+        .tracksTappableFrame("header|\(title)", in: tappableFrames)
+        .accessibilityValue(isExpanded.wrappedValue ? "Expanded" : "Collapsed")
     }
 
     private func listRow(for url: URL, section: String, bringAlong: Bool = false) -> some View {
@@ -803,10 +783,8 @@ struct MeditationListView: View {
     }
 
     private func newFile() {
-        // A meditation written while only Always shows is timeless; otherwise it joins the current era.
-        let eraSuffix = showAlways && !showCurrent
-            ? " #\(EraIndex.timelessTag)"
-            : eraIndex.current.map { " #\($0.tag)" } ?? ""
+        // A new meditation joins the current era.
+        let eraSuffix = eraIndex.current.map { " #\($0.tag)" } ?? ""
         editorContent = "# New Meditation\(eraSuffix)\n\n"
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
