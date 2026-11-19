@@ -1173,7 +1173,8 @@ struct NowPlayingInset: View {
     }
 }
 
-/// Drawn like a playing meditation row: the same rounded accent fill, lift and pulsing dot.
+/// A full-width stripe along the bottom edge, tinted like a playing row, running down under
+/// the home indicator. Pages sit above it rather than under it.
 private struct NowPlayingBar: View {
     @Environment(MeditationPlayer.self) private var player
     @Environment(\.colorScheme) private var colorScheme
@@ -1185,8 +1186,6 @@ private struct NowPlayingBar: View {
 
     var body: some View {
         let fill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.65)
-        let liftShadow = colorScheme == .dark ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.18)
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         HStack(spacing: 10) {
             PlayingPulseDot(isPulsing: player.isPlaying)
                 .frame(width: 12, height: 12)
@@ -1232,21 +1231,20 @@ private struct NowPlayingBar: View {
         .font(.title3)
         .buttonStyle(.plain)
         .foregroundStyle(Color.primary)
-        .padding(.leading, 16)
-        .padding(.trailing, 6)
-        .padding(.vertical, 4)
-        .contentShape(shape)
+        .padding(.leading, 20)
+        .padding(.trailing, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: 720)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
         .background {
             ZStack {
-                shape.fill(Color("BackgroundColor"))
-                shape.fill(fill)
+                Color("BackgroundColor")
+                fill
             }
-            .shadow(color: liftShadow, radius: colorScheme == .dark ? 8 : 7, y: colorScheme == .dark ? 0 : 3)
+            .ignoresSafeArea(edges: .bottom)
+            .overlay(alignment: .top) { Divider() }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
-        .padding(.bottom, 4)
-        .frame(maxWidth: 720)
         .accessibilityElement(children: .contain)
     }
 }

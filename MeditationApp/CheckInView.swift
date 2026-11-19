@@ -5,7 +5,6 @@ struct CheckInView: View {
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.hidesNowPlayingBar) private var hidesNowPlayingBar
 
     @State private var showingNegativeSheet = false
     @State private var showingPositiveSheet = false
@@ -97,8 +96,6 @@ struct CheckInView: View {
         )
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
-                // The shared bar would sit over Negative and Positive, so it goes above them here.
-                NowPlayingInset()
                 GeometryReader { geo in
                     let barHorizontalPadding: CGFloat = 40
                     // No tab bar to point at any more, so the bubble has no tail.
@@ -150,8 +147,6 @@ struct CheckInView: View {
                 .padding(.bottom, 4)
             }
         }
-        .onAppear { hidesNowPlayingBar("feelings", true) }
-        .onDisappear { hidesNowPlayingBar("feelings", false) }
         // The same background as the main screen it opens from.
         .background(Color("BackgroundColor").ignoresSafeArea())
         .navigationTitle("Feelings")
