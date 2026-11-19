@@ -217,6 +217,7 @@ struct MeditationListView: View {
             }
             .navigationDestination(isPresented: $showingTodos) {
                 TodosView()
+                    .nowPlayingStripe()
             }
             .toolbar {
                 if !isPast {
@@ -286,6 +287,7 @@ struct MeditationListView: View {
                         refreshFiles()
                     }
                 }
+                .nowPlayingStripe()
             }
             .sheet(isPresented: $showingStore) {
                 MeditationStoreView()
@@ -1146,6 +1148,14 @@ private struct LastPlayedLabel: View {
         case ..<365: return "\(days / 30)mo"
         default: return "\(days / 365)y"
         }
+    }
+}
+
+extension View {
+    /// The now-playing stripe under this page. Each pushed page carries its own, so it slides
+    /// in and out with the page. Feelings puts one under its Negative/Positive bar instead.
+    func nowPlayingStripe() -> some View {
+        safeAreaInset(edge: .bottom, spacing: 0) { NowPlayingInset() }
     }
 }
 

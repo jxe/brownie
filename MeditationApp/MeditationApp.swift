@@ -3,10 +3,6 @@ import SwiftUI
 extension EnvironmentValues {
     /// Opens the left panel (History and Settings) from anywhere on the main screen.
     @Entry var openPanel: () -> Void = {}
-    /// A page that shows what's playing itself (the main screen's rows) or places the bar in its
-    /// own bottom controls (Feelings) calls this with true while it's on screen, so the shared
-    /// now-playing bar stays out of its way.
-    @Entry var hidesNowPlayingBar: (_ page: String, _ hidden: Bool) -> Void = { _, _ in }
     /// Whether the left panel is open, so the main screen can refresh what Settings may have changed.
     @Entry var panelIsOpen = false
     /// Closes the left panel and opens one of its pages on the main screen.
@@ -76,9 +72,6 @@ struct ContentView: View {
     @State private var panelMounted = false
     /// The main screen's pushed pages that came from the panel.
     @State private var mainPath: [PanelPage] = []
-    /// Pages on screen that keep the now-playing bar to themselves (see `hidesNowPlayingBar`).
-    /// A set, since a pushed page can appear before the one under it disappears.
-    @State private var nowPlayingBarHiders: Set<String> = ["main"]
 
     var body: some View {
         GeometryReader { geo in
@@ -99,9 +92,7 @@ struct ContentView: View {
                 NavigationStack(path: $mainPath) {
                     MeditationListView(shelf: .home)
                         // Its rows show what's playing, so the bar only comes up over it.
-                        .onAppear { nowPlayingBarHiders.insert("main") }
-                        .onDisappear { nowPlayingBarHiders.remove("main") }
-                        .navigationDestination(for: PanelPage.self) { PanelPageView(page: $0) }
+                        .navigationDestination(for: PanelPage.self) { PanelPageView(page: $0).nowPlayingStripe() }
                         // A swipe in from the left edge pulls the panel out, but only on the
                         // main screen itself: anywhere deeper, that swipe goes back.
                         .background(
@@ -114,12 +105,6 @@ struct ContentView: View {
                             .frame(width: 0, height: 0)
                         )
                 }
-                // Under every page pushed onto the main screen, so pause and stop are in one
-                // place there. The main screen itself has the playing row instead.
-                .safeAreaInset(edge: .bottom, spacing: 0) { NowPlayingInset(isHidden: !nowPlayingBarHiders.isEmpty) }
-                .environment(\.hidesNowPlayingBar, { page, hidden in
-                    if hidden { nowPlayingBarHiders.insert(page) } else { nowPlayingBarHiders.remove(page) }
-                })
                 .environment(\.openPanel, { setPanel(open: true) })
                 .environment(\.panelIsOpen, panelOpen)
                 .allowsHitTesting(!panelOpen)

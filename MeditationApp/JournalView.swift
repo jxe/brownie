@@ -214,6 +214,7 @@ struct TodosView: View {
         .navigationDestination(item: $openedTodo) { todo in
             if let emotion = Emotion.named(todo.emotionName) {
                 FeelingTodoView(emotion: emotion, todoID: todo.id)
+                    .nowPlayingStripe()
             }
         }
     }
