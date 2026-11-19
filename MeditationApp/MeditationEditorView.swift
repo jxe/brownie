@@ -185,6 +185,8 @@ struct MeditationEditorView: View {
         if let diskName, diskName != target {
             let old = FileManager.default.meditationsDirectory.appendingPathComponent("\(diskName).med")
             FileManager.default.deleteMeditation(at: old)
+            // Eras that it was brought along to know it by name.
+            EraIndex.rename(diskName, to: target)
         }
         diskName = target
         saved = (content, filename)

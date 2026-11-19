@@ -39,8 +39,10 @@ struct MeditationListView: View {
     @State private var isNewFile = false
     @State private var editorURL: URL?
     @State private var hasGoodVoice = MeditationPlayer.hasGoodVoice
-    @State private var eraEditTarget: EraEditTarget? = nil
-    @State private var showingNewEra = false
+    @State private var confirmingStartEra = false
+    /// Whether the previous era's leftovers are unfolded on the main screen. Nil follows the
+    /// default: open while this era is still empty, folded once it has something.
+    @State private var earlierExpandedChoice: Bool? = nil
     /// Where rows and headers are on screen, so a tap between them can stop playback.
     @State private var tappableFrames = TappableFrames()
     @State private var showingStore = false
@@ -55,48 +57,48 @@ struct MeditationListView: View {
         fileTags[url]?.contains(EraIndex.timelessTag) == true
     }
 
-    /// The file's era tags, newest era first.
-    private func eraTags(of url: URL) -> [String] {
-        let tags = fileTags[url] ?? []
-        return eraIndex.eras.map(\.tag).filter { tags.contains($0) }
-    }
-
-    /// Files with no era tag made since the current era started (e.g. created straight in
-    /// iCloud) count as part of the current era.
-    private func isUnassignedNew(_ url: URL) -> Bool {
-        guard let current = eraIndex.current, eraTags(of: url).isEmpty else { return false }
-        return EraIndex.dateString(for: url) >= current.started
-    }
-
-    /// The current era's meditations, timeless ones tagged with it included.
-    private var currentEraFiles: [URL] {
-        guard let current = eraIndex.current else { return files }
-        return files.filter {
-            fileTags[$0]?.contains(current.tag) == true || (!isTimeless($0) && isUnassignedNew($0))
-        }
+    /// This era's meditations: made in it or brought along to it. Foundations are listed
+    /// once, under Foundations.
+    private var currentFiles: [URL] {
+        let base = files.filter { !isTimeless($0) }
+        guard let current = eraIndex.current else { return base }
+        return base.filter { eraIndex.belongs($0, to: current) }
     }
 
     private var timelessFiles: [URL] {
         files.filter(isTimeless)
     }
 
-    /// Meditations from a past era, minus ones already brought along.
-    private func pastFiles(_ era: EraSelection) -> [URL] {
+    /// Meditations from a past era, minus ones already brought along to this one.
+    private func pastFiles(_ selection: EraSelection) -> [URL] {
         guard let current = eraIndex.current else { return [] }
-        switch era {
-        case .era(let tag):
-            return eraFilesFor(tag).filter { fileTags[$0]?.contains(current.tag) != true }
+        let candidates = files.filter { !isTimeless($0) && !eraIndex.belongs($0, to: current) }
+        switch selection {
+        case .era(let id):
+            guard let era = eraIndex.era(id) else { return [] }
+            return candidates.filter { eraIndex.belongs($0, to: era) }
         case .older:
-            return files.filter { !isTimeless($0) && eraTags(of: $0).isEmpty && !isUnassignedNew($0) }
+            // Made before the first era and never brought along to any.
+            let kept = Set(eraIndex.eras.flatMap(\.kept))
+            return candidates.filter { eraIndex.eraMade($0) == nil && !kept.contains(EraIndex.name(of: $0)) }
         }
     }
 
-    /// This era's meditations. Timeless ones tagged with the era show here only while
-    /// Always is filtered out, so nothing is listed twice.
-    private var currentFiles: [URL] {
-        let base = hasEras ? currentEraFiles : files.filter { !isTimeless($0) }
-        // A foundation tagged with this era is listed once, under Foundations.
-        return base.filter { !isTimeless($0) }
+    /// The era before this one, whose leftovers wait at the bottom of the main screen.
+    private var previousEra: EraSelection? {
+        guard !eraIndex.eras.isEmpty else { return nil }
+        return eraIndex.eras.count > 1 ? .era(eraIndex.eras[1].id) : .older
+    }
+
+    private var earlierFiles: [URL] {
+        previousEra.map(pastFiles) ?? []
+    }
+
+    private var earlierExpanded: Binding<Bool> {
+        Binding(
+            get: { earlierExpandedChoice ?? currentFiles.isEmpty },
+            set: { earlierExpandedChoice = $0 }
+        )
     }
 
     private var pastShelfFiles: [URL] {
@@ -116,7 +118,7 @@ struct MeditationListView: View {
     private var title: String {
         switch shelf {
         case .home: ""
-        case .past(let era): era.label
+        case .past(let era): eraIndex.label(for: era)
         }
     }
 
@@ -134,12 +136,14 @@ struct MeditationListView: View {
                                     listRow(for: url, section: "current")
                                 }
                                 if currentFiles.isEmpty {
-                                    emptyRow("Nothing in this era yet. Bring meditations along from a past era in History, or write a new one.")
+                                    emptyRow(earlierFiles.isEmpty
+                                        ? "Nothing here yet. Write a new meditation, or bring one along from a past era in History."
+                                        : "Nothing here yet. Listen to last era's meditations below and bring along the ones that still fit.")
                                 }
                             }
                         } header: {
-                            // Just the era's own name; "This Era" only when there are no eras yet.
-                            sectionToggle(eraIndex.current?.tag ?? "This Era", isExpanded: $currentExpanded)
+                            // An era has no name, only when it started.
+                            sectionToggle(eraIndex.current.map(eraIndex.label(for:)) ?? "Now", isExpanded: $currentExpanded)
                         }
                         Section {
                             if foundationsExpanded {
@@ -147,11 +151,24 @@ struct MeditationListView: View {
                                     listRow(for: url, section: "always")
                                 }
                                 if timelessFiles.isEmpty {
-                                    emptyRow("Long-press a meditation and choose Eras… to make it a Foundation.")
+                                    emptyRow("Long-press a meditation and choose Make a Foundation.")
                                 }
                             }
                         } header: {
                             sectionToggle("Foundations", isExpanded: $foundationsExpanded)
+                        }
+                        // Last era's meditations that haven't come along yet, to listen to and
+                        // bring along from the long-press menu.
+                        if let previousEra, !earlierFiles.isEmpty {
+                            Section {
+                                if earlierExpanded.wrappedValue {
+                                    ForEach(earlierFiles, id: \.self) { url in
+                                        listRow(for: url, section: "earlier", bringAlong: true)
+                                    }
+                                }
+                            } header: {
+                                sectionToggle("From \(eraIndex.label(for: previousEra))", isExpanded: earlierExpanded)
+                            }
                         }
                     }
                 case .past(let era):
@@ -167,7 +184,7 @@ struct MeditationListView: View {
                         listRow(for: url, section: "past", bringAlong: hasEras)
                     }
                     if pastShelfFiles.isEmpty {
-                        emptyRow("Everything from \(era.label) has been brought along.")
+                        emptyRow("Everything from \(eraIndex.label(for: era)) has been brought along.")
                     }
                 }
             }
@@ -234,9 +251,9 @@ struct MeditationListView: View {
                             }
                             Divider()
                             Button {
-                                showingNewEra = true
+                                confirmingStartEra = true
                             } label: {
-                                Label("Start New Era…", systemImage: "sparkles")
+                                Label("Start a New Era…", systemImage: "sparkles")
                             }
                         } label: {
                             Image(systemName: "plus")
@@ -299,19 +316,13 @@ struct MeditationListView: View {
             } message: { _ in
                 Text("Its author shared a new version. It replaces this copy, including any changes you made to it.")
             }
-            .sheet(item: $eraEditTarget) { target in
-                EraEditorView(
-                    title: target.title,
-                    eras: eraIndex.eras,
-                    initialSelection: Set(target.tags)
-                ) { selection in
-                    saveEras(selection, for: target.url)
-                }
-            }
-            .sheet(isPresented: $showingNewEra) {
-                NewEraView(existingTags: Set(eraIndex.eras.map(\.tag))) { tag in
-                    startEra(tag)
-                }
+            .confirmationDialog("Start a new era today?", isPresented: $confirmingStartEra, titleVisibility: .visible) {
+                Button("Start New Era") { startEra() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(hasEras
+                    ? "It starts empty. This era's meditations wait below it, so you can listen and bring along the ones that still fit."
+                    : "It starts empty. Your meditations so far wait below it, so you can listen and bring along the ones that still fit.")
             }
             .alert(
                 "Couldn't Start the Meditation",
@@ -586,7 +597,7 @@ struct MeditationListView: View {
         }
         // No leading swipe on the main screen: a swipe from the left edge opens the panel there.
         .swipeActions(edge: .leading) {
-            if bringAlong {
+            if bringAlong && isPast {
                 Button { bringAlongToCurrentEra(url) } label: {
                     Label("Bring Along", systemImage: "arrow.up.circle")
                 }
@@ -594,9 +605,9 @@ struct MeditationListView: View {
             }
         }
         .contextMenu {
-            if bringAlong, let current = eraIndex.current {
+            if bringAlong {
                 Button { bringAlongToCurrentEra(url) } label: {
-                    Label("Bring Along to \(current.tag)", systemImage: "arrow.up.circle")
+                    Label("Bring Along", systemImage: "arrow.up.circle")
                 }
                 Divider()
             }
@@ -607,8 +618,17 @@ struct MeditationListView: View {
             Button { editCopy(url) } label: {
                 Label("Edit a Copy", systemImage: "doc.badge.plus")
             }
-            Button { editEras(url) } label: {
-                Label("Eras…", systemImage: "sparkles")
+            Button { toggleFoundation(url) } label: {
+                if isTimeless(url) {
+                    Label("Not a Foundation", systemImage: "square.stack.3d.up.slash")
+                } else {
+                    Label("Make a Foundation", systemImage: "square.stack.3d.up")
+                }
+            }
+            if !bringAlong && !isPast && eraIndex.wasBroughtAlong(url) {
+                Button { sendBack(url) } label: {
+                    Label("Send Back to Past Era", systemImage: "arrow.down.circle")
+                }
             }
             if hasUpdate {
                 Button { updateTarget = filename } label: {
@@ -744,12 +764,8 @@ struct MeditationListView: View {
             candidate = "\(today)-v\(counter)-\(suffix)"
         }
 
-        // The copy joins the current era.
-        var copyContent = content
-        let (title, tags) = metadataFor(url)
-        if let current = eraIndex.current, !tags.contains(current.tag) {
-            copyContent = MeditationMetadataWriter.rewrite(source: content, title: title, tags: tags + [current.tag])
-        }
+        // The copy is made today, so it's part of the current era.
+        let copyContent = content
 
         _ = FileManager.default.saveMeditation(copyContent, filename: candidate)
         refreshFiles()
@@ -780,9 +796,8 @@ struct MeditationListView: View {
     }
 
     private func newFile() {
-        // A new meditation joins the current era.
-        let eraSuffix = eraIndex.current.map { " #\($0.tag)" } ?? ""
-        editorContent = "# New Meditation\(eraSuffix)\n\n"
+        // Made today, so it's part of the current era.
+        editorContent = "# New Meditation\n\n"
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         editorFilename = dateFormatter.string(from: Date())
@@ -804,35 +819,26 @@ struct MeditationListView: View {
         refreshFiles()
     }
 
-    /// Adds the current era's tag. Doesn't stop playback: only the header changes.
+    /// Doesn't stop playback: the script itself doesn't change.
     private func bringAlongToCurrentEra(_ url: URL) {
-        guard let current = eraIndex.current else { return }
-        let (_, tags) = metadataFor(url)
-        guard !tags.contains(current.tag) else { return }
-        writeTags(tags + [current.tag], for: url)
+        EraIndex.bringAlong(url)
         refreshFiles(animation: .snappy(duration: 0.25))
     }
 
-    private func editEras(_ url: URL) {
-        let (title, tags) = metadataFor(url)
-        let selectable = tags.filter { eraIndex.isEraTag($0) || $0 == EraIndex.timelessTag }
-        eraEditTarget = EraEditTarget(url: url, title: title, tags: selectable)
+    private func sendBack(_ url: URL) {
+        EraIndex.sendBack(url)
+        refreshFiles(animation: .snappy(duration: 0.25))
     }
 
-    /// Rewrites the file's era and timeless tags, keeping its other tags in place.
+    /// Adds or removes the `timeless` tag, keeping the file's other tags in place.
     /// Doesn't stop playback: only the header changes.
-    private func saveEras(_ selection: Set<String>, for url: URL) {
+    private func toggleFoundation(_ url: URL) {
         let (_, tags) = metadataFor(url)
-        let isManaged = { (tag: String) in eraIndex.isEraTag(tag) || tag == EraIndex.timelessTag }
-        var newTags = tags.filter { !isManaged($0) || selection.contains($0) }
-        // Added eras go oldest first, matching how tags accumulate over time.
-        for tag in eraIndex.eras.map(\.tag).reversed() + [EraIndex.timelessTag]
-        where selection.contains(tag) && !newTags.contains(tag) {
-            newTags.append(tag)
-        }
-        guard newTags != tags else { return }
+        let newTags = tags.contains(EraIndex.timelessTag)
+            ? tags.filter { $0 != EraIndex.timelessTag }
+            : tags + [EraIndex.timelessTag]
         writeTags(newTags, for: url)
-        refreshFiles()
+        refreshFiles(animation: .snappy(duration: 0.25))
     }
 
     private func writeTags(_ newTags: [String], for url: URL) {
@@ -843,38 +849,12 @@ struct MeditationListView: View {
         _ = FileManager.default.saveMeditation(updated, filename: basename)
     }
 
-    private func eraFilesFor(_ tag: String) -> [URL] {
-        let isCurrent = tag == eraIndex.current?.tag
-        return files.filter {
-            !isTimeless($0) && (fileTags[$0]?.contains(tag) == true || (isCurrent && isUnassignedNew($0)))
-        }
-    }
-
-    private func startEra(_ tag: String) {
-        var index = EraIndex.load()
-        index.eras.insert(Era(tag: tag, started: EraIndex.todayString()), at: 0)
-        index.save()
+    private func startEra() {
+        EraIndex.startNew()
+        earlierExpandedChoice = nil
+        currentExpanded = true
         refreshFiles()
     }
-}
-
-enum EraSelection: Hashable {
-    case era(String)
-    case older
-
-    var label: String {
-        switch self {
-        case .era(let tag): tag
-        case .older: "Older"
-        }
-    }
-}
-
-private struct EraEditTarget: Identifiable {
-    let id = UUID()
-    let url: URL
-    let title: String
-    let tags: [String]
 }
 
 /// Finds the nearest parent UIScrollView and sets delaysContentTouches = false so a
@@ -1412,6 +1392,11 @@ private struct LoadedLibrary: Sendable {
             let meta = MeditationParser.parseMetadata(loaded ?? "")
             library.titles[url] = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
             library.tags[url] = meta.tags
+        }
+        // Era tags left in scripts (from before eras were dates, or another device) move out.
+        for (url, content) in EraIndex.migrateLegacyTags(files: library.files, contents: library.contents) {
+            library.contents[url] = content
+            library.tags[url] = MeditationParser.parseMetadata(content).tags
         }
         library.eraIndex = EraIndex.load()
         return library

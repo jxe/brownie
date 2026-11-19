@@ -6,10 +6,10 @@ struct JournalView: View {
     @Environment(\.openFromPanel) private var openFromPanel
     @State private var eraIndex = EraIndex()
 
-    /// Eras before the current one, newest first, then "Older" for untagged meditations.
+    /// Eras before the current one, newest first, then what was made before the first era.
     private var pastEras: [EraSelection] {
         guard !eraIndex.eras.isEmpty else { return [] }
-        return eraIndex.eras.dropFirst().map { .era($0.tag) } + [.older]
+        return eraIndex.eras.dropFirst().map { .era($0.id) } + [.older]
     }
 
     /// Journal entries and done to-dos, newest first.
@@ -97,7 +97,7 @@ struct JournalView: View {
                 Section("Past Eras") {
                     ForEach(pastEras, id: \.self) { era in
                         Button { openFromPanel(.era(era)) } label: {
-                            PanelLinkLabel { Text(era.label) }
+                            PanelLinkLabel { Text(eraIndex.label(for: era)) }
                         }
                         // A list tints button text with the accent color; these read as plain rows.
                         .tint(.primary)

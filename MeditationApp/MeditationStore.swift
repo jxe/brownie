@@ -154,16 +154,11 @@ final class MeditationStore {
         }
     }
 
-    /// Saves a store meditation into the library as a new file. It joins the current era.
+    /// Saves a store meditation into the library as a new file. Made today, it's part of the
+    /// current era.
     @discardableResult
     func download(_ item: SharedMeditation) -> URL? {
-        var content = item.body
-        if let era = EraIndex.load().current {
-            let meta = MeditationParser.parseMetadata(content)
-            if !meta.tags.contains(era.tag) {
-                content = MeditationMetadataWriter.rewrite(source: content, title: meta.title, tags: meta.tags + [era.tag])
-            }
-        }
+        let content = item.body
         let filename = availableFilename(for: item.title)
         guard let url = FileManager.default.saveMeditation(content, filename: filename) else { return nil }
         links[filename] = StoreLink(recordName: item.id, role: .downloaded, modified: item.modified)
@@ -194,7 +189,7 @@ final class MeditationStore {
     }
 
     /// Replaces a downloaded file with its author's newer version, keeping the file's own
-    /// era and timeless tags.
+    /// timeless tag.
     @discardableResult
     func applyUpdate(to filename: String) -> Bool {
         guard let item = updates[filename], var link = links[filename] else { return false }

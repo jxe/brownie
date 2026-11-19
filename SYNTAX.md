@@ -29,15 +29,18 @@ Or on a separate `#` line immediately after the title (the line must contain onl
 
 Tags are used by the meditation list to filter and group meditations.
 
-### Eras
+### Foundations and eras
 
-Some tags are **eras**: periods of practice, usually named with an emoji (`#🎸`, `#🔥🔥`). A meditation can belong to several eras. `eras.json`, next to the `.med` files, lists which tags are eras, newest first; the first one is the current era:
+`#timeless` marks a **Foundation**: a meditation that is always shown, whatever era it is. The list shows only this tag; other tags stay in the file but are hidden.
+
+**Eras** are stretches of time, from the day one is started until the next one, and they live outside the scripts. `eras.json`, next to the `.med` files, lists them newest first; the first one is the current era. A meditation belongs to the era it was made in (by its filename's date, else when the file was created), and to any era it was brought along to (`kept`, by filename):
 
 ```json
-[{"tag": "🎸", "started": "2026-09-19"}, {"tag": "🔥🔥", "started": "2026-06-21"}]
+[{"id": "…", "started": "2026-11-19", "kept": ["2026-10-02-morning"]},
+ {"id": "🎸", "started": "2026-09-19", "kept": [], "legacyTag": "🎸"}]
 ```
 
-`#timeless` marks meditations that are always shown, whatever era is selected. The list shows only era tags; other tags stay in the file but are hidden.
+Eras used to be tags in the header (`#🎸`). The app moves any such tag it finds into `kept` for that era and takes it out of the script.
 
 ## Spoken Text
 

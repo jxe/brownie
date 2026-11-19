@@ -147,9 +147,9 @@ enum MedHeader {
         return NSRange(location: 0, length: end)
     }
 
-    /// Era tags (and `timeless`) to offer, since those are the tags the list shows.
+    /// `timeless` is the one tag the list shows (as Foundations).
     static func suggestedTags() -> [String] {
-        EraIndex.load().eras.map(\.tag) + [EraIndex.timelessTag]
+        [EraIndex.timelessTag]
     }
 }
 
