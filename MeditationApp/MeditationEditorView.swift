@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Pushed from the meditation list. Play in the title bar tries out the script as it stands;
+/// Pushed from the meditation list. The title and tags sit at the top as fields, then the
+/// pools as a shelf of chips, then the script; the file is still the same plain text, written
+/// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
 /// pause and stop are on the now-playing bar, and it keeps playing after you go back. Any edit stops playback, so the
 /// next play starts from the top. Edits save themselves a moment after you stop typing,
 /// and again on leaving the page or the app.
@@ -26,6 +28,14 @@ struct MeditationEditorView: View {
     /// Set once this page plays its script, so a new meditation (no file yet) knows it's the
     /// one playing.
     @State private var startedHere = false
+    /// The meditation in its three parts: the title, the pools, and the script. Worked out
+    /// from `content` when the page opens or something else changes it, so typing in the
+    /// script never moves text around under the caret.
+    @State private var doc = MedDocument("")
+    @State private var editingPool: PoolSheetTarget?
+    @State private var namingNewPool = false
+    @State private var newPoolName = ""
+    @State private var editingTags = false
 
     private var hasChanges: Bool {
         guard let saved else { return false }
@@ -43,9 +53,19 @@ struct MeditationEditorView: View {
             }
 
             // Long lines are hard to follow on iPad, so cap the measure and center it.
-            MedTextEditor(text: $content)
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 0) {
+                headerFields
+                poolShelf
+                Divider().padding(.horizontal, 20)
+                MedTextEditor(
+                    text: scriptBinding,
+                    outside: doc.prefix,
+                    onOpenPool: { editingPool = PoolSheetTarget(name: $0) },
+                    onNewPool: { addPool(named: $0) }
+                )
+            }
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
 
             let diagnostics = MeditationParser.diagnose(content)
             if !diagnostics.isEmpty {
@@ -119,7 +139,29 @@ struct MeditationEditorView: View {
                 playbackControls
             }
         }
+        .sheet(item: $editingPool) { target in
+            poolSheet(for: target.name)
+                .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: $editingTags) {
+            TagEditorView(title: "Tags", initialTags: meta.tags, suggestions: MedHeader.suggestedTags()) { _, tags in
+                setHeader(title: meta.title, tags: tags)
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .alert("New Pool", isPresented: $namingNewPool) {
+            TextField("name", text: $newPoolName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Create") {
+                if let name = MedTextEditor.Coordinator.poolName(from: newPoolName) { addPool(named: name) }
+            }
+        } message: {
+            Text("Its items go in the pool; use it in the script as ~name.")
+        }
         .onAppear {
+            syncDocument()
             if saved == nil {
                 saved = (content, filename)
                 showsFilename = isNew
@@ -138,8 +180,156 @@ struct MeditationEditorView: View {
             if phase != .active { saveIfNeeded() }
         }
         // Any edit stops this script's playback; the next play starts again from the top.
-        .onChange(of: content) { stopIfPlaying() }
+        .onChange(of: content) {
+            syncDocument()
+            stopIfPlaying()
+        }
         .onChange(of: filename) { stopIfPlaying() }
+    }
+
+    // MARK: Title, tags and pools
+
+    private var meta: (title: String, tags: [String]) {
+        let parsed = MeditationParser.parseMetadata(doc.header)
+        return (parsed.title, parsed.tags)
+    }
+
+    /// Picks up a change to `content` made elsewhere (a diagnostic's fix, say); the page's own
+    /// edits already match it.
+    private func syncDocument() {
+        if doc.joined != content { doc = MedDocument(content) }
+    }
+
+    private func update(_ change: (inout MedDocument) -> Void) {
+        var next = doc
+        change(&next)
+        doc = next
+        if content != next.joined { content = next.joined }
+    }
+
+    private var scriptBinding: Binding<String> {
+        Binding(get: { doc.script }, set: { script in update { $0.script = script } })
+    }
+
+    private func setHeader(title: String, tags: [String]) {
+        update { doc in
+            let title = title.trimmingCharacters(in: .whitespaces)
+            doc.header = title.isEmpty && tags.isEmpty
+                ? ""
+                : MeditationMetadataWriter.rewrite(source: doc.header, title: title, tags: tags)
+                    .trimmingCharacters(in: .newlines)
+        }
+    }
+
+    private var isFoundation: Bool { meta.tags.contains(EraIndex.timelessTag) }
+
+    /// The title as a plain field, and the tags under it: Foundation as a toggle, the rest as
+    /// a list that opens the tag editor.
+    private var headerFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Title", text: Binding(
+                get: { meta.title },
+                set: { setHeader(title: $0, tags: meta.tags) }
+            ))
+            .font(.title2.weight(.semibold))
+            .submitLabel(.done)
+
+            HStack(spacing: 8) {
+                Button {
+                    let tags = isFoundation
+                        ? meta.tags.filter { $0 != EraIndex.timelessTag }
+                        : meta.tags + [EraIndex.timelessTag]
+                    setHeader(title: meta.title, tags: tags)
+                } label: {
+                    Label("Foundation", systemImage: isFoundation ? "checkmark" : "square.stack.3d.up")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(ShelfChipStyle(selected: isFoundation))
+                .accessibilityAddTraits(isFoundation ? .isSelected : [])
+
+                let others = meta.tags.filter { $0 != EraIndex.timelessTag }
+                Button {
+                    editingTags = true
+                } label: {
+                    Text(others.isEmpty ? "Tags…" : others.map { "#\($0)" }.joined(separator: " "))
+                        .lineLimit(1)
+                }
+                .buttonStyle(ShelfChipStyle(selected: false))
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+
+    /// Each pool as one chip with its item count (dimmed when nothing draws from it), then
+    /// a chip for a new one. The pools are written at the top of the file.
+    private var poolShelf: some View {
+        let unused = MeditationParser.unusedPoolNames(in: content)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(doc.poolNames, id: \.self) { name in
+                    Button {
+                        editingPool = PoolSheetTarget(name: name)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("~\(name)")
+                            Text("\(doc.itemCount(of: name))")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        .opacity(unused.contains(name) ? 0.45 : 1)
+                    }
+                    .buttonStyle(ShelfChipStyle(selected: false, monospaced: true))
+                    .accessibilityHint(unused.contains(name) ? "Not used in the script" : "")
+                }
+                Button {
+                    newPoolName = ""
+                    namingNewPool = true
+                } label: {
+                    Label(doc.poolNames.isEmpty ? "New Pool" : "Pool", systemImage: "plus")
+                }
+                .buttonStyle(ShelfChipStyle(selected: false))
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 10)
+    }
+
+    /// Defines an empty pool (unless it exists) and opens it to add items.
+    private func addPool(named name: String) {
+        if !doc.poolNames.contains(name) {
+            update { $0.pools.append("~ \(name)") }
+        }
+        editingPool = PoolSheetTarget(name: name)
+    }
+
+    @ViewBuilder
+    private func poolSheet(for name: String) -> some View {
+        if let index = doc.poolIndex(named: name),
+           let block = MedPoolBlock.find(named: name, in: doc.pools[index]) {
+            MedPoolEditorSheet(
+                name: name, items: block.items,
+                references: MeditationParser.referenceableNames(in: content),
+                isUnused: MeditationParser.unusedPoolNames(in: content).contains(name),
+                onDone: { items in
+                    update { doc in
+                        if let i = doc.poolIndex(named: name) {
+                            doc.pools[i] = MedPoolBlock.find(named: name, in: doc.pools[i])?.text(with: items) ?? doc.pools[i]
+                        }
+                    }
+                    editingPool = nil
+                },
+                onCancel: { editingPool = nil },
+                onDelete: {
+                    update { doc in
+                        if let i = doc.poolIndex(named: name) { doc.pools.remove(at: i) }
+                    }
+                    editingPool = nil
+                })
+        } else {
+            ContentUnavailableView("No Pool Named ~\(name)", systemImage: "questionmark.circle")
+        }
     }
 
     /// Plays the script as it stands. Pause and stop are on the now-playing bar at the bottom,
@@ -219,5 +409,96 @@ struct MeditationEditorView: View {
         // The script may have changed since the dialog opened; skip a fix that no longer fits.
         guard NSMaxRange(fix.range) <= ns.length else { return }
         content = ns.replacingCharacters(in: fix.range, with: fix.replacement)
+    }
+}
+
+private struct PoolSheetTarget: Identifiable {
+    let name: String
+    var id: String { name }
+}
+
+/// A small rounded chip for the editor's header and pool shelf.
+private struct ShelfChipStyle: ButtonStyle {
+    var selected: Bool
+    var monospaced = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(monospaced ? .subheadline.monospaced() : .subheadline)
+            .foregroundStyle(selected ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
+            )
+            .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+/// A meditation in three parts: the title and tag lines, the pool definitions, and the
+/// script. Written back as the title, then the pools, then the script, each after a blank line.
+struct MedDocument: Equatable {
+    /// The title and tag lines, without a final line break; empty when there's no title.
+    var header: String
+    /// Each pool definition, `~name` line and items, without a final line break.
+    var pools: [String]
+    /// Everything else, as written.
+    var script: String
+
+    init(_ content: String) {
+        var rest = String(content.drop { $0 == "\n" })
+        if let range = MedHeader.range(in: rest) {
+            let ns = rest as NSString
+            header = ns.substring(with: range).trimmingCharacters(in: .newlines)
+            rest = ns.substring(from: NSMaxRange(range))
+        } else {
+            header = ""
+        }
+        let blocks = MedPoolBlock.blockRanges(in: rest)
+        let restNS = rest as NSString
+        pools = blocks.map { restNS.substring(with: $0.range) }
+        // Take the pools out, last first so earlier ranges stay put, along with the line break
+        // after each and a blank line that would be left doubled.
+        let remaining = NSMutableString(string: rest)
+        for block in blocks.reversed() {
+            var range = block.range
+            if NSMaxRange(range) < remaining.length { range.length += 1 }
+            remaining.deleteCharacters(in: range)
+            let at = range.location
+            if at < remaining.length, remaining.character(at: at) == 10,
+               at == 0 || remaining.character(at: at - 1) == 10 {
+                remaining.deleteCharacters(in: NSRange(location: at, length: 1))
+            }
+        }
+        script = String(String(remaining).drop { $0 == "\n" })
+    }
+
+    /// What comes before the script in the file.
+    var prefix: String {
+        let parts = [header, pools.joined(separator: "\n\n")].filter { !$0.isEmpty }
+        return parts.isEmpty ? "" : parts.joined(separator: "\n\n") + "\n\n"
+    }
+
+    var joined: String { prefix + script }
+
+    var poolNames: [String] {
+        pools.compactMap(Self.name(of:))
+    }
+
+    func poolIndex(named name: String) -> Int? {
+        pools.firstIndex { Self.name(of: $0) == name }
+    }
+
+    func itemCount(of name: String) -> Int {
+        guard let index = poolIndex(named: name),
+              let block = MedPoolBlock.find(named: name, in: pools[index]) else { return 0 }
+        return block.items.filter { !$0.commented }.count
+    }
+
+    private static func name(of pool: String) -> String? {
+        let first = pool.prefix { $0 != "\n" }.trimmingCharacters(in: .whitespaces)
+        guard MeditationParser.isPoolDefinitionHeader(first) else { return nil }
+        return first.dropFirst().trimmingCharacters(in: .whitespaces)
     }
 }

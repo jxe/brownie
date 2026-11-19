@@ -167,20 +167,22 @@ enum MedQuickEdit {
         pattern: #"~([\p{L}_][\p{L}\p{N}_]*)(?:=([\p{L}_][\p{L}\p{N}_]*))?"#)
 
     /// Everything editable on the line that holds `offset`, in document coordinates (UTF-16).
-    static func targets(onLineAt offset: Int, in text: String) -> [MedQuickEditTarget] {
+    /// `outside` is the rest of the meditation when `text` is only its script (the title and
+    /// pools are edited apart from it): its pools count, and `text` has no title line.
+    static func targets(onLineAt offset: Int, in text: String, outside: String = "") -> [MedQuickEditTarget] {
         let ns = text as NSString
         guard ns.length > 0 else { return [] }
         var start = 0, end = 0, contentsEnd = 0
         ns.getLineStart(&start, end: &end, contentsEnd: &contentsEnd,
                         for: NSRange(location: min(max(offset, 0), ns.length), length: 0))
         return targets(onLine: NSRange(location: start, length: contentsEnd - start), in: text,
-                       context: Context(text))
+                       context: Context(text, outside: outside))
     }
 
     /// Everything editable in the script, for showing what can be tapped.
-    static func allTargets(in text: String) -> [MedQuickEditTarget] {
+    static func allTargets(in text: String, outside: String = "") -> [MedQuickEditTarget] {
         let ns = text as NSString
-        let context = Context(text)
+        let context = Context(text, outside: outside)
         var targets: [MedQuickEditTarget] = []
         ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
                                options: [.byLines, .substringNotRequired]) { _, lineRange, _, _ in
@@ -199,9 +201,9 @@ enum MedQuickEdit {
         let header: NSRange?
         /// Each pool definition's name and its whole block's range.
         let poolBlocks: [(name: String, range: NSRange)]
-        init(_ text: String) {
-            pools = Set(MeditationParser.referenceableNames(in: text).pools)
-            header = MedHeader.range(in: text)
+        init(_ text: String, outside: String = "") {
+            pools = Set(MeditationParser.referenceableNames(in: outside.isEmpty ? text : outside + "\n" + text).pools)
+            header = outside.isEmpty ? MedHeader.range(in: text) : nil
             poolBlocks = MedPoolBlock.blockRanges(in: text)
         }
     }

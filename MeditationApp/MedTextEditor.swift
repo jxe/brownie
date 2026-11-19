@@ -3,6 +3,14 @@ import UIKit
 
 struct MedTextEditor: UIViewRepresentable {
     @Binding var text: String
+    /// The meditation before the script (its title and pools), when `text` is only the script.
+    /// The whole meditation is `outside + text`, so its pools count and diagnostics line up.
+    var outside: String = ""
+    /// A tap on a reference to a pool defined outside the script.
+    var onOpenPool: ((String) -> Void)? = nil
+    /// The ~ menu's New Pool… named a pool that isn't defined anywhere yet; its `~name` is
+    /// already in the script, and the definition goes outside it.
+    var onNewPool: ((String) -> Void)? = nil
 
     private static let symbolGroups: [[(label: String, char: String, accessibilityLabel: String)]] = [
         [
@@ -48,6 +56,9 @@ struct MedTextEditor: UIViewRepresentable {
         textView.textContainerInset = UIEdgeInsets(top: 16, left: 20, bottom: 20, right: 20)
         textView.textContainer.lineFragmentPadding = 0
         textView.text = text
+        textView.outsideText = outside
+        context.coordinator.onOpenPool = onOpenPool
+        context.coordinator.onNewPoolOutside = onNewPool
         textView.typingAttributes = medBaseAttributes
         textView.inputAccessoryView = makeToolbar(textView: textView)
         applyMedHighlights(to: textView)
@@ -66,8 +77,16 @@ struct MedTextEditor: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.onOpenPool = onOpenPool
+        context.coordinator.onNewPoolOutside = onNewPool
+        let medView = textView as? MedTextView
+        let outsideChanged = medView.map { $0.outsideText != outside } ?? false
+        if outsideChanged { medView?.outsideText = outside }
         if textView.text != text {
             textView.text = text
+            applyMedHighlights(to: textView)
+        } else if outsideChanged {
+            // A pool added or removed outside changes which references are chips.
             applyMedHighlights(to: textView)
         }
     }
@@ -78,7 +97,7 @@ struct MedTextEditor: UIViewRepresentable {
         btn.showsMenuAsPrimaryAction = true
         btn.menu = UIMenu(children: [
             UIDeferredMenuElement.uncached { [weak textView] completion in
-                let names = MeditationParser.referenceableNames(in: textView?.text ?? "")
+                let names = MeditationParser.referenceableNames(in: (textView as? MedTextView)?.wholeText ?? textView?.text ?? "")
                 func insertAction(_ name: String) -> UIAction {
                     UIAction(title: "~\(name)") { _ in textView?.insertText("~\(name)") }
                 }
@@ -220,6 +239,8 @@ struct MedTextEditor: UIViewRepresentable {
         var text: Binding<String>
         weak var textView: UITextView?
         weak var quickEditTap: UITapGestureRecognizer?
+        var onOpenPool: ((String) -> Void)?
+        var onNewPoolOutside: ((String) -> Void)?
         /// What the tap in progress landed on, found when the tap is about to be recognized.
         private var pendingTarget: MedQuickEditTarget?
 
@@ -334,7 +355,8 @@ struct MedTextEditor: UIViewRepresentable {
         private func quickEditTarget(at point: CGPoint, in textView: UITextView) -> MedQuickEditTarget? {
             guard let position = textView.closestPosition(to: point) else { return nil }
             let offset = textView.offset(from: textView.beginningOfDocument, to: position)
-            return MedQuickEdit.targets(onLineAt: offset, in: textView.text).first { target in
+            let outside = (textView as? MedTextView)?.outsideText ?? ""
+            return MedQuickEdit.targets(onLineAt: offset, in: textView.text, outside: outside).first { target in
                 MedTextView.chipRects(for: target, in: textView)
                     .contains { chip in
                         // A little beyond the chip, and at least 36pt wide so a lone dot is easy to hit.
@@ -396,11 +418,16 @@ struct MedTextEditor: UIViewRepresentable {
                 presenter.present(host, animated: true)
 
             case .pool(let name, _), .poolBlock(let name, _):
-                guard let block = MedPoolBlock.find(named: name, in: textView.text) else { return }
+                guard let block = MedPoolBlock.find(named: name, in: textView.text) else {
+                    // Defined outside the script: the editor around it opens that pool.
+                    onOpenPool?(name)
+                    return
+                }
+                let whole = (textView as? MedTextView)?.wholeText ?? textView.text ?? ""
                 let sheet = MedPoolEditorSheet(
                     name: name, items: block.items,
-                    references: MeditationParser.referenceableNames(in: textView.text),
-                    isUnused: MeditationParser.unusedPoolNames(in: textView.text).contains(name),
+                    references: MeditationParser.referenceableNames(in: whole),
+                    isUnused: MeditationParser.unusedPoolNames(in: whole).contains(name),
                     onDone: { [weak self, weak textView, weak presenter] items in
                         if let self, let textView {
                             self.replace(block.range, expecting: block.source,
@@ -506,7 +533,15 @@ struct MedTextEditor: UIViewRepresentable {
 
             let text = textView.text ?? ""
             ns = text as NSString
-            if !MeditationParser.referenceableNames(in: text).pools.contains(name) {
+            let whole = (textView as? MedTextView)?.wholeText ?? text
+            if !MeditationParser.referenceableNames(in: whole).pools.contains(name), let onNewPoolOutside {
+                // Pools live outside the script: it gets just the reference.
+                textView.selectedRange = NSRange(location: caretAfter, length: 0)
+                textViewDidChange(textView)
+                onNewPoolOutside(name)
+                return
+            }
+            if !MeditationParser.referenceableNames(in: whole).pools.contains(name) {
                 // Defined before its first use: after the last pool above this line, so pools stay
                 // together, or else on its own line just above (above the pool it's used in, if any).
                 let lineStart = ns.lineRange(for: NSRange(location: refRange.location, length: 0)).location
@@ -575,6 +610,10 @@ final class MedTextView: UITextView {
     var folds: [MedFold] = []
     /// The ~ menu's New Pool…, handled by the editor's coordinator.
     var onNewPool: (() -> Void)?
+    /// The meditation before the script, when this view edits only the script.
+    var outsideText = ""
+    /// The whole meditation: what's outside the script, then the script.
+    var wholeText: String { outsideText + (text ?? "") }
     var foldedText: String?
     /// Set while the caret is being moved on purpose, so the move isn't corrected again.
     var isAdjustingSelection = false
@@ -689,7 +728,7 @@ final class MedTextView: UITextView {
         var blockPaths: [UIColor: UIBezierPath] = [:]
         var paths: [UIColor: UIBezierPath] = [:]
         let currentFolds = foldedText == text ? folds : []
-        for target in MedQuickEdit.allTargets(in: text ?? "") {
+        for target in MedQuickEdit.allTargets(in: text ?? "", outside: outsideText) {
             // Folded items have no chips of their own.
             if !target.isBlock, currentFolds.contains(where: { NSLocationInRange(target.hitRange.location, $0.itemsRange) }) {
                 continue
@@ -920,15 +959,20 @@ private func applyMedHighlights(to textView: UITextView) {
         let existing = (storage.attribute(.kern, at: index, effectiveRange: nil) as? CGFloat) ?? 0
         storage.addAttribute(.kern, value: existing + medChipGap, range: NSRange(location: index, length: 1))
     }
-    for target in MedQuickEdit.allTargets(in: text)
+    let outside = (textView as? MedTextView)?.outsideText ?? ""
+    for target in MedQuickEdit.allTargets(in: text, outside: outside)
     where !target.isBlock && target.hitRange.length > 0 && NSMaxRange(target.hitRange) <= storage.length {
         let before = target.hitRange.location - 1
         if before >= 0, ns.character(at: before) != 10 { addGap(at: before) }
         addGap(at: NSMaxRange(target.hitRange) - 1)
     }
     (textView as? MedTextView)?.setChipsNeedUpdate()
-    for diagnostic in MeditationParser.diagnose(text)
-    where NSMaxRange(diagnostic.range) <= storage.length {
+    // Diagnosed as a whole meditation, then shifted back to the script's own positions.
+    let outsideLength = (outside as NSString).length
+    for whole in MeditationParser.diagnose(outside + text) where whole.range.location >= outsideLength {
+        let diagnostic = (range: NSRange(location: whole.range.location - outsideLength, length: whole.range.length),
+                          isDeprecation: whole.isDeprecation)
+        guard NSMaxRange(diagnostic.range) <= storage.length else { continue }
         if diagnostic.isDeprecation {
             // Old syntax still plays: show it struck through rather than as an error.
             storage.addAttributes([
