@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct CheckInView: View {
+    @Environment(\.hidesNowPlayingBar) private var hidesNowPlayingBar
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -145,11 +146,16 @@ struct CheckInView: View {
                 }
                 .frame(height: 104)
                 .padding(.bottom, 4)
+                // The shared stripe, placed here so Negative and Positive sit above it instead
+                // of under it. It still runs to the bottom edge.
+                NowPlayingInset()
             }
         }
         // The same background as the main screen it opens from.
         .background(Color("BackgroundColor").ignoresSafeArea())
         .navigationTitle("Feelings")
+        .onAppear { hidesNowPlayingBar("feelings", true) }
+        .onDisappear { hidesNowPlayingBar("feelings", false) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 LiveTimeText(isLive: isAccruingOnScreen) { store.sessionTime(asOf: $0) }
