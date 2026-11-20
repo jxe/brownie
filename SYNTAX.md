@@ -101,6 +101,20 @@ A pool is a named list of items. Each time the pool is referenced, a random item
 
 Pool items themselves can reference other pools — references are resolved recursively when the item is drawn.
 
+Defining a pool again with the same name replaces it from that point on. Inside the new pool's items, its own name means the pool it replaced, so a pool can build on an earlier one:
+
+```
+~ q
+  what would be wrong
+  what would be right
+
+~q
+  If my purpose is just ~purposes, ~q?
+  Am I ~actions?
+```
+
+Here `~q` inside the second pool draws from the first `~q`, and later script lines draw from the second. A pool never draws from itself: with no earlier pool of that name, the reference is read out as text.
+
 ### Remembered Picks
 
 To use the same pick more than once, bind it to a name with `~name=pool`. That draws from `pool` and speaks it like a normal reference, and every later `~name` repeats the same item instead of drawing again:

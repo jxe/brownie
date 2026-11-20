@@ -59,7 +59,7 @@ struct MeditationParser {
                     items.append((text, gender, weight))
                     i += 1
                 }
-                pools[poolName] = Pool(items: items)
+                pools[poolName] = Pool(items: items, previous: pools[poolName])
                 continue
             }
 
@@ -155,9 +155,11 @@ struct MeditationParser {
     static func unusedPoolNames(in source: String) -> Set<String> {
         var defined: Set<String> = []
         var used: Set<String> = []
-        for line in source.components(separatedBy: .newlines) {
+        let lines = source.components(separatedBy: .newlines)
+        let headers = poolHeaderFlags(lines)
+        for (line, isHeader) in zip(lines, headers) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if isPoolDefinitionHeader(trimmed) {
+            if isHeader {
                 defined.insert(trimmed.dropFirst().trimmingCharacters(in: .whitespaces))
                 continue
             }
@@ -178,16 +180,16 @@ struct MeditationParser {
         }
 
         // Pool items are drawn later, so refs inside them may name a pool defined anywhere.
-        let allPools = Set(lines.compactMap { line -> String? in
-            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
-            guard isPoolDefinitionHeader(trimmed) else { return nil }
-            return trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+        let headers = poolHeaderFlags(lines.map(\.text))
+        let allPools = Set(zip(lines, headers).compactMap { line, isHeader -> String? in
+            guard isHeader else { return nil }
+            return line.text.trimmingCharacters(in: .whitespaces).dropFirst().trimmingCharacters(in: .whitespaces)
         })
 
         var diagnostics: [MeditationDiagnostic] = []
         var definedPools: Set<String> = []
         var boundNames: Set<String> = []
-        var openPool: (name: String, line: Int, range: NSRange, items: Int)? = nil
+        var openPool: (name: String, line: Int, range: NSRange, items: Int, redefines: Bool)? = nil
         var openBrackets: [(line: Int, range: NSRange)] = []
 
         func closeOpenPool() {
@@ -207,10 +209,10 @@ struct MeditationParser {
             if !isPoolItem { closeOpenPool() }
             if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
 
-            if isPoolDefinitionHeader(trimmed) {
+            if headers[index] {
                 let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+                openPool = (name, lineNumber, line.range, 0, definedPools.contains(name))
                 definedPools.insert(name)
-                openPool = (name, lineNumber, line.range, 0)
                 continue
             }
             if isPoolItem { openPool?.items += 1 }
@@ -260,6 +262,19 @@ struct MeditationParser {
                 }
             }
 
+            // Inside a pool's items, its own name means the pool it redefined, if any.
+            func isKnownPool(_ name: String) -> Bool {
+                guard isPoolItem else { return definedPools.contains(name) }
+                if let pool = openPool, pool.name == name { return pool.redefines }
+                return allPools.contains(name)
+            }
+            func message(for name: String) -> String {
+                if isPoolItem, let pool = openPool, pool.name == name {
+                    return "~\(name) inside its own pool means an earlier ~\(name), and there isn't one, so it would be read out as text."
+                }
+                return missingPoolMessage(name, definedLater: allPools.contains(name))
+            }
+
             let matches = refRegex.matches(in: line.text, range: NSRange(location: 0, length: lineNS.length))
             for match in matches {
                 let name = lineNS.substring(with: match.range(at: 1))
@@ -268,19 +283,17 @@ struct MeditationParser {
                 if poolRange.location != NSNotFound {
                     // ~name=pool
                     let poolName = lineNS.substring(with: poolRange)
-                    let known = isPoolItem ? allPools.contains(poolName) : definedPools.contains(poolName)
-                    if !known {
+                    if !isKnownPool(poolName) {
                         diagnostics.append(MeditationDiagnostic(line: lineNumber, range: range,
-                                                                message: missingPoolMessage(poolName, definedLater: allPools.contains(poolName))))
+                                                                message: message(for: poolName)))
                     }
                     boundNames.insert(name)
                     continue
                 }
                 if boundNames.contains(name) { continue }
-                let known = isPoolItem ? allPools.contains(name) : definedPools.contains(name)
-                if !known {
+                if !isKnownPool(name) {
                     diagnostics.append(MeditationDiagnostic(line: lineNumber, range: range,
-                                                            message: missingPoolMessage(name, definedLater: allPools.contains(name))))
+                                                            message: message(for: name)))
                 }
             }
         }
@@ -347,10 +360,12 @@ struct MeditationParser {
     static func referenceableNames(in source: String) -> (pools: [String], picks: [String]) {
         var pools: [String] = []
         var picks: [String] = []
-        for line in source.components(separatedBy: .newlines) {
+        let lines = source.components(separatedBy: .newlines)
+        let headers = poolHeaderFlags(lines)
+        for (line, isHeader) in zip(lines, headers) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("#") { continue }
-            if isPoolDefinitionHeader(trimmed) {
+            if isHeader {
                 let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
                 if !pools.contains(name) { pools.append(name) }
                 continue
@@ -383,6 +398,21 @@ struct MeditationParser {
         pattern: #"~([\p{L}_][\p{L}\p{N}_]*)(?:=([\p{L}_][\p{L}\p{N}_]*))?"#)
 
     // MARK: - Pool Definition Header
+
+    /// Which lines start a pool, read the way `parse` reads them: an indented `~name` line
+    /// under a pool is one of its items (a reference), not a new pool.
+    static func poolHeaderFlags(_ lines: [String]) -> [Bool] {
+        var flags: [Bool] = []
+        var inPool = false
+        for line in lines {
+            let isIndented = line.hasPrefix("  ") || line.hasPrefix("\t")
+            if inPool && isIndented { flags.append(false); continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            inPool = !trimmed.hasPrefix("#") && isPoolDefinitionHeader(trimmed)
+            flags.append(inPool)
+        }
+        return flags
+    }
 
     /// Returns true if the line is a pool definition header: `~ name` or `~name` with nothing else.
     static func isPoolDefinitionHeader(_ line: String) -> Bool {
@@ -792,7 +822,10 @@ struct MeditationParser {
     }
 
     /// Draws from a pool and expands the item, resolving nested pool refs, pauses, etc.
-    private static func drawPick(from pool: Pool, pools: [String: Pool], bindings: inout [String: Pick]) -> Pick {
+    /// Inside the drawn item, the pool's own name means the pool it redefined, or nothing
+    /// (spoken as written) if it redefined none. Pools being drawn can't be drawn again
+    /// further in, so pools that reference themselves or each other can't nest forever.
+    private static func drawPick(named name: String, from pool: Pool, pools: [String: Pool], bindings: inout [String: Pick]) -> Pick {
         let drawn = pool.draw()
         let gender = pool.lastGender
         // Re-tokenize drawn text to resolve nested pool refs, pauses, etc.
@@ -801,7 +834,9 @@ struct MeditationParser {
             if case .text = $0 { return false }; return true
         })
         guard hasNestedSpecials else { return Pick(expansion: .text(drawn), gender: gender) }
-        let nestedSteps = expandSpeakLine(drawn, pools: pools, bindings: &bindings)
+        var scope = pools
+        scope[name] = pool.previous
+        let nestedSteps = expandSpeakLine(drawn, pools: scope, bindings: &bindings)
         if nestedSteps.count == 1, case .speak(let nestedText) = nestedSteps[0] {
             return Pick(expansion: .text(nestedText), gender: gender)
         }
@@ -846,14 +881,14 @@ struct MeditationParser {
                 if let pick = bindings[name] {
                     insert(pick)
                 } else if let pool = pools[name] {
-                    insert(drawPick(from: pool, pools: pools, bindings: &bindings))
+                    insert(drawPick(named: name, from: pool, pools: pools, bindings: &bindings))
                 } else {
                     textBuffer += "~\(name)"
                 }
             case .bind(let name, let poolName):
                 // ~name=pool draws fresh, speaks it, and remembers it for later ~name refs.
                 if let pool = pools[poolName] {
-                    let pick = drawPick(from: pool, pools: pools, bindings: &bindings)
+                    let pick = drawPick(named: poolName, from: pool, pools: pools, bindings: &bindings)
                     bindings[name] = pick
                     insert(pick)
                 } else {

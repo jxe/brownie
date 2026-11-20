@@ -13,8 +13,12 @@ class Pool {
     private var remainingCounts: [Int] = []
     private var lastDrawn: Item?
     private(set) var lastGender: Gender?
+    /// The pool this one redefined (same name, defined above it). Inside this pool's items,
+    /// its own name means that earlier pool, so a pool can build on the one it replaces.
+    let previous: Pool?
 
-    init(items: [(String, Gender?, Int)]) {
+    init(items: [(String, Gender?, Int)], previous: Pool? = nil) {
+        self.previous = previous
         var combined: [Item] = []
         for item in items {
             let weight = max(1, item.2)
