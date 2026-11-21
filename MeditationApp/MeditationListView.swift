@@ -14,7 +14,6 @@ struct MeditationListView: View {
     @Environment(EmotionStore.self) var store
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appPalette) private var palette
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openPanel) private var openPanel
     @Environment(\.panelIsOpen) private var panelIsOpen
     @State private var files: [URL] = []
@@ -486,10 +485,6 @@ struct MeditationListView: View {
         let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
         let activeFill = palette.highlight
         let inactiveFill = palette.card
-        // Lift and glow like a running feelings chip: soft dark shadow in light mode, a glow
-        // of the row's own color in dark mode.
-        let liftShadow = colorScheme == .dark ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.18)
-        let outerGlow = colorScheme == .dark ? Color.accentColor.opacity(0.25) : Color.clear
         Button {
             tappableFrames.noteRowTap()
             if isPreparing {
@@ -535,28 +530,14 @@ struct MeditationListView: View {
             .padding(.horizontal, 14 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
             .background(
-                ZStack {
-                    RowFillShape(isGrown: isEngaged)
-                        .fill(palette.canvas)
-
-                    RowFillShape(isGrown: isEngaged)
-                        .fill(isEngaged ? activeFill : inactiveFill)
-                }
+                RowFillShape()
+                    .fill(isEngaged ? activeFill : inactiveFill)
+                    .shadow(color: isEngaged ? .black.opacity(0.10) : .clear, radius: 2, y: 1)
             )
-            .shadow(
-                color: isEngaged ? liftShadow : .clear,
-                radius: colorScheme == .dark ? 8 : 7,
-                y: colorScheme == .dark ? 0 : 3
-            )
-            .shadow(color: isEngaged ? outerGlow : .clear, radius: 16)
-            // One snappy transaction for every piece of the state change, so fill, lift, shadow,
-            // title, dot, and time label move together instead of on separate slow curves.
             .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
             .contentShape(RoundedRectangle(cornerRadius: 14))
-            // The long-press preview is cut out along the same shape as the fill, so the cut
-            // always matches it: the row grows by layout, never by a scale effect.
-            .contentShape(.contextMenuPreview, RowFillShape(isGrown: isEngaged))
+            .contentShape(.contextMenuPreview, RowFillShape())
         }
         .buttonStyle(MeditationRowPressStyle())
         // Over the row rather than inside its label, so they get their own taps: tapping
@@ -992,9 +973,9 @@ private struct PageCard<Trailing: View>: View {
             .padding(.vertical, 12 + RowFillShape.margin.height)
             .background(
                 ZStack {
-                    RowFillShape(isGrown: false)
+                    RowFillShape()
                         .fill(palette.canvas)
-                    RowFillShape(isGrown: false)
+                    RowFillShape()
                         .fill(palette.card)
                 }
             )
@@ -1036,25 +1017,13 @@ private extension View {
     }
 }
 
-/// A row's rounded fill. At rest it sits `margin` inside the row's frame; a playing row
-/// grows to fill the frame. Growing this way rather than with scaleEffect keeps the shape,
-/// and so the long-press preview cut out along it, the size of what's drawn at every moment.
+/// Shared inset for the row background and its context-menu preview.
 private struct RowFillShape: Shape {
     static let margin = CGSize(width: 4, height: 2)
 
-    var grown: CGFloat
-
-    init(isGrown: Bool) { grown = isGrown ? 1 : 0 }
-
-    var animatableData: CGFloat {
-        get { grown }
-        set { grown = newValue }
-    }
-
     func path(in rect: CGRect) -> Path {
-        let inset = 1 - grown
-        return Path(
-            roundedRect: rect.insetBy(dx: Self.margin.width * inset, dy: Self.margin.height * inset),
+        Path(
+            roundedRect: rect.insetBy(dx: Self.margin.width, dy: Self.margin.height),
             cornerRadius: 14,
             style: .continuous
         )
@@ -1106,20 +1075,13 @@ private struct LastPlayedLabel: View {
                 let recency = Self.recency(of: date)
                 Text(Self.format(date))
                     .fontWeight(recency == .older ? .regular : .semibold)
-                    .foregroundStyle(style(for: recency))
+                    .foregroundStyle(.secondary)
             }
         }
         .font(.caption)
         .monospacedDigit()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-    }
-
-    private func style(for recency: Recency) -> AnyShapeStyle {
-        switch recency {
-        case .today: AnyShapeStyle(Color.accentColor)
-        case .yesterday, .older: AnyShapeStyle(.secondary)
-        }
     }
 
     private var accessibilityText: String {
