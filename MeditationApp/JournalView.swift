@@ -2,6 +2,7 @@ import SwiftUI
 
 /// The left panel: Settings, then History (streak, past eras, past entries).
 struct JournalView: View {
+    @Environment(\.appPalette) private var palette
     @Environment(EmotionStore.self) private var store
     @Environment(\.openFromPanel) private var openFromPanel
     @State private var eraIndex = EraIndex()
@@ -149,7 +150,7 @@ struct JournalView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("PanelBackgroundColor"))
+        .background(palette.panel)
         // Settings stays put at the bottom of the panel, below everything History scrolls.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
@@ -171,7 +172,7 @@ struct JournalView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(Color("PanelBackgroundColor"))
+            .background(palette.panel)
         }
         .navigationTitle("History")
         .onAppear { eraIndex = EraIndex.load() }
@@ -193,6 +194,7 @@ struct JournalView: View {
 
 /// The To-dos page, opened from its card on the main screen.
 struct TodosView: View {
+    @Environment(\.appPalette) private var palette
     @Environment(EmotionStore.self) private var store
     @State private var openedTodo: FeelingTodo?
 
@@ -209,7 +211,7 @@ struct TodosView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("BackgroundColor"))
+        .background(palette.canvas)
         .navigationTitle("To-dos")
         .navigationDestination(item: $openedTodo) { todo in
             if let emotion = Emotion.named(todo.emotionName) {
@@ -303,6 +305,7 @@ struct OpenTodosSection: View {
 }
 
 struct EmotionLeaderboardView: View {
+    @Environment(\.appPalette) private var palette
     @Environment(EmotionStore.self) private var store
     @State private var metric: Metric = .time
     @State private var order: Order = .most
@@ -413,7 +416,7 @@ struct EmotionLeaderboardView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("PanelBackgroundColor"))
+        .background(palette.panel)
         .navigationTitle("Emotion Leaderboard")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -566,6 +569,7 @@ private struct CheckInSessionRow: View {
 }
 
 struct CheckInSessionDetailView: View {
+    @Environment(\.appPalette) private var palette
     let entry: JournalEntry
     let session: JournalEntry.Content.CheckInSession
 
@@ -610,7 +614,7 @@ struct CheckInSessionDetailView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("PanelBackgroundColor"))
+        .background(palette.panel)
         .navigationTitle("Check-in")
         .navigationBarTitleDisplayMode(.inline)
     }

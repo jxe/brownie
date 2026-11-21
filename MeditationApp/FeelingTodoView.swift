@@ -5,6 +5,7 @@ import SwiftUI
 /// Experimental replacement for `ReflectionView`: instead of a free-text answer,
 /// feel the feeling through and turn it into a small to-do.
 struct FeelingTodoView: View {
+    @Environment(\.appPalette) private var palette
     let emotion: Emotion
     /// A particular to-do to open. Nil opens this feeling's to-do from the current
     /// check-in session, or starts one.
@@ -27,7 +28,7 @@ struct FeelingTodoView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("BackgroundColor"))
+        .background(palette.canvas)
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("To-do")
         .navigationBarTitleDisplayMode(.inline)
@@ -242,7 +243,7 @@ struct FeelingTodoView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color("HighlightColor"))
+                    .fill(palette.card)
             )
         }
     }
@@ -327,7 +328,7 @@ struct FeelingTodoView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color("HighlightColor"))
+                .fill(palette.card)
         )
     }
 }

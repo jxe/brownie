@@ -13,6 +13,7 @@ struct MeditationListView: View {
     @Environment(MeditationPlayer.self) var player
     @Environment(EmotionStore.self) var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.appPalette) private var palette
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openPanel) private var openPanel
     @Environment(\.panelIsOpen) private var panelIsOpen
@@ -338,7 +339,7 @@ struct MeditationListView: View {
                 Text("iOS didn't produce speech for its first line. Try again, or pick another voice in Settings.\n\n\(player.speechFailure ?? "")")
             }
             // The panel's pages (a past era opens from History) keep its warmer background.
-            .background(isPast ? Color("PanelBackgroundColor") : Color("BackgroundColor"))
+            .background(isPast ? palette.panel : palette.canvas)
             // Only the first time: returning from a pushed page (the editor, Feelings) shows the
             // list as a back swipe starts, and saves and the iCloud watcher keep it current anyway.
             .onAppear {
@@ -483,8 +484,8 @@ struct MeditationListView: View {
         let storeRole = meditationStore.link(for: filename)?.role
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
         let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
-        let activeFill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.65)
-        let inactiveFill = Color("HighlightColor").opacity(0.3)
+        let activeFill = palette.highlight
+        let inactiveFill = palette.card
         // Lift and glow like a running feelings chip: soft dark shadow in light mode, a glow
         // of the row's own color in dark mode.
         let liftShadow = colorScheme == .dark ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.18)
@@ -536,7 +537,7 @@ struct MeditationListView: View {
             .background(
                 ZStack {
                     RowFillShape(isGrown: isEngaged)
-                        .fill(Color("BackgroundColor"))
+                        .fill(palette.canvas)
 
                     RowFillShape(isGrown: isEngaged)
                         .fill(isEngaged ? activeFill : inactiveFill)
@@ -595,7 +596,7 @@ struct MeditationListView: View {
             Button { archiveFile(url) } label: {
                 Label("Archive", systemImage: "archivebox")
             }
-            .tint(.orange)
+            .tint(palette.tint)
         }
         // No leading swipe on the main screen: a swipe from the left edge opens the panel there.
         .swipeActions(edge: .leading) {
@@ -603,7 +604,7 @@ struct MeditationListView: View {
                 Button { bringAlongToCurrentEra(url) } label: {
                     Label("Bring Along", systemImage: "arrow.up.circle")
                 }
-                .tint(.green)
+                .tint(palette.tint)
             }
         }
         .contextMenu {
@@ -945,6 +946,7 @@ private struct FeelingsCard: View {
 /// one kind of thing. A highlighted row, for something under way, shows its lines in
 /// full color instead of gray.
 private struct PageCard<Trailing: View>: View {
+    @Environment(\.appPalette) private var palette
     let title: String
     let lines: [String]
     let highlighted: Bool
@@ -991,9 +993,9 @@ private struct PageCard<Trailing: View>: View {
             .background(
                 ZStack {
                     RowFillShape(isGrown: false)
-                        .fill(Color("BackgroundColor"))
+                        .fill(palette.canvas)
                     RowFillShape(isGrown: false)
-                        .fill(Color("HighlightColor").opacity(0.3))
+                        .fill(palette.card)
                 }
             )
             .contentShape(RoundedRectangle(cornerRadius: 14))
@@ -1087,6 +1089,7 @@ private struct MeditationRowPressContent: View {
 /// "3h", "26h") and stand out a little; older plays fade to days, weeks, months ("3d", "2w",
 /// "4mo"). A small heart marks one logged as helpful today. Blank if never played on this device.
 private struct LastPlayedLabel: View {
+    @Environment(\.appPalette) private var palette
     let date: Date?
     let helpedToday: Bool
 
@@ -1097,7 +1100,7 @@ private struct LastPlayedLabel: View {
             if helpedToday {
                 Image(systemName: "heart.fill")
                     .font(.system(size: 10))
-                    .foregroundStyle(Color("HeartColor"))
+                    .foregroundStyle(palette.tint)
             }
             if let date {
                 let recency = Self.recency(of: date)
@@ -1187,7 +1190,7 @@ struct NowPlayingInset: View {
 /// the home indicator. Pages sit above it rather than under it.
 private struct NowPlayingBar: View {
     @Environment(MeditationPlayer.self) private var player
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appPalette) private var palette
 
     private var title: String {
         if !player.currentTitle.isEmpty { return player.currentTitle }
@@ -1195,7 +1198,7 @@ private struct NowPlayingBar: View {
     }
 
     var body: some View {
-        let fill = Color.accentColor.mix(with: Color("BackgroundColor"), by: colorScheme == .dark ? 0.72 : 0.65)
+        let fill = palette.highlight
         HStack(spacing: 10) {
             PlayingPulseDot(isPulsing: player.isPlaying)
                 .frame(width: 12, height: 12)
@@ -1249,7 +1252,7 @@ private struct NowPlayingBar: View {
         .contentShape(Rectangle())
         .background {
             ZStack {
-                Color("BackgroundColor")
+                palette.canvas
                 fill
             }
             .ignoresSafeArea(edges: .bottom)
@@ -1285,6 +1288,7 @@ struct PlaybackTimeLabel: View {
 /// Pulsing "now playing" dot. The pulse is a Core Animation layer animation, so it runs in the
 /// render server with no per-frame work in the app, and exists only while actually pulsing.
 struct PlayingPulseDot: UIViewRepresentable {
+    @Environment(\.appPalette) private var palette
     let isPulsing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1295,6 +1299,7 @@ struct PlayingPulseDot: UIViewRepresentable {
     }
 
     func updateUIView(_ view: PulseDotView, context: Context) {
+        view.tintColor = UIColor(palette.tint)
         view.isPulsing = isPulsing && !reduceMotion
     }
 }
@@ -1343,7 +1348,7 @@ final class PulseDotView: UIView {
     }
 
     private func updateColor() {
-        let color = UIColor(named: "AccentColor") ?? tintColor ?? .systemBlue
+        let color = tintColor ?? .systemBlue
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.backgroundColor = color.resolvedColor(with: traitCollection).cgColor

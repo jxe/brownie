@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(MeditationPlayer.self) var player
+    @AppStorage(AppPalette.preferenceKey) private var palette = AppPalette.defaultPalette
     @State private var isRefreshing = false
     @State private var metadataQuery: NSMetadataQuery?
     @State private var metadataObserver: NSObjectProtocol?
@@ -39,6 +40,14 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var player = player
         return List {
+            Section("Appearance") {
+                Picker("Color palette", selection: $palette) {
+                    ForEach(AppPalette.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+            }
+
             Section("Speaking Rate") {
                 HStack {
                     Image(systemName: "tortoise")
@@ -91,7 +100,7 @@ struct SettingsView: View {
                                         }
                                         if !player.isAutoVoice && voice.identifier == player.selectedVoiceID {
                                             Image(systemName: "checkmark")
-                                                .foregroundStyle(.blue)
+                                                .foregroundStyle(palette.tint)
                                         }
                                     }
                                 }
@@ -157,7 +166,7 @@ struct SettingsView: View {
 
         }
         .scrollContentBackground(.hidden)
-        .background(Color("PanelBackgroundColor"))
+        .background(palette.panel)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(

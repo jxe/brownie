@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct CheckInView: View {
+    @Environment(\.appPalette) private var palette
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -151,7 +152,7 @@ struct CheckInView: View {
             }
         }
         // The same background as the main screen it opens from.
-        .background(Color("BackgroundColor").ignoresSafeArea())
+        .background(palette.canvas.ignoresSafeArea())
         .navigationTitle("Feelings")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

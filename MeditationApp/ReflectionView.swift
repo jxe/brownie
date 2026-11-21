@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ReflectionView: View {
+    @Environment(\.appPalette) private var palette
     let emotion: Emotion
     @Environment(EmotionStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -28,7 +29,7 @@ struct ReflectionView: View {
                     .padding()
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(Color("HighlightColor"))
+                            .fill(palette.card)
                     )
 
                 // Text editor
@@ -40,7 +41,7 @@ struct ReflectionView: View {
                     .padding(8)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(Color("HighlightColor"))
+                            .fill(palette.card)
                     )
 
                 // Save button
@@ -59,7 +60,7 @@ struct ReflectionView: View {
             .padding()
         }
         .scrollContentBackground(.hidden)
-        .background(Color("BackgroundColor"))
+        .background(palette.canvas)
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Reflect")
         .navigationBarTitleDisplayMode(.inline)

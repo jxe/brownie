@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Browse meditations other people shared and add them to the library.
 struct MeditationStoreView: View {
+    @Environment(\.appPalette) private var palette
     @Environment(\.dismiss) private var dismiss
     private let store = MeditationStore.shared
     @State private var search = ""
@@ -34,7 +35,7 @@ struct MeditationStoreView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Color("BackgroundColor"))
+            .background(palette.canvas)
             .overlay { emptyState }
             .searchable(text: $search, prompt: "Title, tag or author")
             .navigationTitle("Store")
@@ -111,6 +112,7 @@ private struct StoreRow: View {
 }
 
 struct StoreDetailView: View {
+    @Environment(\.appPalette) private var palette
     let item: SharedMeditation
     @Environment(\.dismiss) private var dismiss
     private let store = MeditationStore.shared
@@ -136,12 +138,12 @@ struct StoreDetailView: View {
                     .padding(14)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
-                            .fill(Color("HighlightColor").opacity(0.3))
+                            .fill(palette.card)
                     )
             }
             .padding()
         }
-        .background(Color("BackgroundColor"))
+        .background(palette.canvas)
         .safeAreaInset(edge: .bottom) {
             Button {
                 if store.download(item) != nil {
@@ -178,6 +180,7 @@ struct StoreDetailView: View {
 
 /// A store meditation opened from a med.nxhx.org link.
 struct StoreLinkView: View {
+    @Environment(\.appPalette) private var palette
     let id: String
     @Environment(\.dismiss) private var dismiss
     @State private var item: SharedMeditation?
@@ -195,7 +198,7 @@ struct StoreLinkView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color("BackgroundColor"))
+            .background(palette.canvas)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

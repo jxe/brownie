@@ -1,6 +1,45 @@
 import SwiftUI
 
+enum AppPalette: String, CaseIterable {
+    case eucalyptus = "Eucalyptus & Sage"
+    case indigo = "Indigo & Lavender"
+    case marigold = "Marigold & Sand"
+
+    static let defaultPalette: AppPalette = .marigold
+    static let preferenceKey = "appPalette"
+
+    private func adaptiveColor(light: UInt32, dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            let rgb = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
+                           green: CGFloat((rgb >> 8) & 255) / 255,
+                           blue: CGFloat(rgb & 255) / 255, alpha: 1)
+        })
+    }
+
+    var tint: Color {
+        switch self {
+        case .eucalyptus: adaptiveColor(light: 0x356456, dark: 0xA3D5BF)
+        case .indigo: adaptiveColor(light: 0x4B5E8F, dark: 0xB9C8F2)
+        case .marigold: adaptiveColor(light: 0xB77909, dark: 0xF2C773)
+        }
+    }
+
+    var canvas: Color { Color(uiColor: .systemBackground).mix(with: highlight, by: 0.12) }
+    var panel: Color { canvas.mix(with: highlight, by: 0.25) }
+    var card: Color { canvas.mix(with: highlight, by: 0.48) }
+
+    var highlight: Color {
+        switch self {
+        case .eucalyptus: adaptiveColor(light: 0xE1ECE4, dark: 0x223C33)
+        case .indigo: adaptiveColor(light: 0xE8E6F4, dark: 0x30364D)
+        case .marigold: adaptiveColor(light: 0xFAE9D2, dark: 0x493822)
+        }
+    }
+}
+
 extension EnvironmentValues {
+    @Entry var appPalette: AppPalette = .defaultPalette
     /// Opens the left panel (History and Settings) from anywhere on the main screen.
     @Entry var openPanel: () -> Void = {}
     /// Whether the left panel is open, so the main screen can refresh what Settings may have changed.
@@ -42,6 +81,7 @@ private struct PanelPageView: View {
 
 @main
 struct BrownieApp: App {
+    @AppStorage(AppPalette.preferenceKey) private var palette = AppPalette.defaultPalette
     @State private var player = MeditationPlayer()
     @State private var emotionStore = EmotionStore()
     private let icloudWatcher = iCloudMeditationWatcher()
@@ -55,6 +95,9 @@ struct BrownieApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.appPalette, palette)
+                .accentColor(palette.tint)
+                .tint(palette.tint)
                 .environment(player)
                 .environment(emotionStore)
         }
@@ -63,6 +106,7 @@ struct BrownieApp: App {
 
 /// One main screen, with History and Settings in a panel that slides out from the left.
 struct ContentView: View {
+    @Environment(\.appPalette) private var palette
     @Environment(MeditationPlayer.self) var player
     @State private var panelOpen = false
     /// How far a drag has moved the main screen, while one is under way.
@@ -121,7 +165,7 @@ struct ContentView: View {
                 .background {
                     if offset > 0 {
                         Rectangle()
-                            .fill(Color("BackgroundColor"))
+                            .fill(palette.canvas)
                             .shadow(color: .black.opacity(0.18), radius: 12)
                             .ignoresSafeArea()
                     }

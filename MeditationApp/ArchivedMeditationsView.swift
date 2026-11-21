@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ArchivedMeditationsView: View {
+    @Environment(\.appPalette) private var palette
     @State private var files: [URL] = []
     @State private var pendingDelete: URL? = nil
 
@@ -38,7 +39,7 @@ struct ArchivedMeditationsView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color("PanelBackgroundColor"))
+        .background(palette.panel)
         .navigationTitle("Archived")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: reload)
