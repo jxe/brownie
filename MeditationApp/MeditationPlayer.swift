@@ -12,7 +12,16 @@ class MeditationPlayer: NSObject {
         case finished
     }
 
-    private(set) var state: State = .idle
+    let listeningHistory = ListeningHistory()
+    private(set) var state: State = .idle {
+        didSet {
+            if oldValue == .playing && state != .playing {
+                listeningHistory.end()
+            } else if state == .playing && oldValue != .playing, let currentSourceURL {
+                listeningHistory.begin(filename: currentSourceURL.deletingPathExtension().lastPathComponent)
+            }
+        }
+    }
 
     var isPlaying: Bool { state == .playing }
     var isPreparing: Bool { state == .preparing }
@@ -618,5 +627,80 @@ class MeditationPlayer: NSObject {
             await renderer.resetSpeechSynthesizer()
             return try await renderer.renderSpeech(text: text, voice: voice, rate: rate)
         }
+    }
+}
+
+/// Completed playback intervals and a live interval for the currently playing file.
+@Observable
+final class ListeningHistory {
+    struct Record: Codable {
+        var lastPlayed: Date
+        var intervals: [DateInterval] = []
+
+        func seconds(inLastDayAt now: Date) -> TimeInterval {
+            let cutoff = now.addingTimeInterval(-86400)
+            return intervals.reduce(0) { sum, interval in
+                sum + max(0, min(now, interval.end).timeIntervalSince(max(cutoff, interval.start)))
+            }
+        }
+    }
+
+    private let key = "meditationListeningHistory"
+    private var records: [String: Record]
+    private(set) var activeFile: String?
+    private var started = Date.distantPast
+    @ObservationIgnored private var checkpoint: Timer?
+
+    init() {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: key),
+           let saved = try? JSONDecoder().decode([String: Record].self, from: data) {
+            records = saved
+        } else {
+            let legacy = defaults.dictionary(forKey: "recentMeditationPlays") as? [String: Date] ?? [:]
+            records = legacy.mapValues { Record(lastPlayed: $0) }
+        }
+    }
+
+    func record(for filename: String, at now: Date) -> Record? {
+        guard activeFile == filename else { return records[filename] }
+        var record = records[filename] ?? Record(lastPlayed: started)
+        record.lastPlayed = max(now, started)
+        record.intervals.append(DateInterval(start: started, end: record.lastPlayed))
+        return record
+    }
+
+    func begin(filename: String) {
+        started = Date()
+        activeFile = filename
+        save()
+        // Bound lost listening time if iOS terminates the app during playback.
+        checkpoint = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.save()
+        }
+    }
+
+    func end() {
+        checkpoint?.invalidate()
+        checkpoint = nil
+        if let activeFile {
+            records[activeFile] = record(for: activeFile, at: Date())
+        }
+        activeFile = nil
+        save()
+    }
+
+    private func save() {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-86400)
+        var snapshot = records
+        if let activeFile { snapshot[activeFile] = record(for: activeFile, at: now) }
+        for filename in snapshot.keys {
+            snapshot[filename]?.intervals.removeAll { $0.end <= cutoff }
+        }
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+        if activeFile == nil { records = snapshot }
     }
 }

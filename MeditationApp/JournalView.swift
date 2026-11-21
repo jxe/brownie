@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The left panel: Settings, then History (streak, past eras, past entries).
 struct JournalView: View {
-    @Environment(\.appPalette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(EmotionStore.self) private var store
     @Environment(\.openFromPanel) private var openFromPanel
     @State private var eraIndex = EraIndex()
@@ -76,6 +76,33 @@ struct JournalView: View {
         }.joined(separator: "\n\n---\n\n")
     }
 
+    @ViewBuilder
+    private func historyRow(_ row: PastRow) -> some View {
+        switch row {
+        case .todo(let todo):
+            DoneTodoRow(todo: todo)
+        case .entry(let entry):
+            switch entry.content {
+            case .reflection(let r):
+                ReflectionEntryRow(entry: entry, reflection: r)
+            case .meditation(let m):
+                MeditationLogRow(entry: entry, meditation: m)
+            case .checkInSession(let s):
+                Button { openFromPanel(.checkIn(entry.id)) } label: {
+                    PanelLinkLabel { CheckInSessionRow(entry: entry, session: s) }
+                }
+                // A list tints button text with the accent color; these read as plain rows.
+                .tint(.primary)
+            }
+        }
+    }
+
+    private var sidebarColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.14, green: 0.14, blue: 0.14)
+            : Color(red: 0.95, green: 0.945, blue: 0.935)
+    }
+
     var body: some View {
         List {
             // Streak banner
@@ -90,6 +117,7 @@ struct JournalView: View {
                         Spacer()
                     }
                     .padding(.vertical, 4)
+                    .listRowBackground(Color.clear)
                 }
             }
 
@@ -103,6 +131,7 @@ struct JournalView: View {
                         // A list tints button text with the accent color; these read as plain rows.
                         .tint(.primary)
                     }
+                    .listRowBackground(Color.clear)
                 }
             }
 
@@ -110,23 +139,8 @@ struct JournalView: View {
             if !pastRows.isEmpty {
                 Section("Past Entries") {
                     ForEach(pastRows) { row in
-                        switch row {
-                        case .todo(let todo):
-                            DoneTodoRow(todo: todo)
-                        case .entry(let entry):
-                            switch entry.content {
-                            case .reflection(let r):
-                                ReflectionEntryRow(entry: entry, reflection: r)
-                            case .meditation(let m):
-                                MeditationLogRow(entry: entry, meditation: m)
-                            case .checkInSession(let s):
-                                Button { openFromPanel(.checkIn(entry.id)) } label: {
-                                    PanelLinkLabel { CheckInSessionRow(entry: entry, session: s) }
-                                }
-                                // A list tints button text with the accent color; these read as plain rows.
-                                .tint(.primary)
-                            }
-                        }
+                        historyRow(row)
+                            .listRowBackground(Color.clear)
                     }
                     .onDelete { indexSet in
                         let rows = pastRows
@@ -147,10 +161,13 @@ struct JournalView: View {
                     systemImage: "clock",
                     description: Text("Finished to-dos, check-ins, and meditations that helped show up here.")
                 )
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
         }
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(palette.panel)
+        .background(sidebarColor)
         // Settings stays put at the bottom of the panel, below everything History scrolls.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
@@ -172,9 +189,12 @@ struct JournalView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(palette.panel)
+            .background(sidebarColor)
         }
         .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(sidebarColor, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .onAppear { eraIndex = EraIndex.load() }
         .toolbar {
             Button { openFromPanel(.leaderboard) } label: {

@@ -48,22 +48,16 @@ class EmotionStore {
         static let nextSelectionOrdinal = "checkin_nextSelectionOrdinal"
         static let lastInteraction = "checkin_lastInteractionTime"
         static let sessionStart = "checkin_sessionStartTime"
-        static let recentMeditationPlays = "recentMeditationPlays"
         static let deprecatedEmotionRecentContributions = "checkin_emotionRecentContributions"
         static let deprecatedRecentContributionsUpdatedAt = "checkin_recentContributionsUpdatedAt"
         static let deprecatedEmotionLastTapOrdinals = "checkin_emotionLastTapOrdinals"
         static let deprecatedNextTapOrdinal = "checkin_nextTapOrdinal"
     }
 
-    /// Map of meditation filename → last-played timestamp. Persisted in
-    /// UserDefaults so "recently played" survives app restarts and iOS kills.
-    private var recentPlays: [String: Date] = [:]
-
     init() {
         load()
         loadTodos()
         loadSession()
-        loadRecentPlays()
     }
 
     @discardableResult
@@ -430,30 +424,6 @@ class EmotionStore {
             cursor = prev
         }
         return count
-    }
-
-    // MARK: - Recent Plays
-
-    func markMeditationPlayed(filename: String?) {
-        guard let filename else { return }
-        recentPlays[filename] = Date()
-        saveRecentPlays()
-    }
-
-    func lastPlayed(filename: String?) -> Date? {
-        guard let filename else { return nil }
-        return recentPlays[filename]
-    }
-
-    private func saveRecentPlays() {
-        // UserDefaults can persist [String: Date] directly via property-list encoding.
-        UserDefaults.standard.set(recentPlays, forKey: SessionKeys.recentMeditationPlays)
-    }
-
-    private func loadRecentPlays() {
-        if let dict = UserDefaults.standard.dictionary(forKey: SessionKeys.recentMeditationPlays) as? [String: Date] {
-            recentPlays = dict
-        }
     }
 
     // MARK: - Session Persistence

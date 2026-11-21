@@ -126,8 +126,16 @@ struct MeditationListView: View {
             List {
                 switch shelf {
                 case .home:
-                    feelingsCard
-                    todosCard
+                    VStack(spacing: 0) {
+                        feelingsCard
+                        Divider().padding(.horizontal, 14)
+                        todosCard
+                    }
+                    .background(palette.card)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     if !files.isEmpty || hasOpenTodos {
                         // Current comes first: it's what's pressing right now.
                         Section {
@@ -478,7 +486,7 @@ struct MeditationListView: View {
         let isPreparing = isCurrent && player.isPreparing
         let isEngaged = isActive || isPreparing
         let hasLogToday = store.hasMeditationLogToday(filename: filename)
-        let lastPlayed = store.lastPlayed(filename: filename)
+        let lastPlayed = player.listeningHistory.record(for: filename, at: Date())?.lastPlayed
         let hasUpdate = meditationStore.updates[filename] != nil
         let storeRole = meditationStore.link(for: filename)?.role
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
@@ -521,7 +529,7 @@ struct MeditationListView: View {
 
                 Spacer()
 
-                LastPlayedLabel(date: lastPlayed, helpedToday: hasLogToday)
+                LastPlayedLabel(filename: filename, history: player.listeningHistory, helpedToday: hasLogToday)
                     .opacity(hasUpdate ? 0 : 1)
                 // Room for the edit button, which sits over the row (see below).
                 Color.clear
@@ -700,7 +708,6 @@ struct MeditationListView: View {
     private func playFile(_ url: URL) {
         guard let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) else { return }
         let meditation = MeditationParser.parse(content)
-        store.markMeditationPlayed(filename: url.deletingPathExtension().lastPathComponent)
         player.play(meditation, sourceURL: url)
     }
 
@@ -922,12 +929,8 @@ private struct FeelingsCard: View {
     }
 }
 
-/// A row that opens a page of its own, like Feelings or To-dos. It looks like a
-/// meditation row (same fill, shape, padding and title font, no icon), so the main list reads as
-/// one kind of thing. A highlighted row, for something under way, shows its lines in
-/// full color instead of gray.
+/// One independently tappable row inside the shared shortcuts card.
 private struct PageCard<Trailing: View>: View {
-    @Environment(\.appPalette) private var palette
     let title: String
     let lines: [String]
     let highlighted: Bool
@@ -968,31 +971,14 @@ private struct PageCard<Trailing: View>: View {
                     .foregroundStyle(.tertiary)
                     .frame(width: MeditationListView.editButtonWidth)
             }
-            .padding(.leading, 14 + RowFillShape.margin.width)
-            .padding(.trailing, 6 + RowFillShape.margin.width)
-            .padding(.vertical, 12 + RowFillShape.margin.height)
-            .background(
-                ZStack {
-                    RowFillShape()
-                        .fill(palette.canvas)
-                    RowFillShape()
-                        .fill(palette.card)
-                }
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .padding(.leading, 14)
+            .padding(.trailing, 6)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
         .buttonStyle(MeditationRowPressStyle())
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .tracksTappableFrame("card|\(title)", in: tappableFrames)
-        // Same insets as a meditation row.
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(
-            top: 4 - RowFillShape.margin.height,
-            leading: 16 - RowFillShape.margin.width,
-            bottom: 4 - RowFillShape.margin.height,
-            trailing: 16 - RowFillShape.margin.width
-        ))
     }
 }
 
@@ -1054,64 +1040,67 @@ private struct MeditationRowPressContent: View {
     }
 }
 
-/// How long ago a meditation was last played. Today and yesterday count in hours ("now",
-/// "3h", "26h") and stand out a little; older plays fade to days, weeks, months ("3d", "2w",
-/// "4mo"). A small heart marks one logged as helpful today. Blank if never played on this device.
+/// Recent listening has a headphones glyph; older plays show their age explicitly.
 private struct LastPlayedLabel: View {
     @Environment(\.appPalette) private var palette
-    let date: Date?
+    let filename: String
+    let history: ListeningHistory
     let helpedToday: Bool
 
-    private enum Recency { case today, yesterday, older }
-
     var body: some View {
-        HStack(spacing: 3) {
+        let active = history.activeFile == filename
+        TimelineView(.periodic(from: .now, by: active ? 1 : 60)) { context in
+            label(at: context.date, active: active)
+        }
+    }
+
+    private func label(at now: Date, active: Bool) -> some View {
+        HStack(spacing: 4) {
             if helpedToday {
                 Image(systemName: "heart.fill")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.tint)
+                    .accessibilityLabel("Helpful today")
             }
-            if let date {
-                let recency = Self.recency(of: date)
-                Text(Self.format(date))
-                    .fontWeight(recency == .older ? .regular : .semibold)
-                    .foregroundStyle(.secondary)
+            if let record = history.record(for: filename, at: now) {
+                let seconds = record.seconds(inLastDayAt: now)
+                if seconds > 0 || active {
+                    let duration = Duration.seconds(Int(seconds))
+                    let units: Set<Duration.UnitsFormatStyle.Unit> = seconds < 60 ? [.seconds] : [.hours, .minutes]
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Image(systemName: "headphones")
+                            .font(.caption2)
+                            .imageScale(.small)
+                            .foregroundStyle(.tertiary)
+                        Text(duration.formatted(.units(allowed: units, width: .narrow)))
+                    }
+                    .accessibilityLabel("Listened for \(duration.formatted(.units(width: .wide))) in the last 24 hours")
+                } else {
+                    Text(Self.age(since: record.lastPlayed, now: now))
+                        .accessibilityLabel("Last played \(record.lastPlayed.formatted(.relative(presentation: .named)))")
+                }
             }
         }
         .font(.caption)
+        .foregroundStyle(.secondary)
         .monospacedDigit()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
+        .accessibilityElement(children: .combine)
     }
 
-    private var accessibilityText: String {
-        var parts: [String] = []
-        if let date {
-            parts.append("Last played \(date.formatted(.relative(presentation: .named)))")
-        }
-        if helpedToday { parts.append("helped today") }
-        return parts.joined(separator: ", ")
-    }
-
-    private static func recency(of date: Date) -> Recency {
-        let cal = Calendar.current
-        if cal.isDateInToday(date) { return .today }
-        if cal.isDateInYesterday(date) { return .yesterday }
-        return .older
-    }
-
-    static func format(_ date: Date) -> String {
-        if recency(of: date) != .older {
-            let hours = Int(Date().timeIntervalSince(date) / 3600)
-            return hours < 1 ? "now" : "\(hours)h"
-        }
-        let cal = Calendar.current
-        let days = cal.dateComponents([.day], from: cal.startOfDay(for: date), to: cal.startOfDay(for: Date())).day ?? 0
-        switch days {
-        case ..<14: return "\(days)d"
-        case ..<60: return "\(days / 7)w"
-        case ..<365: return "\(days / 30)mo"
-        default: return "\(days / 365)y"
+    private static func age(since date: Date, now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        switch seconds {
+        case ..<60: return "just now"
+        case ..<3600: return "\(seconds / 60)m ago"
+        case ..<86400: return "\(seconds / 3600)h ago"
+        default:
+            let days = seconds / 86400
+            switch days {
+            case ..<14: return "\(days)d ago"
+            case ..<60: return "\(days / 7)w ago"
+            case ..<365: return "\(days / 30)mo ago"
+            default: return "\(days / 365)y ago"
+            }
         }
     }
 }
@@ -1232,6 +1221,7 @@ struct PlaybackTimeLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(Self.formatTime(player.elapsedSeconds))
+                .foregroundStyle(Color.accentColor)
             if let total = player.totalSeconds {
                 Text("/")
                 Text(Self.formatTime(total))
@@ -1239,7 +1229,7 @@ struct PlaybackTimeLabel: View {
         }
         .font(.caption)
         .monospacedDigit()
-        .foregroundStyle(Color.accentColor)
+        .foregroundStyle(.secondary)
     }
 
     private static func formatTime(_ totalSeconds: Int) -> String {

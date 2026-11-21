@@ -192,7 +192,8 @@ struct ContentView: View {
     }
 
     private func closeDrag(panelWidth: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10)
+        // The overlay moves with the drag, so measure finger travel in a stationary space.
+        DragGesture(minimumDistance: 10, coordinateSpace: .global)
             .onChanged { value in
                 dragOffset = min(0, value.translation.width)
             }

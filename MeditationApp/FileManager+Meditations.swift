@@ -183,6 +183,7 @@ extension FileManager {
             "selectedVoiceID",
             "speakingRate",
             "recentMeditationPlays",
+            "meditationListeningHistory",
             "checkin_emotionCounts",
             "checkin_sessionTime",
         ]
