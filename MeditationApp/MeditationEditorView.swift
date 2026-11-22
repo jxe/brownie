@@ -33,7 +33,12 @@ struct MeditationEditorView: View {
     /// from `content` when the page opens or something else changes it, so typing in the
     /// script never moves text around under the caret.
     @State private var doc = MedDocument("")
-    @State private var editingPool: PoolSheetTarget?
+    /// The well whose section to scroll to, once it's laid out.
+    @State private var scrollTarget: String?
+    /// The well to give a new blank item and focus, once it's laid out.
+    @State private var focusRequest: String?
+    /// The well with an item being typed in.
+    @State private var focusedWell: String?
     @State private var namingNewPool = false
     @State private var newPoolName = ""
     @State private var editingTags = false
@@ -52,30 +57,44 @@ struct MeditationEditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if showsFilename {
-                TextField("filename", text: $filename)
-                    .textFieldStyle(.roundedBorder)
-                    .padding()
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    // Long lines are hard to follow on iPad, so cap the measure and center it.
+                    VStack(alignment: .leading, spacing: 0) {
+                        if showsFilename {
+                            TextField("filename", text: $filename)
+                                .textFieldStyle(.roundedBorder)
+                                .padding()
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                        }
+                        headerFields
+                        Divider().padding(.horizontal, 20)
+                        MedTextEditor(
+                            text: scriptBinding,
+                            outside: doc.prefix,
+                            onOpenPool: { scrollToWell($0) },
+                            onNewPool: { addPool(named: $0, item: $1) },
+                            scrolls: false
+                        )
+                        wells
+                    }
+                    .frame(maxWidth: 720)
+                    .frame(maxWidth: .infinity)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: scrollTarget) { _, name in
+                    guard let name else { return }
+                    scrollTarget = nil
+                    withAnimation(.snappy) { proxy.scrollTo(WellSection.anchor(name), anchor: .top) }
+                }
             }
 
-            // Long lines are hard to follow on iPad, so cap the measure and center it.
-            VStack(alignment: .leading, spacing: 0) {
-                headerFields
-                poolShelf
-                Divider().padding(.horizontal, 20)
-                MedTextEditor(
-                    text: scriptBinding,
-                    outside: doc.prefix,
-                    onOpenPool: { editingPool = PoolSheetTarget(name: $0) },
-                    onNewPool: { addPool(named: $0, item: $1) }
-                )
+            // A new pool is empty while its first item is typed; that's not a mistake yet.
+            let diagnostics = MeditationParser.diagnose(content).filter { diagnostic in
+                guard let well = focusedWell else { return true }
+                return diagnostic.message != "Pool ~\(well) has no indented items under it."
             }
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity)
-
-            let diagnostics = MeditationParser.diagnose(content)
             if !diagnostics.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 6) {
@@ -148,10 +167,6 @@ struct MeditationEditorView: View {
                 moreMenu
             }
         }
-        .sheet(item: $editingPool) { target in
-            poolSheet(for: target.name)
-                .interactiveDismissDisabled()
-        }
         .sheet(isPresented: $editingTags) {
             TagEditorView(title: "Tags", initialTags: meta.tags, suggestions: MedHeader.suggestedTags()) { _, tags in
                 setHeader(title: meta.title, tags: tags)
@@ -188,7 +203,10 @@ struct MeditationEditorView: View {
             guard !Task.isCancelled else { return }
             saveIfNeeded()
         }
-        .onDisappear { saveIfNeeded() }
+        .onDisappear {
+            removeEmptyWells(except: nil)
+            saveIfNeeded()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { saveIfNeeded() }
         }
@@ -285,42 +303,87 @@ struct MeditationEditorView: View {
         .accessibilityLabel("More")
     }
 
-    /// Each pool as one chip with its item count (dimmed when nothing draws from it), then
-    /// a chip for a new one. The pools are written at the top of the file.
-    private var poolShelf: some View {
-        let unused = MeditationParser.unusedPoolNames(in: content)
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(doc.poolNames, id: \.self) { name in
-                    Button {
-                        editingPool = PoolSheetTarget(name: name)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("~\(name)")
-                            Text("\(doc.itemCount(of: name))")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        .opacity(unused.contains(name) ? 0.45 : 1)
-                    }
-                    .buttonStyle(ShelfChipStyle(selected: false, monospaced: true))
-                    .accessibilityHint(unused.contains(name) ? "Not used in the script" : "")
-                }
-                Button {
-                    newPoolName = ""
-                    namingNewPool = true
-                } label: {
-                    Label(doc.poolNames.isEmpty ? "New Pool" : "Pool", systemImage: "plus")
-                }
-                .buttonStyle(ShelfChipStyle(selected: false))
-            }
-            .padding(.horizontal, 20)
+    // MARK: Wells
+
+    /// The pools in the order the script first reaches them, depth first: a pool the script
+    /// draws from, then the pools its items draw from. Pools nothing reaches come last.
+    private var wellOrder: [String] {
+        let defined = doc.poolNames
+        var order: [String] = []
+        func visit(_ name: String) {
+            guard defined.contains(name), !order.contains(name),
+                  let index = doc.poolIndex(named: name) else { return }
+            order.append(name)
+            let items = doc.pools[index].split(separator: "\n", omittingEmptySubsequences: false)
+                .dropFirst().joined(separator: "\n")
+            for reference in MeditationParser.poolReferences(in: items) { visit(reference) }
         }
-        .padding(.bottom, 10)
+        for reference in MeditationParser.poolReferences(in: doc.script) { visit(reference) }
+        for name in defined where !order.contains(name) { order.append(name) }
+        return order
     }
 
-    /// Defines a pool (unless it exists) and opens it to add items. `item`, text taken out of
-    /// the script or another pool, is its first item, or one more if the pool exists.
+    /// One section per pool under the script, its items edited in place, then New Pool.
+    private var wells: some View {
+        let unused = MeditationParser.unusedPoolNames(in: content)
+        let references = MeditationParser.referenceableNames(in: content)
+        return VStack(alignment: .leading, spacing: 0) {
+            if !doc.pools.isEmpty { Divider().padding(.horizontal, 20) }
+            ForEach(wellOrder, id: \.self) { name in
+                if let index = doc.poolIndex(named: name) {
+                    WellSection(
+                        name: name,
+                        poolText: doc.pools[index],
+                        isUnused: unused.contains(name),
+                        canInline: MeditationParser.canInlinePool(name, in: content),
+                        references: references,
+                        focusRequest: $focusRequest,
+                        onWrite: { items in writeWell(name, items: items) },
+                        onFocusChange: { wellFocusChanged(name, focused: $0) },
+                        onDelete: {
+                            update { doc in
+                                if let i = doc.poolIndex(named: name) { doc.pools.remove(at: i) }
+                            }
+                        },
+                        onInline: { inlinePool(named: name, with: $0) },
+                        onExtract: { items, newPool, text in
+                            extract(from: name, items: items, into: newPool, text: text)
+                        })
+                    .id(WellSection.anchor(name))
+                }
+            }
+            Button {
+                newPoolName = ""
+                namingNewPool = true
+            } label: {
+                Label("New Pool", systemImage: "plus")
+            }
+            .buttonStyle(ShelfChipStyle(selected: false))
+            .padding(.horizontal, 20)
+            .padding(.top, doc.pools.isEmpty ? 4 : 20)
+            .padding(.bottom, 32)
+        }
+    }
+
+    /// Writes a well's items back into its pool block, and returns the block as written.
+    private func writeWell(_ name: String, items: [MedPoolBlock.Item]) -> String {
+        var written = ""
+        update { doc in
+            guard let i = doc.poolIndex(named: name) else { return }
+            doc.pools[i] = MedPoolBlock.find(named: name, in: doc.pools[i])?.text(with: items) ?? doc.pools[i]
+            written = doc.pools[i]
+        }
+        return written
+    }
+
+    private func scrollToWell(_ name: String) {
+        // After this update, so a well just added is there to scroll to.
+        DispatchQueue.main.async { scrollTarget = name }
+    }
+
+    /// Defines a pool (unless it exists) and scrolls to it. `item`, text taken out of the
+    /// script or another pool, is its first item, or one more if the pool exists; without
+    /// one, the pool gets a new blank item to type in.
     private func addPool(named name: String, item: String? = nil) {
         let item = item?.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
         let firstItem = item.flatMap { $0.isEmpty ? nil : $0 }
@@ -333,23 +396,33 @@ struct MeditationEditorView: View {
             // gets a blank one until it has items (and goes away if it never does).
             update { $0.pools.append("~ \(name)\n  " + (firstItem ?? "")) }
         }
-        editingPool = PoolSheetTarget(name: name)
+        if firstItem == nil { focusRequest = name }
+        scrollToWell(name)
     }
 
-    /// Closes the pool sheet, removing any pool left with no items: with nothing under its
-    /// `~name` line it wouldn't be a pool, just a line drawing from one.
-    private func closePoolSheet() {
+    /// Typing moved into or out of a well. Leaving one removes any well left with no items,
+    /// once it's clear the typing didn't just move to another item of the same well.
+    private func wellFocusChanged(_ name: String, focused: Bool) {
+        if focused {
+            focusedWell = name
+            return
+        }
+        if focusedWell == name { focusedWell = nil }
+        DispatchQueue.main.async { removeEmptyWells(except: focusedWell ?? focusRequest) }
+    }
+
+    /// Removes pools with no items: with nothing under its `~name` line one wouldn't be a
+    /// pool, just a line drawing from one.
+    private func removeEmptyWells(except keep: String?) {
         let empty = doc.pools.indices.filter { i in
             guard let block = MedPoolBlock.blockRanges(in: doc.pools[i]).first,
                   let found = MedPoolBlock.find(named: block.name, in: doc.pools[i]) else { return true }
-            return found.items.isEmpty
+            return block.name != keep && found.items.isEmpty
         }
-        if !empty.isEmpty {
-            update { doc in
-                for i in empty.reversed() { doc.pools.remove(at: i) }
-            }
+        guard !empty.isEmpty else { return }
+        update { doc in
+            for i in empty.reversed() { doc.pools.remove(at: i) }
         }
-        editingPool = nil
     }
 
     /// Writes `text` in place of every `~name`, in the script and the other pools, and removes the pool.
@@ -360,11 +433,10 @@ struct MeditationEditorView: View {
             doc.pools = doc.pools.map { MeditationParser.inliningPool(name, with: text, in: $0) }
             doc.script = MeditationParser.inliningPool(name, with: text, in: doc.script)
         }
-        editingPool = nil
     }
 
     /// Saves pool `name` with `items` (selected text in one of them now `~newPool`), then
-    /// moves the text into `newPool` and opens that one.
+    /// moves the text into `newPool` and scrolls to that one.
     private func extract(from name: String, items: [MedPoolBlock.Item], into newPool: String, text: String) {
         update { doc in
             if let i = doc.poolIndex(named: name) {
@@ -372,39 +444,6 @@ struct MeditationEditorView: View {
             }
         }
         addPool(named: newPool, item: text)
-    }
-
-    @ViewBuilder
-    private func poolSheet(for name: String) -> some View {
-        if let index = doc.poolIndex(named: name),
-           let block = MedPoolBlock.find(named: name, in: doc.pools[index]) {
-            MedPoolEditorSheet(
-                name: name, items: block.items,
-                references: MeditationParser.referenceableNames(in: content),
-                isUnused: MeditationParser.unusedPoolNames(in: content).contains(name),
-                onDone: { items in
-                    update { doc in
-                        if let i = doc.poolIndex(named: name) {
-                            doc.pools[i] = MedPoolBlock.find(named: name, in: doc.pools[i])?.text(with: items) ?? doc.pools[i]
-                        }
-                    }
-                    closePoolSheet()
-                },
-                onCancel: { closePoolSheet() },
-                onDelete: {
-                    update { doc in
-                        if let i = doc.poolIndex(named: name) { doc.pools.remove(at: i) }
-                    }
-                    editingPool = nil
-                },
-                onExtract: { items, newPool, text in
-                    extract(from: name, items: items, into: newPool, text: text)
-                },
-                onInline: { text in inlinePool(named: name, with: text) },
-                canInline: MeditationParser.canInlinePool(name, in: content))
-        } else {
-            ContentUnavailableView("No Pool Named ~\(name)", systemImage: "questionmark.circle")
-        }
     }
 
     /// Plays the script as it stands. Pause and stop are on the now-playing bar at the bottom,
@@ -488,9 +527,244 @@ struct MeditationEditorView: View {
     }
 }
 
-private struct PoolSheetTarget: Identifiable {
+
+/// One pool under the script: a `~name` header with its item count and a ⋯ menu, then its
+/// items, each edited in place and written straight back to the pool block.
+private struct WellSection: View {
     let name: String
-    var id: String { name }
+    /// The pool block as it is in the document.
+    let poolText: String
+    /// No line draws from this pool.
+    let isUnused: Bool
+    /// See `MeditationParser.canInlinePool`.
+    let canInline: Bool
+    /// The meditation's pools and remembered picks, for the item fields' `~…` menu.
+    let references: (pools: [String], picks: [String])
+    /// A well's name when it should get a new blank item, focused. Cleared once done.
+    @Binding var focusRequest: String?
+    /// Writes the items back, returning the block as written.
+    let onWrite: ([MedPoolBlock.Item]) -> String
+    let onFocusChange: (Bool) -> Void
+    let onDelete: () -> Void
+    let onInline: (String) -> Void
+    /// Make Pool… on text selected in an item: the items with `~name` in place of the
+    /// selection, the new pool's name, and the selected text for it.
+    let onExtract: (_ items: [MedPoolBlock.Item], _ newPool: String, _ text: String) -> Void
+
+    /// The items being edited, with their ids kept while typing; blank ones aren't written.
+    @State private var items: [MedPoolBlock.Item] = []
+    /// The block as this section last read or wrote it, so a change from elsewhere is picked up.
+    @State private var known: String?
+    @State private var focused: UUID?
+    @State private var confirmingDelete = false
+    @State private var confirmingInline = false
+    @State private var extracting: (item: UUID, range: NSRange)?
+    @State private var newPoolName = ""
+
+    static func anchor(_ name: String) -> String { "well:\(name)" }
+
+    /// The pool's one live item, when it has exactly one.
+    private var onlyItem: String? {
+        let live = items.filter { !$0.commented }
+            .map { $0.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return live.count == 1 ? live[0] : nil
+    }
+
+    private var liveCount: Int {
+        items.filter { !$0.commented && !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            ForEach(items) { item in
+                row(item.id)
+            }
+            Button {
+                addItem(after: nil)
+            } label: {
+                Label("Item", systemImage: "plus")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 34)
+            .padding(.trailing, 20)
+        }
+        .padding(.top, 20)
+        .onAppear {
+            readIfChanged()
+            takeFocusRequest()
+        }
+        .onChange(of: poolText) { readIfChanged() }
+        .onChange(of: focusRequest) { takeFocusRequest() }
+        .onChange(of: focused) { old, id in
+            // A blank item goes once typing leaves it.
+            if let old, old != id, let item = items.first(where: { $0.id == old }),
+               item.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                items.removeAll { $0.id == old }
+            }
+            onFocusChange(id != nil)
+        }
+        .confirmationDialog("Delete ~\(name) and its \(liveCount) items?",
+                            isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete Pool", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Write “\(onlyItem ?? "")” in place of each ~\(name), and remove the pool?",
+                            isPresented: $confirmingInline, titleVisibility: .visible) {
+            Button("Replace with Text") {
+                if let onlyItem { onInline(onlyItem) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Make Pool", isPresented: Binding(
+            get: { extracting != nil },
+            set: { if !$0 { extracting = nil } }
+        )) {
+            TextField("name", text: $newPoolName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) { extracting = nil }
+            Button("Create") { extract() }
+        } message: {
+            Text("The selected text becomes an item of the new pool, and ~name takes its place.")
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Text("~\(name)")
+                Text("\(liveCount)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .font(.subheadline.monospaced())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+            )
+            .opacity(isUnused ? 0.45 : 1)
+            if isUnused {
+                Text("unused")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Menu {
+                if onlyItem != nil {
+                    Button {
+                        confirmingInline = true
+                    } label: {
+                        Label("Replace ~\(name) with Its Text", systemImage: "text.insert")
+                    }
+                    .disabled(!canInline)
+                }
+                Button(role: .destructive) {
+                    confirmingDelete = true
+                } label: {
+                    Label("Delete Pool", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Pool options")
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 4)
+        .accessibilityHint(isUnused ? "Not used in the script" : "")
+    }
+
+    private func row(_ id: UUID) -> some View {
+        let item = binding(for: id)
+        return HStack(alignment: .center, spacing: 8) {
+            MedItemField(text: item.text, references: references,
+                         dimmed: item.wrappedValue.commented, focused: focused == id,
+                         onFocus: { focused = id },
+                         onBlur: { if focused == id { focused = nil } },
+                         onSubmit: { addItem(after: id) },
+                         onExtract: { range in
+                             newPoolName = ""
+                             extracting = (id, range)
+                         })
+                .overlay(alignment: .leading) {
+                    if item.wrappedValue.text.isEmpty {
+                        Text("New item").font(Font(medFont)).foregroundStyle(.tertiary).allowsHitTesting(false)
+                    }
+                }
+            MedItemMarkerMenu(item: item, onDelete: { remove(id) })
+        }
+        .padding(.leading, 34)
+        .padding(.trailing, 14)
+        .padding(.vertical, 7)
+    }
+
+    private func binding(for id: UUID) -> Binding<MedPoolBlock.Item> {
+        Binding(
+            get: { items.first { $0.id == id } ?? MedPoolBlock.Item() },
+            set: { item in
+                guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+                items[index] = item
+                write()
+            })
+    }
+
+    private func write() {
+        known = onWrite(items)
+    }
+
+    /// Takes up the block as it now is, unless it's what this section wrote.
+    private func readIfChanged() {
+        guard poolText != known else { return }
+        known = poolText
+        items = MedPoolBlock.find(named: name, in: poolText)?.items ?? []
+    }
+
+    private func takeFocusRequest() {
+        guard focusRequest == name else { return }
+        focusRequest = nil
+        addItem(after: nil)
+    }
+
+    private func addItem(after id: UUID?) {
+        let item = MedPoolBlock.Item()
+        if let id, let index = items.firstIndex(where: { $0.id == id }) {
+            items.insert(item, at: index + 1)
+        } else {
+            items.append(item)
+        }
+        focused = item.id
+    }
+
+    private func remove(_ id: UUID) {
+        items.removeAll { $0.id == id }
+        if focused == id { focused = nil }
+        write()
+    }
+
+    /// Takes the selected text out of its item into pool `newPoolName`, leaving `~name` behind.
+    private func extract() {
+        defer { extracting = nil }
+        guard let extracting,
+              let newName = MedTextEditor.Coordinator.poolName(from: newPoolName), newName != name,
+              let index = items.firstIndex(where: { $0.id == extracting.item }) else { return }
+        let ns = items[index].text as NSString
+        guard NSMaxRange(extracting.range) <= ns.length else { return }
+        let selected = ns.substring(with: extracting.range)
+        var updated = items
+        updated[index].text = ns.replacingCharacters(in: extracting.range, with: "~\(newName)")
+        focused = nil
+        onExtract(updated, newName, selected)
+    }
 }
 
 /// A small rounded chip for the editor's header and pool shelf.

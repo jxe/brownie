@@ -684,48 +684,7 @@ struct MedPoolEditorSheet: View {
     }
 
     private func markerMenu(_ item: Binding<MedPoolBlock.Item>) -> some View {
-        Menu {
-            Button {
-                item.wrappedValue.commented.toggle()
-            } label: {
-                if item.wrappedValue.commented {
-                    Label("Uncomment", systemImage: "text.badge.checkmark")
-                } else {
-                    Label("Comment Out", systemImage: "number")
-                }
-            }
-            Picker("Pronouns", selection: item.gender) {
-                Text("No pronouns").tag(Gender?.none)
-                Text("♀ she / her").tag(Gender?.some(.female))
-                Text("♂ he / him").tag(Gender?.some(.male))
-            }
-            Picker("Weight", selection: item.rocks) {
-                Text("Normal").tag(0)
-                ForEach(1...4, id: \.self) { n in
-                    Text(String(repeating: "🪨", count: n)).tag(n)
-                }
-            }
-        } label: {
-            let markers = markerText(item.wrappedValue)
-            if markers.isEmpty {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(markers)
-            }
-        }
-        .accessibilityLabel("Comment, pronouns and weight")
-    }
-
-    private func markerText(_ item: MedPoolBlock.Item) -> String {
-        var parts: [String] = item.commented ? ["#"] : []
-        switch item.gender {
-        case .female: parts.append("♀")
-        case .male: parts.append("♂")
-        case nil: break
-        }
-        if item.rocks > 0 { parts.append(String(repeating: "🪨", count: item.rocks)) }
-        return parts.joined(separator: " ")
+        MedItemMarkerMenu(item: item)
     }
 
     /// Takes the selected text out of its item into pool `newPoolName`, leaving `~name` behind.
@@ -750,5 +709,62 @@ struct MedPoolEditorSheet: View {
             items.append(item)
         }
         focused = item.id
+    }
+}
+
+/// A pool item's options: comment it out, pronouns, 🪨 weight, and (with `onDelete`) remove it.
+/// Its label shows the markers set, or a sliders icon when there are none.
+struct MedItemMarkerMenu: View {
+    @Binding var item: MedPoolBlock.Item
+    var onDelete: (() -> Void)? = nil
+
+    var body: some View {
+        Menu {
+            Button {
+                item.commented.toggle()
+            } label: {
+                if item.commented {
+                    Label("Uncomment", systemImage: "text.badge.checkmark")
+                } else {
+                    Label("Comment Out", systemImage: "number")
+                }
+            }
+            Picker("Pronouns", selection: $item.gender) {
+                Text("No pronouns").tag(Gender?.none)
+                Text("♀ she / her").tag(Gender?.some(.female))
+                Text("♂ he / him").tag(Gender?.some(.male))
+            }
+            Picker("Weight", selection: $item.rocks) {
+                Text("Normal").tag(0)
+                ForEach(1...4, id: \.self) { n in
+                    Text(String(repeating: "🪨", count: n)).tag(n)
+                }
+            }
+            if let onDelete {
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete Item", systemImage: "trash")
+                }
+            }
+        } label: {
+            let markers = Self.markerText(item)
+            if markers.isEmpty {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(markers)
+            }
+        }
+        .accessibilityLabel("Comment, pronouns and weight")
+    }
+
+    static func markerText(_ item: MedPoolBlock.Item) -> String {
+        var parts: [String] = item.commented ? ["#"] : []
+        switch item.gender {
+        case .female: parts.append("♀")
+        case .male: parts.append("♂")
+        case nil: break
+        }
+        if item.rocks > 0 { parts.append(String(repeating: "🪨", count: item.rocks)) }
+        return parts.joined(separator: " ")
     }
 }

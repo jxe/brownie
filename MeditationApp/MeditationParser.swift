@@ -173,6 +173,24 @@ struct MeditationParser {
         return defined.subtracting(used)
     }
 
+    /// The pool each `~name` (or `~name=pool`) in `source` draws from, in the order the lines
+    /// reach them, each once. Pool definition lines are skipped; the names may include ones
+    /// no pool defines (remembered picks, or typos).
+    static func poolReferences(in source: String) -> [String] {
+        var order: [String] = []
+        let lines = source.components(separatedBy: .newlines)
+        let headers = poolHeaderFlags(lines)
+        for (line, isHeader) in zip(lines, headers) where !isHeader {
+            let lineNS = line as NSString
+            for match in refRegex.matches(in: line, range: NSRange(location: 0, length: lineNS.length)) {
+                let poolRange = match.range(at: 2)
+                let name = lineNS.substring(with: poolRange.location != NSNotFound ? poolRange : match.range(at: 1))
+                if !order.contains(name) { order.append(name) }
+            }
+        }
+        return order
+    }
+
     static func diagnose(_ source: String) -> [MeditationDiagnostic] {
         let ns = source as NSString
         var lines: [(text: String, range: NSRange)] = []

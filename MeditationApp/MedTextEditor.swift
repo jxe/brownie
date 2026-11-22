@@ -12,6 +12,9 @@ struct MedTextEditor: UIViewRepresentable {
     /// already in the script, and the definition goes outside it. The second value is the
     /// selected text, to become one of the pool's items (its first, for a new pool).
     var onNewPool: ((String, String?) -> Void)? = nil
+    /// False when the editor sits in a page that scrolls: the text view takes the height of
+    /// its text, and the page scrolls to keep the caret in view.
+    var scrolls = true
 
     private static let symbolGroups: [[(label: String, char: String, accessibilityLabel: String)]] = [
         [
@@ -56,6 +59,11 @@ struct MedTextEditor: UIViewRepresentable {
         textView.delegate = context.coordinator
         textView.textContainerInset = UIEdgeInsets(top: 16, left: 20, bottom: 20, right: 20)
         textView.textContainer.lineFragmentPadding = 0
+        textView.isScrollEnabled = scrolls
+        if !scrolls {
+            textView.backgroundColor = .clear
+            textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         textView.text = text
         textView.outsideText = outside
         context.coordinator.onOpenPool = onOpenPool
@@ -90,6 +98,14 @@ struct MedTextEditor: UIViewRepresentable {
             // A pool added or removed outside changes which references are chips.
             applyMedHighlights(to: textView)
         }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard !scrolls else { return nil }
+        let width = proposal.width ?? 320
+        let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        // Room to tap into below a short script.
+        return CGSize(width: width, height: max(fitted.height, 72))
     }
 
     /// A button listing the pools (and remembered picks) defined in the script; tapping one inserts `~name`.
@@ -252,11 +268,37 @@ struct MedTextEditor: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.text
             applyMedHighlights(to: textView)
+            if !textView.isScrollEnabled { textView.invalidateIntrinsicContentSize() }
+            revealCaret(in: textView)
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            // Again once the keyboard has come up and the page has made room for it.
+            revealCaret(in: textView)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self, weak textView] in
+                if let self, let textView { self.revealCaret(in: textView) }
+            }
+        }
+
+        /// When the text view doesn't scroll itself, scrolls the page it's in to show the caret.
+        /// After the current layout pass, so a line just added has its height.
+        private func revealCaret(in textView: UITextView) {
+            guard !textView.isScrollEnabled else { return }
+            DispatchQueue.main.async { [weak textView] in
+                guard let textView, textView.isFirstResponder,
+                      let end = textView.selectedTextRange?.end else { return }
+                var ancestor = textView.superview
+                while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
+                guard let page = ancestor as? UIScrollView else { return }
+                let caret = textView.caretRect(for: end).insetBy(dx: 0, dy: -28)
+                page.scrollRectToVisible(textView.convert(caret, to: page), animated: false)
+            }
         }
 
         /// The caret never rests inside a folded pool: it goes to the end of the pool's `~name`
         /// line. Leaving a blank stretch between pools, opened for typing, folds it away again.
         func textViewDidChangeSelection(_ textView: UITextView) {
+            if textView.selectedRange.length == 0 { revealCaret(in: textView) }
             guard let medView = textView as? MedTextView, !medView.isAdjustingSelection,
                   medView.foldedText == textView.text else { return }
             let selection = textView.selectedRange
@@ -867,7 +909,7 @@ private class AccessoryGap: UIView {
 // Scripts are mostly prose, so they read in the body font (17pt at the default size, scaled
 // with Dynamic Type). Computed so a size change in Settings takes effect the next time the
 // text is highlighted.
-private var medFont: UIFont {
+var medFont: UIFont {
     UIFont.preferredFont(forTextStyle: .body)
 }
 
