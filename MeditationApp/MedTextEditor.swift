@@ -8,9 +8,10 @@ struct MedTextEditor: UIViewRepresentable {
     var outside: String = ""
     /// A tap on a reference to a pool defined outside the script.
     var onOpenPool: ((String) -> Void)? = nil
-    /// The ~ menu's New Pool… named a pool that isn't defined anywhere yet; its `~name` is
-    /// already in the script, and the definition goes outside it.
-    var onNewPool: ((String) -> Void)? = nil
+    /// The ~ menu's New Pool…, or Make Pool… on selected text, named a pool; its `~name` is
+    /// already in the script, and the definition goes outside it. The second value is the
+    /// selected text, to become one of the pool's items (its first, for a new pool).
+    var onNewPool: ((String, String?) -> Void)? = nil
 
     private static let symbolGroups: [[(label: String, char: String, accessibilityLabel: String)]] = [
         [
@@ -240,7 +241,7 @@ struct MedTextEditor: UIViewRepresentable {
         weak var textView: UITextView?
         weak var quickEditTap: UITapGestureRecognizer?
         var onOpenPool: ((String) -> Void)?
-        var onNewPoolOutside: ((String) -> Void)?
+        var onNewPoolOutside: ((String, String?) -> Void)?
         /// What the tap in progress landed on, found when the tap is about to be recognized.
         private var pendingTarget: MedQuickEditTarget?
 
@@ -486,12 +487,39 @@ struct MedTextEditor: UIViewRepresentable {
 
         // MARK: New pool
 
+        /// Selected text can be made into a pool: Make Pool… in the edit menu.
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
+                      suggestedActions: [UIMenuElement]) -> UIMenu? {
+            guard let selection = medExtractableRange(range, in: textView.text ?? "") else { return nil }
+            let make = UIAction(title: "Make Pool…", image: UIImage(systemName: "tray")) { [weak self, weak textView] _ in
+                guard let self, let textView else { return }
+                self.startNewPool(in: textView, extracting: selection)
+            }
+            return UIMenu(children: [make] + suggestedActions)
+        }
+
         /// Asks for a name, then puts `~name` where the caret was and opens the new pool's sheet.
-        func startNewPool(in textView: UITextView) {
+        /// With `extracting`, that text is what `~name` replaces, and it becomes one of the pool's items.
+        func startNewPool(in textView: UITextView, extracting: NSRange? = nil) {
             guard let presenter = textView.medTopViewController() else { return }
-            let caret = textView.selectedRange
-            let alert = UIAlertController(title: "New Pool", message: "A ~name goes here, and its items go in the pool.",
-                                          preferredStyle: .alert)
+            let caret = extracting ?? textView.selectedRange
+            let item = extracting.map { (textView.text as NSString).substring(with: $0) }
+            if let extracting, Self.isWholeLine(extracting, in: textView.text ?? "") {
+                // A line that's only `~name` defines a pool rather than drawing from one.
+                let alert = UIAlertController(
+                    title: "Leave Something on the Line",
+                    message: "A line with nothing but a ~name on it starts a pool instead of drawing from one. Select less than the whole line, or give the line a pause first.",
+                    preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                presenter.present(alert, animated: true)
+                return
+            }
+            let alert = UIAlertController(
+                title: item == nil ? "New Pool" : "Make Pool",
+                message: item == nil
+                    ? "A ~name goes here, and its items go in the pool."
+                    : "The selected text becomes an item of the pool, and ~name takes its place. A pool that already exists gets it as one more item.",
+                preferredStyle: .alert)
             alert.addTextField { field in
                 field.placeholder = "name"
                 field.autocapitalizationType = .none
@@ -500,9 +528,18 @@ struct MedTextEditor: UIViewRepresentable {
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
             alert.addAction(UIAlertAction(title: "Create", style: .default) { [weak self, weak textView, weak alert] _ in
                 guard let self, let textView, let name = Self.poolName(from: alert?.textFields?.first?.text ?? "") else { return }
-                self.createPool(named: name, at: caret, in: textView)
+                self.createPool(named: name, at: caret, item: item, in: textView)
             })
             presenter.present(alert, animated: true)
+        }
+
+        /// Whether everything on `range`'s line outside it is blank.
+        static func isWholeLine(_ range: NSRange, in text: String) -> Bool {
+            let ns = text as NSString
+            let line = ns.lineRange(for: range)
+            let before = ns.substring(with: NSRange(location: line.location, length: range.location - line.location))
+            let after = ns.substring(with: NSRange(location: NSMaxRange(range), length: NSMaxRange(line) - NSMaxRange(range)))
+            return (before + after).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
 
         /// What was typed, made into a pool name: spaces become `_`, anything else odd is dropped.
@@ -514,16 +551,17 @@ struct MedTextEditor: UIViewRepresentable {
             return first.isNumber ? "_" + cleaned : cleaned
         }
 
-        private func createPool(named name: String, at caret: NSRange, in textView: UITextView) {
+        private func createPool(named name: String, at caret: NSRange, item: String? = nil, in textView: UITextView) {
             let medView = textView as? MedTextView
-            medView?.isAdjustingSelection = true
-            defer { medView?.isAdjustingSelection = false }
             var ns = textView.text as NSString
             guard NSMaxRange(caret) <= ns.length else { return }
+            medView?.isAdjustingSelection = true
+            defer { medView?.isAdjustingSelection = false }
 
-            // The reference, where the caret was. A ~ typed just before it is taken in.
+            // The reference, where the caret was (or in place of the selected text). A ~ typed
+            // just before the caret is taken in.
             var refRange = caret
-            if refRange.location > 0, ns.character(at: refRange.location - 1) == 0x7E {
+            if item == nil, refRange.location > 0, ns.character(at: refRange.location - 1) == 0x7E {
                 refRange = NSRange(location: refRange.location - 1, length: refRange.length + 1)
             }
             let reference = "~\(name)"
@@ -534,11 +572,12 @@ struct MedTextEditor: UIViewRepresentable {
             let text = textView.text ?? ""
             ns = text as NSString
             let whole = (textView as? MedTextView)?.wholeText ?? text
-            if !MeditationParser.referenceableNames(in: whole).pools.contains(name), let onNewPoolOutside {
-                // Pools live outside the script: it gets just the reference.
+            if let onNewPoolOutside {
+                // Pools live outside the script: it gets just the reference, and the editor
+                // around it defines the pool (or adds the item to the one already there).
                 textView.selectedRange = NSRange(location: caretAfter, length: 0)
                 textViewDidChange(textView)
-                onNewPoolOutside(name)
+                onNewPoolOutside(name, item)
                 return
             }
             if !MeditationParser.referenceableNames(in: whole).pools.contains(name) {
@@ -551,10 +590,11 @@ struct MedTextEditor: UIViewRepresentable {
                     anchor = NSMaxRange(header)
                 }
                 let insertion: (at: Int, text: String)
+                let itemLine = item.map { "\n  \($0)" } ?? ""
                 if let previous = blocks.last(where: { NSMaxRange($0.range) <= anchor }) {
-                    insertion = (NSMaxRange(previous.range), "\n~ \(name)")
+                    insertion = (NSMaxRange(previous.range), "\n~ \(name)\(itemLine)")
                 } else {
-                    insertion = (anchor, "~ \(name)\n\n")
+                    insertion = (anchor, "~ \(name)\(itemLine)\n\n")
                 }
                 if let range = textRange(NSRange(location: insertion.at, length: 0), in: textView) {
                     textView.replace(range, withText: insertion.text)
@@ -1094,6 +1134,32 @@ private let medFoldedAttributes: [NSAttributedString.Key: Any] = {
 
 // MARK: - Pool item field
 
+/// The part of `range` that Make Pool takes, when it's text that could become a pool item
+/// (something on one line): surrounding spaces trimmed, and trailing pauses, times, bells and
+/// repeat counts (words with no letters) left in place, so the timing stays where it was.
+func medExtractableRange(_ range: NSRange, in text: String) -> NSRange? {
+    let ns = text as NSString
+    guard range.length > 0, NSMaxRange(range) <= ns.length else { return nil }
+    var start = range.location
+    var end = NSMaxRange(range)
+    func isSpace(_ i: Int) -> Bool { ns.character(at: i) == 0x20 || ns.character(at: i) == 0x09 }
+    while start < end, isSpace(start) { start += 1 }
+    while end > start, isSpace(end - 1) { end -= 1 }
+    guard end > start else { return nil }
+    guard !ns.substring(with: NSRange(location: start, length: end - start)).contains(where: \.isNewline) else { return nil }
+    // Drop trailing words with no letters, unless that leaves nothing.
+    var kept = end
+    while kept > start {
+        var wordStart = kept
+        while wordStart > start, !isSpace(wordStart - 1) { wordStart -= 1 }
+        let word = ns.substring(with: NSRange(location: wordStart, length: kept - wordStart))
+        guard wordStart > start, !word.contains(where: { $0.isLetter || $0 == "~" }) else { break }
+        kept = wordStart
+        while kept > start, isSpace(kept - 1) { kept -= 1 }
+    }
+    return NSRange(location: start, length: kept - start)
+}
+
 /// A one-item text field for the pool sheet: script syntax colors, Return for the next item, and
 /// a keyboard bar with the pool menu and the pause symbols an item most often needs.
 struct MedItemField: UIViewRepresentable {
@@ -1107,6 +1173,8 @@ struct MedItemField: UIViewRepresentable {
     var onFocus: () -> Void = {}
     var onBlur: () -> Void = {}
     var onSubmit: () -> Void = {}
+    /// Make Pool… on selected text in the item: the range to take out.
+    var onExtract: ((NSRange) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -1164,6 +1232,18 @@ struct MedItemField: UIViewRepresentable {
 
         func textViewDidBeginEditing(_ textView: UITextView) { parent.onFocus() }
         func textViewDidEndEditing(_ textView: UITextView) { parent.onBlur() }
+
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
+                      suggestedActions: [UIMenuElement]) -> UIMenu? {
+            guard let onExtract = parent.onExtract,
+                  let selection = medExtractableRange(range, in: textView.text ?? "") else { return nil }
+            let make = UIAction(title: "Make Pool…", image: UIImage(systemName: "tray")) { [weak textView] _ in
+                // The binding follows the field only while typing; bring it up to date first.
+                if let textView { self.parent.text = textView.text }
+                onExtract(selection)
+            }
+            return UIMenu(children: [make] + suggestedActions)
+        }
 
         func recolor(_ field: UITextView) {
             let storage = field.textStorage

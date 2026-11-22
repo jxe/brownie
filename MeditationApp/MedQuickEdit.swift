@@ -533,21 +533,50 @@ struct MedPoolEditorSheet: View {
     let onCancel: () -> Void
     /// Removes the whole pool, its `~name` line and items, from the script.
     let onDelete: () -> Void
+    /// Make Pool… on text selected in an item: this pool's items with `~name` in place of the
+    /// selection, the new pool's name, and the selected text for it. Nil hides it.
+    let onExtract: ((_ items: [MedPoolBlock.Item], _ newPool: String, _ text: String) -> Void)?
+    /// Writes a one-item pool's item in place of every `~name` and removes the pool. Nil hides it.
+    let onInline: ((_ text: String) -> Void)?
+    /// Whether the pool can be written out in place: see `MeditationParser.canInlinePool`.
+    let canInline: Bool
     @State private var items: [MedPoolBlock.Item]
     @State private var focused: UUID?
     @State private var confirmingDelete = false
+    @State private var confirmingInline = false
+    @State private var extracting: Extraction?
+    @State private var newPoolName = ""
+
+    private struct Extraction {
+        let item: UUID
+        let range: NSRange
+    }
 
     init(name: String, items: [MedPoolBlock.Item], references: (pools: [String], picks: [String]),
          isUnused: Bool = false,
          onDone: @escaping ([MedPoolBlock.Item]) -> Void, onCancel: @escaping () -> Void,
-         onDelete: @escaping () -> Void = {}) {
+         onDelete: @escaping () -> Void = {},
+         onExtract: (([MedPoolBlock.Item], String, String) -> Void)? = nil,
+         onInline: ((String) -> Void)? = nil,
+         canInline: Bool = false) {
         self.name = name
         self.references = references
         self.isUnused = isUnused
         self.onDone = onDone
         self.onCancel = onCancel
         self.onDelete = onDelete
+        self.onExtract = onExtract
+        self.onInline = onInline
+        self.canInline = canInline
         _items = State(initialValue: items)
+    }
+
+    /// The pool's one live item, when it has exactly one.
+    private var onlyItem: String? {
+        let live = items.filter { !$0.commented }
+            .map { $0.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return live.count == 1 ? live[0] : nil
     }
 
     var body: some View {
@@ -560,7 +589,11 @@ struct MedPoolEditorSheet: View {
                                          dimmed: item.commented, focused: focused == item.id,
                                          onFocus: { focused = item.id },
                                          onBlur: { if focused == item.id { focused = nil } },
-                                         onSubmit: { addItem(after: item.id) })
+                                         onSubmit: { addItem(after: item.id) },
+                                         onExtract: onExtract == nil ? nil : { range in
+                                             newPoolName = ""
+                                             extracting = Extraction(item: item.id, range: range)
+                                         })
                                 .overlay(alignment: .leading) {
                                     if item.text.isEmpty {
                                         Text("New item").foregroundStyle(.tertiary).allowsHitTesting(false)
@@ -582,13 +615,23 @@ struct MedPoolEditorSheet: View {
                 }
 
                 Section {
+                    if onInline != nil, onlyItem != nil {
+                        Button {
+                            confirmingInline = true
+                        } label: {
+                            Label("Replace ~\(name) with Its Text", systemImage: "text.insert")
+                        }
+                        .disabled(!canInline)
+                    }
                     Button(role: .destructive) {
                         confirmingDelete = true
                     } label: {
                         Label("Delete Pool", systemImage: "trash")
                     }
                 } footer: {
-                    if isUnused {
+                    if onInline != nil, onlyItem != nil, !canInline {
+                        Text("A pick from ~\(name) is remembered (or it's defined more than once), so it can't be written out in place.")
+                    } else if isUnused {
                         Text("Nothing in the script uses ~\(name).")
                     }
                 }
@@ -599,6 +642,25 @@ struct MedPoolEditorSheet: View {
                                 isPresented: $confirmingDelete, titleVisibility: .visible) {
                 Button("Delete Pool", role: .destructive, action: onDelete)
                 Button("Cancel", role: .cancel) {}
+            }
+            .confirmationDialog("Write “\(onlyItem ?? "")” in place of each ~\(name), and remove the pool?",
+                                isPresented: $confirmingInline, titleVisibility: .visible) {
+                Button("Replace with Text") {
+                    if let onlyItem { onInline?(onlyItem) }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .alert("Make Pool", isPresented: Binding(
+                get: { extracting != nil },
+                set: { if !$0 { extracting = nil } }
+            )) {
+                TextField("name", text: $newPoolName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { extracting = nil }
+                Button("Create") { extract() }
+            } message: {
+                Text("The selected text becomes an item of the new pool, and ~name takes its place.")
             }
             .navigationTitle("~\(name)")
             .navigationBarTitleDisplayMode(.inline)
@@ -660,6 +722,20 @@ struct MedPoolEditorSheet: View {
         }
         if item.rocks > 0 { parts.append(String(repeating: "🪨", count: item.rocks)) }
         return parts.joined(separator: " ")
+    }
+
+    /// Takes the selected text out of its item into pool `newPoolName`, leaving `~name` behind.
+    private func extract() {
+        defer { extracting = nil }
+        guard let extracting, let onExtract,
+              let newName = MedTextEditor.Coordinator.poolName(from: newPoolName), newName != name,
+              let index = items.firstIndex(where: { $0.id == extracting.item }) else { return }
+        let ns = items[index].text as NSString
+        guard NSMaxRange(extracting.range) <= ns.length else { return }
+        let selected = ns.substring(with: extracting.range)
+        var updated = items
+        updated[index].text = ns.replacingCharacters(in: extracting.range, with: "~\(newName)")
+        onExtract(updated, newName, selected)
     }
 
     private func addItem(after id: UUID?) {

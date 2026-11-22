@@ -393,6 +393,49 @@ struct MeditationParser {
     private static let legacyRepeatRegex = try! NSRegularExpression(
         pattern: #"^[ \t]*([×x]\d+)(?:(𝄐|\|(?!\|))[ \t]*(\d+(?:\.\d+)?[″"′'])?)?"#)
 
+    /// Whether pool `name` can be written out in place of its references: it's defined once,
+    /// and nothing remembers a pick from it (or under its name), since a pick can't be written out.
+    static func canInlinePool(_ name: String, in source: String) -> Bool {
+        let lines = source.components(separatedBy: .newlines)
+        let headers = poolHeaderFlags(lines)
+        var definitions = 0
+        for (line, isHeader) in zip(lines, headers) {
+            if isHeader {
+                if line.trimmingCharacters(in: .whitespaces).dropFirst().trimmingCharacters(in: .whitespaces) == name {
+                    definitions += 1
+                }
+                continue
+            }
+            let ns = line as NSString
+            for match in refRegex.matches(in: line, range: NSRange(location: 0, length: ns.length))
+            where match.range(at: 2).location != NSNotFound {
+                if ns.substring(with: match.range(at: 1)) == name || ns.substring(with: match.range(at: 2)) == name {
+                    return false
+                }
+            }
+        }
+        return definitions == 1
+    }
+
+    /// `source` with each `~name` reference replaced by `text`. Pool definition lines and
+    /// unindented `#` lines (title, tags, comments) are left alone. Check `canInlinePool` first.
+    static func inliningPool(_ name: String, with text: String, in source: String) -> String {
+        let lines = source.components(separatedBy: "\n")
+        let headers = poolHeaderFlags(lines)
+        return zip(lines, headers).map { line, isHeader in
+            let isIndented = line.hasPrefix("  ") || line.hasPrefix("\t")
+            if isHeader || (!isIndented && line.trimmingCharacters(in: .whitespaces).hasPrefix("#")) { return line }
+            let ns = line as NSString
+            var result = line
+            // Last first, so earlier ranges still point at the same text.
+            for match in refRegex.matches(in: line, range: NSRange(location: 0, length: ns.length)).reversed()
+            where match.range(at: 2).location == NSNotFound && ns.substring(with: match.range(at: 1)) == name {
+                result = (result as NSString).replacingCharacters(in: match.range, with: text)
+            }
+            return result
+        }.joined(separator: "\n")
+    }
+
     /// Matches `~name` and `~name=pool` the way the tokenizer reads them.
     private static let refRegex = try! NSRegularExpression(
         pattern: #"~([\p{L}_][\p{L}\p{N}_]*)(?:=([\p{L}_][\p{L}\p{N}_]*))?"#)

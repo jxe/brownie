@@ -70,7 +70,7 @@ struct MeditationEditorView: View {
                     text: scriptBinding,
                     outside: doc.prefix,
                     onOpenPool: { editingPool = PoolSheetTarget(name: $0) },
-                    onNewPool: { addPool(named: $0) }
+                    onNewPool: { addPool(named: $0, item: $1) }
                 )
             }
             .frame(maxWidth: 720)
@@ -320,12 +320,41 @@ struct MeditationEditorView: View {
         .padding(.bottom, 10)
     }
 
-    /// Defines an empty pool (unless it exists) and opens it to add items.
-    private func addPool(named name: String) {
-        if !doc.poolNames.contains(name) {
-            update { $0.pools.append("~ \(name)") }
+    /// Defines a pool (unless it exists) and opens it to add items. `item`, text taken out of
+    /// the script or another pool, is its first item, or one more if the pool exists.
+    private func addPool(named name: String, item: String? = nil) {
+        let item = item?.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        let firstItem = item.flatMap { $0.isEmpty ? nil : $0 }
+        if let index = doc.poolIndex(named: name) {
+            if let firstItem, let block = MedPoolBlock.find(named: name, in: doc.pools[index]) {
+                update { $0.pools[index] = block.text(with: block.items + [MedPoolBlock.Item(text: firstItem)]) }
+            }
+        } else {
+            update { $0.pools.append("~ \(name)" + (firstItem.map { "\n  \($0)" } ?? "")) }
         }
         editingPool = PoolSheetTarget(name: name)
+    }
+
+    /// Writes `text` in place of every `~name`, in the script and the other pools, and removes the pool.
+    private func inlinePool(named name: String, with text: String) {
+        update { doc in
+            guard let index = doc.poolIndex(named: name) else { return }
+            doc.pools.remove(at: index)
+            doc.pools = doc.pools.map { MeditationParser.inliningPool(name, with: text, in: $0) }
+            doc.script = MeditationParser.inliningPool(name, with: text, in: doc.script)
+        }
+        editingPool = nil
+    }
+
+    /// Saves pool `name` with `items` (selected text in one of them now `~newPool`), then
+    /// moves the text into `newPool` and opens that one.
+    private func extract(from name: String, items: [MedPoolBlock.Item], into newPool: String, text: String) {
+        update { doc in
+            if let i = doc.poolIndex(named: name) {
+                doc.pools[i] = MedPoolBlock.find(named: name, in: doc.pools[i])?.text(with: items) ?? doc.pools[i]
+            }
+        }
+        addPool(named: newPool, item: text)
     }
 
     @ViewBuilder
@@ -350,7 +379,12 @@ struct MeditationEditorView: View {
                         if let i = doc.poolIndex(named: name) { doc.pools.remove(at: i) }
                     }
                     editingPool = nil
-                })
+                },
+                onExtract: { items, newPool, text in
+                    extract(from: name, items: items, into: newPool, text: text)
+                },
+                onInline: { text in inlinePool(named: name, with: text) },
+                canInline: MeditationParser.canInlinePool(name, in: content))
         } else {
             ContentUnavailableView("No Pool Named ~\(name)", systemImage: "questionmark.circle")
         }
