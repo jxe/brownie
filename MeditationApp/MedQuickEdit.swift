@@ -349,41 +349,48 @@ struct MedPoolBlock {
     private let lines: [Line]
 
     /// Every pool definition's name and block range, in script order.
+    /// Header lines are read the way the parser reads them, so an indented `~name` item under
+    /// a pool (a reference) is never taken for a pool of its own.
     static func blockRanges(in text: String) -> [(name: String, range: NSRange)] {
         var blocks: [(name: String, range: NSRange)] = []
         var seen = Set<String>()
         let ns = text as NSString
-        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
-                               options: [.byLines]) { line, _, _, _ in
-            let trimmed = (line ?? "").trimmingCharacters(in: .whitespaces)
-            guard MeditationParser.isPoolDefinitionHeader(trimmed) else { return }
-            let name = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-            guard seen.insert(name).inserted, let block = find(named: name, in: text) else { return }
+        let ranges = lineRanges(of: ns)
+        let headers = MeditationParser.poolHeaderFlags(ranges.map { ns.substring(with: $0) })
+        for (index, range) in ranges.enumerated() where headers[index] {
+            let name = ns.substring(with: range).trimmingCharacters(in: .whitespaces)
+                .dropFirst().trimmingCharacters(in: .whitespaces)
+            guard seen.insert(name).inserted, let block = find(named: name, in: text) else { continue }
             blocks.append((name, block.range))
         }
         return blocks
     }
 
-    /// The first definition of pool `name` in the script.
-    static func find(named name: String, in text: String) -> MedPoolBlock? {
-        let ns = text as NSString
+    private static func lineRanges(of ns: NSString) -> [NSRange] {
         var lineRanges: [NSRange] = []
         ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
                                options: [.byLines, .substringNotRequired]) { _, range, _, _ in
             lineRanges.append(range)
         }
-        for (index, headerRange) in lineRanges.enumerated() {
+        return lineRanges
+    }
+
+    /// The first definition of pool `name` in the script.
+    static func find(named name: String, in text: String) -> MedPoolBlock? {
+        let ns = text as NSString
+        let ranges = Self.lineRanges(of: ns)
+        let headers = MeditationParser.poolHeaderFlags(ranges.map { ns.substring(with: $0) })
+        for (index, headerRange) in ranges.enumerated() where headers[index] {
             let header = ns.substring(with: headerRange)
             let trimmed = header.trimmingCharacters(in: .whitespaces)
-            guard MeditationParser.isPoolDefinitionHeader(trimmed),
-                  trimmed.dropFirst().trimmingCharacters(in: .whitespaces) == name else { continue }
+            guard trimmed.dropFirst().trimmingCharacters(in: .whitespaces) == name else { continue }
 
             // Same rule as the parser: the block runs while lines start with two spaces or a tab.
             var lines: [Line] = []
             var items: [Item] = []
             var indent: String?
             var last = headerRange
-            for bodyRange in lineRanges[(index + 1)...] {
+            for bodyRange in ranges[(index + 1)...] {
                 let line = ns.substring(with: bodyRange)
                 guard line.hasPrefix("  ") || line.hasPrefix("\t") else { break }
                 last = bodyRange

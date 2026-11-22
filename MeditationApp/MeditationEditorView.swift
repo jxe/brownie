@@ -3,14 +3,16 @@ import SwiftUI
 /// Pushed from the meditation list. The title sits at the top as a field (Foundation and tags
 /// are in the title bar's ⋯ menu), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
 /// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
-/// pause and stop are on the now-playing bar, and it keeps playing after you go back. Any edit stops playback, so the
+/// pause and stop are on the now-playing bar, and it keeps playing after you go back. Opening
+/// another meditation's editor stops what's playing. Any edit stops playback, so the
 /// next play starts from the top. Edits save themselves a moment after you stop typing,
 /// and again on leaving the page or the app.
 struct MeditationEditorView: View {
     @Binding var content: String
     @Binding var filename: String
     @Binding var isNew: Bool
-    /// The file being edited, so the list shows its row as playing; nil for a new one.
+    /// The file as it was opened; nil for a new one. Once autosave has written the file, or
+    /// renamed it, `fileURL` is where it is now.
     let sourceURL: URL?
     let onSave: (_ filename: String, _ content: String) -> Void
     @Environment(\.scenePhase) private var scenePhase
@@ -36,6 +38,13 @@ struct MeditationEditorView: View {
     @State private var namingNewPool = false
     @State private var newPoolName = ""
     @State private var editingTags = false
+
+    /// Where this page's file is now, so a play counts for (and lights up) the right row after
+    /// a new meditation's first autosave or a rename.
+    private var fileURL: URL? {
+        guard let diskName else { return sourceURL }
+        return FileManager.default.meditationsDirectory.appendingPathComponent("\(diskName).med")
+    }
 
     private var hasChanges: Bool {
         guard let saved else { return false }
@@ -167,6 +176,10 @@ struct MeditationEditorView: View {
                 saved = (content, filename)
                 showsFilename = isNew
                 if !isNew { diskName = filename.trimmingCharacters(in: .whitespaces) }
+                // Editing one meditation while another plays isn't supported: the now-playing
+                // bar would sit under the wrong script. What's playing stops; this script, if
+                // it's the one playing, carries on.
+                if [MeditationPlayer.State.preparing, .playing, .paused].contains(player.state), !isPlayingThisScript { player.stop() }
             }
         }
         // Autosave once typing pauses. Changing either restarts the wait.
@@ -349,12 +362,13 @@ struct MeditationEditorView: View {
     private var playbackControls: some View {
         if !isPlayingThisScript {
             Button {
+                // Write any pending edit first, so a new meditation has a file (and a row)
+                // and the play is counted under the name it has now.
+                saveIfNeeded()
                 startedHere = true
                 // Counts like a play from the list, so the row's last-played time updates.
-                if let sourceURL {
-                    store.markMeditationPlayed(filename: sourceURL.deletingPathExtension().lastPathComponent)
-                }
-                player.play(MeditationParser.parse(content), sourceURL: sourceURL)
+                if let diskName { store.markMeditationPlayed(filename: diskName) }
+                player.play(MeditationParser.parse(content), sourceURL: fileURL)
             } label: {
                 Image(systemName: "play.fill")
             }
@@ -366,7 +380,7 @@ struct MeditationEditorView: View {
     private var isPlayingThisScript: Bool {
         switch player.state {
         case .playing, .paused, .preparing:
-            if let sourceURL { return player.currentSourceURL == sourceURL }
+            if let url = player.currentSourceURL, url == sourceURL || url == fileURL { return true }
             return startedHere && player.currentSourceURL == nil
         case .idle, .finished:
             return false
