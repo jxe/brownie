@@ -84,7 +84,7 @@ Stand ···· ⏳40″ ··
 
 A pool is a named list of items. Each time the pool is referenced, a random item is drawn (shuffled, no repeats until exhausted).
 
-**Define** with `~ name` or `~name` at the start of a line, followed by indented items:
+**Define** with `~ name` or `~name` in the first column of a line, followed by indented items. Only that starts a pool: the `~name` line must not be indented, and the line right under it must be.
 
 ```
 ~ fbs
@@ -97,6 +97,13 @@ A pool is a named list of items. Each time the pool is referenced, a random item
 
 ```
 ~fbs ·· Feel 22″ Done.
+```
+
+A `~name` alone on a line with no indented items under it is a reference too, so a whole line can be drawn from a pool:
+
+```
+~opening
+Breathe in 4″ out 4″
 ```
 
 Pool items themselves can reference other pools — references are resolved recursively when the item is drawn.
@@ -305,7 +312,7 @@ Done!
 | `″` | Double prime (U+2033) | Seconds unit (e.g. `22″`) | `"` (e.g. `22"`) |
 | `′` | Prime (U+2032) | Minutes unit (e.g. `3′`) | `'` (e.g. `3'`) |
 | `⏳` | Hourglass (U+23F3) | Countdown timer | — |
-| `~name` (line start) | Tilde + name | Pool definition (followed by indented items). Space after `~` optional. | — |
+| `~name` (column 1, indented items under it) | Tilde + name | Pool definition. Space after `~` optional. Without items under it, a reference | — |
 | `~name` (inline) | Tilde + name | Pool reference (or a remembered pick, if `name` was bound) | — |
 | `~name=pool` | Tilde + name = pool | Draw from `pool` and remember it as `name` | — |
 | `×` | Multiplication (U+00D7) | Repeat what comes before it N times (`text ×5`, `[…] ×5`) | `x` (e.g. `x5`) |

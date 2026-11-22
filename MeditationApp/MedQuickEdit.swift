@@ -423,7 +423,11 @@ struct MedPoolBlock {
         var out = [header]
         guard let lastItemSlot = lines.lastIndex(where: { if case .item = $0 { return true } else { return false } }) else {
             out += remaining.map(render)
-            for case .other(let line) in lines { out.append(line) }
+            // A new pool's placeholder blank line goes once it has items.
+            for case .other(let line) in lines
+            where remaining.isEmpty || !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                out.append(line)
+            }
             return out.joined(separator: "\n")
         }
         for (i, line) in lines.enumerated() {

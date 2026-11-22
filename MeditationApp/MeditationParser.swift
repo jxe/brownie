@@ -29,6 +29,7 @@ struct MeditationParser {
         var bindings: [String: Pick] = [:]
         var steps: [MeditationStep] = []
         var builder = NodeBuilder()
+        let poolHeaders = poolHeaderFlags(lines)
         var i = 0
 
         while i < lines.count {
@@ -43,10 +44,10 @@ struct MeditationParser {
                 i += 1; continue
             }
 
-            // Pool definition: "~ name" or "~name" at start of line (with nothing else on the line).
-            // Inline "~name" within text is a pool reference, handled by the tokenizer.
-            if trimmed.hasPrefix("~"),
-               isPoolDefinitionHeader(trimmed) {
+            // Pool definition: "~ name" or "~name" in column 1 (with nothing else on the line),
+            // with indented items under it. Any other "~name", even alone on a line, is a
+            // pool reference, handled by the tokenizer.
+            if poolHeaders[i] {
                 let poolName = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
                 var items: [(String, Gender?, Int)] = []
                 i += 1
@@ -442,22 +443,24 @@ struct MeditationParser {
 
     // MARK: - Pool Definition Header
 
-    /// Which lines start a pool, read the way `parse` reads them: an indented `~name` line
-    /// under a pool is one of its items (a reference), not a new pool.
+    /// Which lines start a pool: a `~name` (or `~ name`) line in column 1 with an indented
+    /// line right under it. Anything else, such as a `~name` alone on a line with no items
+    /// under it, or an indented `~name` item, draws from the pool instead.
     static func poolHeaderFlags(_ lines: [String]) -> [Bool] {
+        func isIndented(_ line: String) -> Bool { line.hasPrefix("  ") || line.hasPrefix("\t") }
         var flags: [Bool] = []
         var inPool = false
-        for line in lines {
-            let isIndented = line.hasPrefix("  ") || line.hasPrefix("\t")
-            if inPool && isIndented { flags.append(false); continue }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            inPool = !trimmed.hasPrefix("#") && isPoolDefinitionHeader(trimmed)
+        for (index, line) in lines.enumerated() {
+            if inPool && isIndented(line) { flags.append(false); continue }
+            let next = index + 1 < lines.count ? lines[index + 1] : ""
+            inPool = line.hasPrefix("~") && isPoolDefinitionHeader(line) && isIndented(next)
             flags.append(inPool)
         }
         return flags
     }
 
-    /// Returns true if the line is a pool definition header: `~ name` or `~name` with nothing else.
+    /// Whether the line has a pool header's shape, `~ name` or `~name` with nothing else. It
+    /// starts a pool only in column 1 with items under it: see `poolHeaderFlags`.
     static func isPoolDefinitionHeader(_ line: String) -> Bool {
         guard line.hasPrefix("~") else { return false }
         let after = line.dropFirst().trimmingCharacters(in: .whitespaces)

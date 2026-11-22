@@ -330,9 +330,27 @@ struct MeditationEditorView: View {
                 update { $0.pools[index] = block.text(with: block.items + [MedPoolBlock.Item(text: firstItem)]) }
             }
         } else {
-            update { $0.pools.append("~ \(name)" + (firstItem.map { "\n  \($0)" } ?? "")) }
+            // A pool needs an indented line under its `~name` to be one, so a new empty pool
+            // gets a blank one until it has items (and goes away if it never does).
+            update { $0.pools.append("~ \(name)\n  " + (firstItem ?? "")) }
         }
         editingPool = PoolSheetTarget(name: name)
+    }
+
+    /// Closes the pool sheet, removing any pool left with no items: with nothing under its
+    /// `~name` line it wouldn't be a pool, just a line drawing from one.
+    private func closePoolSheet() {
+        let empty = doc.pools.indices.filter { i in
+            guard let block = MedPoolBlock.blockRanges(in: doc.pools[i]).first,
+                  let found = MedPoolBlock.find(named: block.name, in: doc.pools[i]) else { return true }
+            return found.items.isEmpty
+        }
+        if !empty.isEmpty {
+            update { doc in
+                for i in empty.reversed() { doc.pools.remove(at: i) }
+            }
+        }
+        editingPool = nil
     }
 
     /// Writes `text` in place of every `~name`, in the script and the other pools, and removes the pool.
@@ -371,9 +389,9 @@ struct MeditationEditorView: View {
                             doc.pools[i] = MedPoolBlock.find(named: name, in: doc.pools[i])?.text(with: items) ?? doc.pools[i]
                         }
                     }
-                    editingPool = nil
+                    closePoolSheet()
                 },
-                onCancel: { editingPool = nil },
+                onCancel: { closePoolSheet() },
                 onDelete: {
                     update { doc in
                         if let i = doc.poolIndex(named: name) { doc.pools.remove(at: i) }

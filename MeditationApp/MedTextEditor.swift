@@ -307,11 +307,12 @@ struct MedTextEditor: UIViewRepresentable {
             let stripped = currentLine.drop(while: { $0 == " " || $0 == "\t" })
             let indent = String(currentLine.prefix(currentLine.count - stripped.count))
 
-            // Pool definitions (~name or ~ name) and lines opening a [ group increase indent
+            // Pool definitions (~name or ~ name in column 1) and lines opening a [ group increase
+            // indent. When the pools live outside the script, a ~name line there draws from one.
             let trimmed = currentLine.trimmingCharacters(in: .whitespacesAndNewlines)
             let newIndent: String
             let isPoolDef: Bool = {
-                guard trimmed.hasPrefix("~") else { return false }
+                guard onNewPoolOutside == nil, indent.isEmpty, trimmed.hasPrefix("~") else { return false }
                 let after = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
                 return !after.isEmpty && after.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
             }()
@@ -504,16 +505,6 @@ struct MedTextEditor: UIViewRepresentable {
             guard let presenter = textView.medTopViewController() else { return }
             let caret = extracting ?? textView.selectedRange
             let item = extracting.map { (textView.text as NSString).substring(with: $0) }
-            if let extracting, Self.isWholeLine(extracting, in: textView.text ?? "") {
-                // A line that's only `~name` defines a pool rather than drawing from one.
-                let alert = UIAlertController(
-                    title: "Leave Something on the Line",
-                    message: "A line with nothing but a ~name on it starts a pool instead of drawing from one. Select less than the whole line, or give the line a pause first.",
-                    preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
-                presenter.present(alert, animated: true)
-                return
-            }
             let alert = UIAlertController(
                 title: item == nil ? "New Pool" : "Make Pool",
                 message: item == nil
@@ -531,15 +522,6 @@ struct MedTextEditor: UIViewRepresentable {
                 self.createPool(named: name, at: caret, item: item, in: textView)
             })
             presenter.present(alert, animated: true)
-        }
-
-        /// Whether everything on `range`'s line outside it is blank.
-        static func isWholeLine(_ range: NSRange, in text: String) -> Bool {
-            let ns = text as NSString
-            let line = ns.lineRange(for: range)
-            let before = ns.substring(with: NSRange(location: line.location, length: range.location - line.location))
-            let after = ns.substring(with: NSRange(location: NSMaxRange(range), length: NSMaxRange(line) - NSMaxRange(range)))
-            return (before + after).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
 
         /// What was typed, made into a pool name: spaces become `_`, anything else odd is dropped.
@@ -590,7 +572,8 @@ struct MedTextEditor: UIViewRepresentable {
                     anchor = NSMaxRange(header)
                 }
                 let insertion: (at: Int, text: String)
-                let itemLine = item.map { "\n  \($0)" } ?? ""
+                // An indented line under `~name` is what makes it a pool, so an empty one gets a blank one.
+                let itemLine = "\n  " + (item ?? "")
                 if let previous = blocks.last(where: { NSMaxRange($0.range) <= anchor }) {
                     insertion = (NSMaxRange(previous.range), "\n~ \(name)\(itemLine)")
                 } else {
