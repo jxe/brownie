@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Pushed from the meditation list. The title and tags sit at the top as fields, then the
-/// pools as a shelf of chips, then the script; the file is still the same plain text, written
+/// Pushed from the meditation list. The title sits at the top as a field (Foundation and tags
+/// are in the title bar's ⋯ menu), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
 /// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
 /// pause and stop are on the now-playing bar, and it keeps playing after you go back. Any edit stops playback, so the
 /// next play starts from the top. Edits save themselves a moment after you stop typing,
@@ -137,6 +137,7 @@ struct MeditationEditorView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 playbackControls
+                moreMenu
             }
         }
         .sheet(item: $editingPool) { target in
@@ -223,43 +224,53 @@ struct MeditationEditorView: View {
 
     private var isFoundation: Bool { meta.tags.contains(EraIndex.timelessTag) }
 
-    /// The title as a plain field, and the tags under it: Foundation as a toggle, the rest as
-    /// a list that opens the tag editor.
+    /// The title as a plain field. Foundation and tags are in the title bar's ⋯ menu.
     private var headerFields: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Title", text: Binding(
-                get: { meta.title },
-                set: { setHeader(title: $0, tags: meta.tags) }
-            ))
-            .font(.title2.weight(.semibold))
-            .submitLabel(.done)
-
-            HStack(spacing: 8) {
-                Button {
-                    let tags = isFoundation
-                        ? meta.tags.filter { $0 != EraIndex.timelessTag }
-                        : meta.tags + [EraIndex.timelessTag]
-                    setHeader(title: meta.title, tags: tags)
-                } label: {
-                    Label("Foundation", systemImage: isFoundation ? "checkmark" : "square.stack.3d.up")
-                        .labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(ShelfChipStyle(selected: isFoundation))
-                .accessibilityAddTraits(isFoundation ? .isSelected : [])
-
-                let others = meta.tags.filter { $0 != EraIndex.timelessTag }
-                Button {
-                    editingTags = true
-                } label: {
-                    Text(others.isEmpty ? "Tags…" : others.map { "#\($0)" }.joined(separator: " "))
-                        .lineLimit(1)
-                }
-                .buttonStyle(ShelfChipStyle(selected: false))
-            }
-        }
+        TextField("Title", text: Binding(
+            get: { meta.title },
+            set: { setHeader(title: $0, tags: meta.tags) }
+        ))
+        .font(.title2.weight(.semibold))
+        .submitLabel(.done)
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 10)
+    }
+
+    /// The title bar's ⋯ menu: things about the whole meditation rather than its script.
+    private var moreMenu: some View {
+        Menu {
+            Button {
+                let tags = isFoundation
+                    ? meta.tags.filter { $0 != EraIndex.timelessTag }
+                    : meta.tags + [EraIndex.timelessTag]
+                setHeader(title: meta.title, tags: tags)
+            } label: {
+                if isFoundation {
+                    Label("Foundation", systemImage: "checkmark")
+                } else {
+                    Label("Foundation", systemImage: "square.stack.3d.up")
+                }
+            }
+            let others = meta.tags.filter { $0 != EraIndex.timelessTag }
+            Button {
+                editingTags = true
+            } label: {
+                if others.isEmpty {
+                    Label("Tags…", systemImage: "number")
+                } else {
+                    Label {
+                        Text("Tags…")
+                        Text(others.map { "#\($0)" }.joined(separator: " "))
+                    } icon: {
+                        Image(systemName: "number")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .accessibilityLabel("More")
     }
 
     /// Each pool as one chip with its item count (dimmed when nothing draws from it), then
