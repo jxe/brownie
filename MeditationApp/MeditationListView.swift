@@ -597,6 +597,9 @@ struct MeditationListView: View {
             }
         }
         .contextMenu {
+            Section {
+                ListeningStatsMenuItems(filename: filename, history: player.listeningHistory)
+            }
             if bringAlong {
                 Button { bringAlongToCurrentEra(url) } label: {
                     Label("Bring Along", systemImage: "arrow.up.circle")
@@ -1040,6 +1043,30 @@ private struct MeditationRowPressContent: View {
     }
 }
 
+/// The top of a row's long-press menu: time listened in the last 24 hours and ever, and
+/// when it was last played. Plain text, so the items show but can't be tapped.
+private struct ListeningStatsMenuItems: View {
+    let filename: String
+    let history: ListeningHistory
+
+    var body: some View {
+        let now = Date()
+        if let record = history.record(for: filename, at: now) {
+            Text("Last 24 hours: \(Self.duration(record.seconds(inLastDayAt: now)))")
+            Text("All time: \(Self.duration(record.totalSeconds))")
+            Text("Last played \(LastPlayedLabel.age(since: record.lastPlayed, now: now))")
+        } else {
+            Text("Not played yet")
+        }
+    }
+
+    static func duration(_ seconds: TimeInterval) -> String {
+        if seconds < 1 { return "none" }
+        let units: Set<Duration.UnitsFormatStyle.Unit> = seconds < 60 ? [.seconds] : [.hours, .minutes]
+        return Duration.seconds(Int(seconds)).formatted(.units(allowed: units, width: .narrow))
+    }
+}
+
 /// Recent listening has a headphones glyph; older plays show their age explicitly.
 private struct LastPlayedLabel: View {
     @Environment(\.appPalette) private var palette
@@ -1087,7 +1114,7 @@ private struct LastPlayedLabel: View {
         .accessibilityElement(children: .combine)
     }
 
-    private static func age(since date: Date, now: Date) -> String {
+    static func age(since date: Date, now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(date)))
         switch seconds {
         case ..<60: return "just now"

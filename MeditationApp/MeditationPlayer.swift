@@ -635,7 +635,27 @@ class MeditationPlayer: NSObject {
 final class ListeningHistory {
     struct Record: Codable {
         var lastPlayed: Date
+        /// Intervals that ended in the last 24 hours; older ones are folded into `olderSeconds`.
         var intervals: [DateInterval] = []
+        /// Listening time from intervals pruned out of `intervals`.
+        var olderSeconds: TimeInterval = 0
+
+        init(lastPlayed: Date) {
+            self.lastPlayed = lastPlayed
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            lastPlayed = try container.decode(Date.self, forKey: .lastPlayed)
+            intervals = try container.decodeIfPresent([DateInterval].self, forKey: .intervals) ?? []
+            olderSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .olderSeconds) ?? 0
+        }
+
+        /// All listening time recorded. Counting began with the rolling history, so plays
+        /// from before it aren't included.
+        var totalSeconds: TimeInterval {
+            olderSeconds + intervals.reduce(0) { $0 + $1.duration }
+        }
 
         func seconds(inLastDayAt now: Date) -> TimeInterval {
             let cutoff = now.addingTimeInterval(-86400)
@@ -696,7 +716,12 @@ final class ListeningHistory {
         var snapshot = records
         if let activeFile { snapshot[activeFile] = record(for: activeFile, at: now) }
         for filename in snapshot.keys {
-            snapshot[filename]?.intervals.removeAll { $0.end <= cutoff }
+            guard var record = snapshot[filename] else { continue }
+            let pruned = record.intervals.filter { $0.end <= cutoff }
+            guard !pruned.isEmpty else { continue }
+            record.olderSeconds += pruned.reduce(0) { $0 + $1.duration }
+            record.intervals.removeAll { $0.end <= cutoff }
+            snapshot[filename] = record
         }
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: key)
