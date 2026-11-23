@@ -348,7 +348,8 @@ struct MeditationEditorView: View {
                         onInline: { inlinePool(named: name, with: $0) },
                         onExtract: { items, newPool, text in
                             extract(from: name, items: items, into: newPool, text: text)
-                        })
+                        },
+                        onOpenPool: { scrollToWell($0) })
                     .id(WellSection.anchor(name))
                 }
             }
@@ -550,6 +551,8 @@ private struct WellSection: View {
     /// Make Pool… on text selected in an item: the items with `~name` in place of the
     /// selection, the new pool's name, and the selected text for it.
     let onExtract: (_ items: [MedPoolBlock.Item], _ newPool: String, _ text: String) -> Void
+    /// Tapping a `~name` reference in an item jumps to that well.
+    let onOpenPool: (String) -> Void
 
     /// The items being edited, with their ids kept while typing; blank ones aren't written.
     @State private var items: [MedPoolBlock.Item] = []
@@ -591,7 +594,7 @@ private struct WellSection: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.leading, 34)
+            .padding(.leading, 30)
             .padding(.trailing, 20)
         }
         .padding(.top, 20)
@@ -695,7 +698,8 @@ private struct WellSection: View {
                          onExtract: { range in
                              newPoolName = ""
                              extracting = (id, range)
-                         })
+                         },
+                         onOpenPool: onOpenPool)
                 .overlay(alignment: .leading) {
                     if item.wrappedValue.text.isEmpty {
                         Text("New item").font(Font(medFont)).foregroundStyle(.tertiary).allowsHitTesting(false)
@@ -703,8 +707,8 @@ private struct WellSection: View {
                 }
             MedItemMarkerMenu(item: item, onDelete: { remove(id) })
         }
-        .padding(.leading, 34)
-        .padding(.trailing, 14)
+        .padding(.leading, 30)
+        .padding(.trailing, 20)
         .padding(.vertical, 7)
     }
 

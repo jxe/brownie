@@ -747,12 +747,17 @@ struct MedItemMarkerMenu: View {
             }
         } label: {
             let markers = Self.markerText(item)
-            if markers.isEmpty {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(markers)
+            Group {
+                if markers.isEmpty {
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(markers)
+                }
             }
+            // Same box as the pool's ⋯ menu, so the trailing controls share a column.
+            .frame(width: 36, height: 30)
+            .contentShape(Rectangle())
         }
         .accessibilityLabel("Comment, pronouns and weight")
     }

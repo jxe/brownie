@@ -798,6 +798,8 @@ final class MedTextView: UITextView {
             if !target.isBlock, currentFolds.contains(where: { NSLocationInRange(target.hitRange.location, $0.itemsRange) }) {
                 continue
             }
+            // A pool reference reads as a link (pink text, no chip), still tappable to its well.
+            if case .pool = target { continue }
             var tint = target.tapTint
             if case .poolBlock(let name, _) = target, currentFolds.first(where: { $0.name == name })?.isUnused == true {
                 tint = .systemGray
@@ -1027,6 +1029,8 @@ private func applyMedHighlights(to textView: UITextView) {
     let outside = (textView as? MedTextView)?.outsideText ?? ""
     for target in MedQuickEdit.allTargets(in: text, outside: outside)
     where !target.isBlock && target.hitRange.length > 0 && NSMaxRange(target.hitRange) <= storage.length {
+        // Pool references draw no chip, so they need no room kerned around them.
+        if case .pool = target { continue }
         let before = target.hitRange.location - 1
         if before >= 0, ns.character(at: before) != 10 { addGap(at: before) }
         addGap(at: NSMaxRange(target.hitRange) - 1)
@@ -1200,6 +1204,8 @@ struct MedItemField: UIViewRepresentable {
     var onSubmit: () -> Void = {}
     /// Make Pool… on selected text in the item: the range to take out.
     var onExtract: ((NSRange) -> Void)? = nil
+    /// Tapping a `~name` reference jumps to that well instead of placing the cursor.
+    var onOpenPool: ((String) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -1219,6 +1225,13 @@ struct MedItemField: UIViewRepresentable {
         field.inputAccessoryView = makeItemToolbar(for: field, references: references)
         field.text = text
         context.coordinator.recolor(field)
+        // A tap on a `~name` reference jumps to that well rather than placing the cursor.
+        context.coordinator.field = field
+        let tap = UITapGestureRecognizer(target: context.coordinator,
+                                         action: #selector(Coordinator.handleRefTap))
+        tap.delegate = context.coordinator
+        field.addGestureRecognizer(tap)
+        context.coordinator.refTap = tap
         return field
     }
 
@@ -1240,14 +1253,61 @@ struct MedItemField: UIViewRepresentable {
         return CGSize(width: width, height: max(fitted.height, medFont.lineHeight))
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: MedItemField
+        weak var field: UITextView?
+        var refTap: UITapGestureRecognizer?
+        /// The well a tap would jump to, found as the tap begins.
+        private var pendingPool: String?
         init(_ parent: MedItemField) { self.parent = parent }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             guard text.contains("\n") else { return true }
             parent.onSubmit()
             return false
+        }
+
+        // MARK: Tap a reference to jump to its well
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === refTap else { return true }
+            // Without a handler (the pool sheet), never intercept — let the tap place the cursor.
+            guard let field, parent.onOpenPool != nil else { return false }
+            pendingPool = poolRef(at: gestureRecognizer.location(in: field), in: field)
+            return pendingPool != nil
+        }
+
+        /// The field's own tap waits for ours, which fails at once unless it landed on a reference.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === refTap, let field,
+                  let other = otherGestureRecognizer as? UITapGestureRecognizer,
+                  other.numberOfTapsRequired == 1,
+                  let view = other.view, view.isDescendant(of: field) else { return false }
+            return true
+        }
+
+        @objc func handleRefTap() {
+            guard let pool = pendingPool else { return }
+            pendingPool = nil
+            parent.onOpenPool?(pool)
+        }
+
+        /// The well a `~name` reference under `point` draws from (the pool after `=`, if any), or nil.
+        private func poolRef(at point: CGPoint, in field: UITextView) -> String? {
+            guard let position = field.closestPosition(to: point) else { return nil }
+            let offset = field.offset(from: field.beginningOfDocument, to: position)
+            let text = field.text ?? ""
+            let ns = text as NSString
+            let regex = try! NSRegularExpression(
+                pattern: #"(~)([A-Za-z_][A-Za-z0-9_]*)(?:(=)([A-Za-z_][A-Za-z0-9_]*))?"#)
+            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                guard NSLocationInRange(offset, match.range)
+                        || offset == NSMaxRange(match.range) else { continue }
+                let drawn = match.range(at: 4).location != NSNotFound ? match.range(at: 4) : match.range(at: 2)
+                return ns.substring(with: drawn)
+            }
+            return nil
         }
 
         func textViewDidChange(_ textView: UITextView) {
