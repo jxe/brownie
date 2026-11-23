@@ -126,10 +126,10 @@ struct ContentView: View {
     @State private var nowPlayingBarShown = false
     /// The bar's height above the home indicator, for where a flying row lands.
     @State private var nowPlayingBarHeight: CGFloat = 56
-    /// A row flying into the bar or back out of it, and whether it has got there.
+    /// A row flying into the bar, and whether it has got there.
     @State private var rowFlight: RowFlight?
     @State private var rowFlightLanded = false
-    /// What was playing last, so a stop can fly back to its row.
+    /// What's playing, with its title, for a row that starts while another plays.
     @State private var lastPlaying: (url: URL, title: String)?
 
     /// Something is starting, playing or paused, whatever page is on top.
@@ -189,16 +189,12 @@ struct ContentView: View {
                 }
                 .onChange(of: wantsNowPlayingBar, initial: true) { _, wants in
                     guard wants != nowPlayingBarShown else { return }
-                    // From the main screen, the row that started flies down into the bar, and
-                    // on a stop the bar's content flies back up into its row.
-                    if homeIsInFront {
-                        let bar = barFrame(in: geo)
-                        if wants, let url = player.currentSourceURL, let row = visibleRowFrame(url, in: geo) {
-                            flyRow(title: player.currentTitle.isEmpty ? url.deletingPathExtension().lastPathComponent : player.currentTitle,
-                                   from: row, to: bar, intoBar: true)
-                        } else if !wants, let last = lastPlaying, let row = visibleRowFrame(last.url, in: geo) {
-                            flyRow(title: last.title, from: bar, to: row, intoBar: false)
-                        }
+                    // From the main screen, the row that started flies down into the bar,
+                    // background and all. A stop just slides the bar away.
+                    if wants, homeIsInFront, let url = player.currentSourceURL,
+                       let row = visibleRowFrame(url, in: geo) {
+                        flyRow(title: player.currentTitle.isEmpty ? url.deletingPathExtension().lastPathComponent : player.currentTitle,
+                               from: row, to: barFrame(in: geo))
                     }
                     withAnimation(.spring(duration: 0.3, bounce: 0.15)) { nowPlayingBarShown = wants }
                 }
@@ -209,7 +205,7 @@ struct ContentView: View {
                     }
                     guard old != nil, let new, nowPlayingBarShown, homeIsInFront,
                           let row = visibleRowFrame(new, in: geo) else { return }
-                    flyRow(title: lastPlaying?.title ?? "", from: row, to: barFrame(in: geo), intoBar: true)
+                    flyRow(title: lastPlaying?.title ?? "", from: row, to: barFrame(in: geo))
                 }
                 .onChange(of: player.currentTitle) { _, title in
                     if let url = lastPlaying?.url, !title.isEmpty, player.currentSourceURL == url {
@@ -264,8 +260,8 @@ struct ContentView: View {
         return frame
     }
 
-    private func flyRow(title: String, from: CGRect, to: CGRect, intoBar: Bool) {
-        let flight = RowFlight(title: title, from: from, to: to, intoBar: intoBar)
+    private func flyRow(title: String, from: CGRect, to: CGRect) {
+        let flight = RowFlight(title: title, from: from, to: to)
         rowFlight = flight
         rowFlightLanded = false
         // The next turn, so the stand-in is drawn where it starts before it moves.
@@ -278,13 +274,13 @@ struct ContentView: View {
         }
     }
 
-    /// The stand-in for a row on its way into the bar or back, drawn over everything.
+    /// The stand-in for a row on its way into the bar, its background and all, drawn over everything.
     @ViewBuilder
     private var rowFlightLayer: some View {
         GeometryReader { layer in
             if let flight = rowFlight {
                 let origin = layer.frame(in: .global).origin
-                let atBar = flight.intoBar == rowFlightLanded
+                let atBar = rowFlightLanded
                 let frame = rowFlightLanded ? flight.to : flight.from
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: atBar ? 0 : 14, style: .continuous)
@@ -293,6 +289,8 @@ struct ContentView: View {
                             RoundedRectangle(cornerRadius: atBar ? 0 : 14, style: .continuous)
                                 .fill(palette.canvas)
                         )
+                        // Lifted off the list while it travels, settled once it's the bar.
+                        .shadow(color: .black.opacity(atBar ? 0 : 0.18), radius: 10, y: 4)
                     HStack(spacing: 10) {
                         PlayingPulseDot(isPulsing: false)
                             .frame(width: 12, height: 12)
@@ -337,13 +335,12 @@ struct ContentView: View {
     }
 }
 
-/// A meditation row flying into the now-playing bar, or out of it back to its row.
+/// A meditation row flying into the now-playing bar.
 private struct RowFlight {
     let id = UUID()
     let title: String
     let from: CGRect
     let to: CGRect
-    let intoBar: Bool
 }
 
 /// Pulls the panel out with a swipe from the screen's left edge. It hangs a UIKit edge-pan
