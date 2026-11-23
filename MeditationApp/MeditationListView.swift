@@ -467,6 +467,13 @@ struct MeditationListView: View {
         rowView(for: url, bringAlong: bringAlong)
             // Keyed by section too: a meditation can be listed in two sections.
             .tracksTappableFrame("\(section)|\(url.absoluteString)", in: tappableFrames)
+            // The main screen's rows say where their fill is, so a row can fly into the
+            // now-playing bar when it starts and back when it stops.
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                guard shelf == .home else { return }
+                HomeRowFrames.shared.frames[url] = frame.insetBy(dx: RowFillShape.margin.width, dy: RowFillShape.margin.height)
+            }
+            .onDisappear { if shelf == .home { HomeRowFrames.shared.frames[url] = nil } }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             // The fill sits RowFillShape.margin inside the row, so these insets are that much
@@ -494,8 +501,8 @@ struct MeditationListView: View {
         let hasUpdate = meditationStore.updates[filename] != nil
         let storeRole = meditationStore.link(for: filename)?.role
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
-        let showElapsedTime = isCurrent && (player.state == .playing || player.state == .paused)
-        let activeFill = palette.highlight
+        // The now-playing bar shows the time now, on every page, so the row doesn't.
+        let showElapsedTime = false
         let inactiveFill = palette.card
         Button {
             tappableFrames.noteRowTap()
@@ -542,9 +549,11 @@ struct MeditationListView: View {
             .padding(.horizontal, 14 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
             .background(
+                // The playing row has flown into the now-playing bar: what stays behind is
+                // a quieter mark, an outline in the tint, rather than the bar's own fill.
                 RowFillShape()
-                    .fill(isEngaged ? activeFill : inactiveFill)
-                    .shadow(color: isEngaged ? .black.opacity(0.10) : .clear, radius: 2, y: 1)
+                    .fill(inactiveFill)
+                    .overlay(RowFillShape().stroke(palette.tint.opacity(isEngaged ? 0.6 : 0), lineWidth: 1.5))
             )
             .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
@@ -1010,6 +1019,14 @@ private extension View {
     }
 }
 
+/// Where the main screen's meditation rows are on screen (their fill, in global
+/// coordinates), so `ContentView` can fly a row into the now-playing bar and back. A plain
+/// class: frames change on every scroll, and nothing should re-render for that.
+@MainActor final class HomeRowFrames {
+    static let shared = HomeRowFrames()
+    var frames: [URL: CGRect] = [:]
+}
+
 /// Shared inset for the row background and its context-menu preview.
 private struct RowFillShape: Shape {
     static let margin = CGSize(width: 4, height: 2)
@@ -1139,11 +1156,11 @@ private struct LastPlayedLabel: View {
 /// The now-playing bar: what's playing, how far along it is, and pause and stop. A full-width
 /// stripe along the bottom edge, tinted like a playing row, running down under the home
 /// indicator. `ContentView` keeps one under the main navigation stack while a meditation is
-/// starting, playing or paused and the main screen isn't the top page (its playing row shows
-/// the same). It reads the player itself, so its changes don't re-render the pages above it.
+/// starting, playing or paused, on every page. It reads the player itself, so its changes don't re-render the pages above it.
 struct NowPlayingBar: View {
     @Environment(MeditationPlayer.self) private var player
     @Environment(\.appPalette) private var palette
+    var contentHidden = false
 
     private var title: String {
         if !player.currentTitle.isEmpty { return player.currentTitle }
@@ -1203,6 +1220,8 @@ struct NowPlayingBar: View {
         .frame(maxWidth: 720)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
+        // Hidden while a row flies in or out, which stands in for it.
+        .opacity(contentHidden ? 0 : 1)
         .background {
             ZStack {
                 palette.canvas
