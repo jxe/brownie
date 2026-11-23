@@ -594,10 +594,18 @@ private struct WellSection: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.leading, 30)
-            .padding(.trailing, 20)
+            .padding(.leading, 20)
+            .padding(.trailing, 10)
         }
-        .padding(.top, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+        // A faint card holds each well, so its items read as one group.
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.secondary.opacity(0.06))
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
         .onAppear {
             readIfChanged()
             takeFocusRequest()
@@ -682,7 +690,7 @@ private struct WellSection: View {
             }
             .accessibilityLabel("Pool options")
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 10)
         .padding(.bottom, 4)
         .accessibilityHint(isUnused ? "Not used in the script" : "")
     }
@@ -707,8 +715,8 @@ private struct WellSection: View {
                 }
             MedItemMarkerMenu(item: item, onDelete: { remove(id) })
         }
-        .padding(.leading, 30)
-        .padding(.trailing, 20)
+        .padding(.leading, 20)
+        .padding(.trailing, 10)
         .padding(.vertical, 7)
     }
 

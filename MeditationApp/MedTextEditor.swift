@@ -1027,10 +1027,21 @@ private func applyMedHighlights(to textView: UITextView) {
         storage.addAttribute(.kern, value: existing + medChipGap, range: NSRange(location: index, length: 1))
     }
     let outside = (textView as? MedTextView)?.outsideText ?? ""
-    for target in MedQuickEdit.allTargets(in: text, outside: outside)
+    let targets = MedQuickEdit.allTargets(in: text, outside: outside)
+    let chipStarts = Set(targets.compactMap { target -> Int? in
+        if case .pool = target { return nil }
+        return target.isBlock ? nil : target.hitRange.location
+    })
+    for target in targets
     where !target.isBlock && target.hitRange.length > 0 && NSMaxRange(target.hitRange) <= storage.length {
-        // Pool references draw no chip, so they need no room kerned around them.
-        if case .pool = target { continue }
+        // Pool references draw no chip, so they need no room of their own, except before a
+        // chip that follows them, which would otherwise crowd the link.
+        if case .pool = target {
+            var next = NSMaxRange(target.hitRange)
+            while next < ns.length, ns.character(at: next) == 32 || ns.character(at: next) == 9 { next += 1 }
+            if chipStarts.contains(next) { addGap(at: NSMaxRange(target.hitRange) - 1) }
+            continue
+        }
         let before = target.hitRange.location - 1
         if before >= 0, ns.character(at: before) != 10 { addGap(at: before) }
         addGap(at: NSMaxRange(target.hitRange) - 1)
