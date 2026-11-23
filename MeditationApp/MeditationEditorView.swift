@@ -328,7 +328,6 @@ struct MeditationEditorView: View {
         let unused = MeditationParser.unusedPoolNames(in: content)
         let references = MeditationParser.referenceableNames(in: content)
         return VStack(alignment: .leading, spacing: 0) {
-            if !doc.pools.isEmpty { Divider().padding(.horizontal, 20) }
             ForEach(wellOrder, id: \.self) { name in
                 if let index = doc.poolIndex(named: name) {
                     WellSection(
@@ -594,18 +593,18 @@ private struct WellSection: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.leading, 20)
-            .padding(.trailing, 10)
+            .padding(.horizontal, 12)
         }
-        .padding(.top, 10)
+        .padding(.top, 8)
         .padding(.bottom, 4)
         // A faint card holds each well, so its items read as one group.
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.secondary.opacity(0.06))
         )
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
+        // Content inside lines up with the title and script (8 + 12 = 20).
+        .padding(.horizontal, 8)
+        .padding(.top, 12)
         .onAppear {
             readIfChanged()
             takeFocusRequest()
@@ -654,13 +653,7 @@ private struct WellSection: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            .font(.subheadline.monospaced())
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.secondary.opacity(0.12))
-            )
+            .font(.subheadline.monospaced().weight(.semibold))
             .opacity(isUnused ? 0.45 : 1)
             if isUnused {
                 Text("unused")
@@ -690,8 +683,8 @@ private struct WellSection: View {
             }
             .accessibilityLabel("Pool options")
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 4)
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
         .accessibilityHint(isUnused ? "Not used in the script" : "")
     }
 
@@ -715,8 +708,8 @@ private struct WellSection: View {
                 }
             MedItemMarkerMenu(item: item, onDelete: { remove(id) })
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 10)
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
         .padding(.vertical, 7)
     }
 
