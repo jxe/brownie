@@ -16,6 +16,7 @@ struct MeditationListView: View {
     @Environment(\.appPalette) private var palette
     @Environment(\.openPanel) private var openPanel
     @Environment(\.panelIsOpen) private var panelIsOpen
+    @Environment(\.setHomePagePushed) private var setHomePagePushed
     @State private var files: [URL] = []
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
@@ -225,7 +226,6 @@ struct MeditationListView: View {
             }
             .navigationDestination(isPresented: $showingTodos) {
                 TodosView()
-                    .nowPlayingStripe()
             }
             .toolbar {
                 if !isPast {
@@ -272,6 +272,11 @@ struct MeditationListView: View {
                 }
             }
             .onAppear { hasGoodVoice = MeditationPlayer.hasGoodVoice }
+            // Tells the now-playing bar whether the main screen is still the top page. From
+            // these flags rather than appear/disappear, which only fire once a push ends.
+            .onChange(of: showingFeelings || showingTodos || showingEditor, initial: true) { _, pushed in
+                if shelf == .home { setHomePagePushed(pushed) }
+            }
             // Settings lives in the panel, so recheck the voice when it closes. Not on
             // UserDefaults changes: every feeling tap saves the session there, and listing
             // the system voices on each save made taps lag.
@@ -295,7 +300,6 @@ struct MeditationListView: View {
                         refreshFiles()
                     }
                 }
-                .nowPlayingStripe()
             }
             .sheet(isPresented: $showingStore) {
                 MeditationStoreView()
@@ -1132,41 +1136,12 @@ private struct LastPlayedLabel: View {
     }
 }
 
-extension View {
-    /// The now-playing stripe under this page. Each pushed page carries its own, so it slides
-    /// in and out with the page. Feelings puts one under its Negative/Positive bar instead.
-    func nowPlayingStripe() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) { NowPlayingInset() }
-    }
-}
-
-/// Sits under the pages pushed onto the main screen, the editor included, while a meditation
-/// is starting, playing or paused: what's playing, how far along it is, and pause and stop.
-/// Not on the main screen itself, where the playing row already shows all that. It reads the
-/// player itself, so its changes don't re-render the screen it sits under.
-struct NowPlayingInset: View {
-    /// Whether the main screen is the top page, so the bar stays out of the way.
-    var isHidden = false
-    @Environment(MeditationPlayer.self) private var player
-
-    var body: some View {
-        let isShowing = switch player.state {
-        case .preparing, .playing, .paused: !isHidden
-        case .idle, .finished: false
-        }
-        VStack(spacing: 0) {
-            if isShowing {
-                NowPlayingBar()
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(duration: 0.3, bounce: 0.2), value: isShowing)
-    }
-}
-
-/// A full-width stripe along the bottom edge, tinted like a playing row, running down under
-/// the home indicator. Pages sit above it rather than under it.
-private struct NowPlayingBar: View {
+/// The now-playing bar: what's playing, how far along it is, and pause and stop. A full-width
+/// stripe along the bottom edge, tinted like a playing row, running down under the home
+/// indicator. `ContentView` keeps one under the main navigation stack while a meditation is
+/// starting, playing or paused and the main screen isn't the top page (its playing row shows
+/// the same). It reads the player itself, so its changes don't re-render the pages above it.
+struct NowPlayingBar: View {
     @Environment(MeditationPlayer.self) private var player
     @Environment(\.appPalette) private var palette
 

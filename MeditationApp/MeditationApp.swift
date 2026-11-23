@@ -44,6 +44,9 @@ extension EnvironmentValues {
     @Entry var openPanel: () -> Void = {}
     /// Whether the left panel is open, so the main screen can refresh what Settings may have changed.
     @Entry var panelIsOpen = false
+    /// The main screen says whether one of its own pages (Feelings, To-dos, the editor) is
+    /// pushed over it, so the now-playing bar knows the main screen isn't on top.
+    @Entry var setHomePagePushed: (Bool) -> Void = { _ in }
     /// Closes the left panel and opens one of its pages on the main screen.
     @Entry var openFromPanel: (PanelPage) -> Void = { _ in }
 }
@@ -116,6 +119,21 @@ struct ContentView: View {
     @State private var panelMounted = false
     /// The main screen's pushed pages that came from the panel.
     @State private var mainPath: [PanelPage] = []
+    /// Whether the main screen has pushed one of its own pages (see `setHomePagePushed`).
+    @State private var homePagePushed = false
+    /// Whether the now-playing bar is up. Follows `wantsNowPlayingBar` in an update of its
+    /// own, so only the bar and the pages' resizing animate, never a push or pop with them.
+    @State private var nowPlayingBarShown = false
+
+    /// Something is playing and the main screen isn't the top page: its playing row
+    /// already shows what the bar would.
+    private var wantsNowPlayingBar: Bool {
+        let isActive = switch player.state {
+        case .preparing, .playing, .paused: true
+        case .idle, .finished: false
+        }
+        return isActive && (homePagePushed || !mainPath.isEmpty)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -133,21 +151,34 @@ struct ContentView: View {
                     .frame(width: panelWidth)
                 }
 
-                NavigationStack(path: $mainPath) {
-                    MeditationListView(shelf: .home)
-                        // Its rows show what's playing, so the bar only comes up over it.
-                        .navigationDestination(for: PanelPage.self) { PanelPageView(page: $0).nowPlayingStripe() }
-                        // A swipe in from the left edge pulls the panel out, but only on the
-                        // main screen itself: anywhere deeper, that swipe goes back.
-                        .background(
-                            PanelEdgePan(isEnabled: !panelOpen) { translation in
-                                if !panelMounted { panelMounted = true }
-                                dragOffset = max(0, translation)
-                            } onEnded: { translation, velocity in
-                                setPanel(open: translation + velocity * 0.2 > panelWidth / 3)
-                            }
-                            .frame(width: 0, height: 0)
-                        )
+                // One now-playing bar for every page, under the whole stack rather than
+                // inside each page, so when it comes or goes the stack shrinks or grows
+                // with it in one animation.
+                VStack(spacing: 0) {
+                    NavigationStack(path: $mainPath) {
+                        MeditationListView(shelf: .home)
+                            .navigationDestination(for: PanelPage.self) { PanelPageView(page: $0) }
+                            // A swipe in from the left edge pulls the panel out, but only on the
+                            // main screen itself: anywhere deeper, that swipe goes back.
+                            .background(
+                                PanelEdgePan(isEnabled: !panelOpen) { translation in
+                                    if !panelMounted { panelMounted = true }
+                                    dragOffset = max(0, translation)
+                                } onEnded: { translation, velocity in
+                                    setPanel(open: translation + velocity * 0.2 > panelWidth / 3)
+                                }
+                                .frame(width: 0, height: 0)
+                            )
+                    }
+                    .environment(\.setHomePagePushed, { homePagePushed = $0 })
+                    if nowPlayingBarShown {
+                        NowPlayingBar()
+                            .transition(.move(edge: .bottom))
+                    }
+                }
+                .onChange(of: wantsNowPlayingBar, initial: true) { _, wants in
+                    guard wants != nowPlayingBarShown else { return }
+                    withAnimation(.spring(duration: 0.3, bounce: 0.15)) { nowPlayingBarShown = wants }
                 }
                 .environment(\.openPanel, { setPanel(open: true) })
                 .environment(\.panelIsOpen, panelOpen)

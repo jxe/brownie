@@ -146,9 +146,6 @@ struct CheckInView: View {
                 }
                 .frame(height: 104)
                 .padding(.bottom, 4)
-                // The shared stripe, placed here so Negative and Positive sit above it instead
-                // of under it. It still runs to the bottom edge.
-                NowPlayingInset()
             }
         }
         // The same background as the main screen it opens from.
@@ -180,7 +177,6 @@ struct CheckInView: View {
         }
         .navigationDestination(item: $todoEmotion) { emotion in
             FeelingTodoView(emotion: emotion)
-                .nowPlayingStripe()
         }
         .onAppear {
             isShown = true
