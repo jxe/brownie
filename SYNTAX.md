@@ -167,7 +167,7 @@ Pool items can include one or more rock markers (`🪨`) to make them more likel
   This one has even more pull. 🪨🪨
 ```
 
-The first item has weight 1, the second has weight 2, and the third has weight 3. Weighted pools still avoid drawing the same item twice in a row whenever another item is available, including when the pool refills for a new cycle.
+The first item has weight 1, the second has weight 2, and the third has weight 3. Weighted pools still avoid drawing the same item twice in a row whenever another item is available, including when the pool refills for a new cycle. The one exception is a pool of just two items: when it refills, either item can come first, so it doesn't settle into a fixed back-and-forth, though the same item can then come twice in a row at the turnover.
 
 ## Repeats
 

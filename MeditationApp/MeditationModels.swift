@@ -36,12 +36,16 @@ class Pool {
     func draw() -> String {
         guard !items.isEmpty else { return "" }
 
+        var refilled = false
         if remainingCounts.allSatisfy({ $0 == 0 }) {
             remainingCounts = items.map(\.weight)
+            refilled = true
         }
 
         var candidates = remainingCounts.indices.filter { remainingCounts[$0] > 0 }
-        if let lastDrawn {
+        // Avoid saying the same item twice in a row, except across a refill of a two-item
+        // pool: there it would force strict alternation (A B A B…), locking the order forever.
+        if let lastDrawn, !(refilled && items.count == 2) {
             let nonRepeating = candidates.filter { items[$0] != lastDrawn }
             if !nonRepeating.isEmpty {
                 candidates = nonRepeating
