@@ -756,7 +756,7 @@ struct MedItemMarkerMenu: View {
                 }
             }
             // Same box as the pool's ⋯ menu, so the trailing controls share a column.
-            .frame(width: 36, height: 30)
+            .frame(width: 36, height: 26)
             .contentShape(Rectangle())
         }
         .accessibilityLabel("Comment, pronouns and weight")

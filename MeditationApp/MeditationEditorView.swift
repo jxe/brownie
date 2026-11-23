@@ -589,7 +589,7 @@ private struct WellSection: View {
                 Label("Item", systemImage: "plus")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -710,7 +710,7 @@ private struct WellSection: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 4)
-        .padding(.vertical, 7)
+        .padding(.vertical, 3)
     }
 
     private func binding(for id: UUID) -> Binding<MedPoolBlock.Item> {
