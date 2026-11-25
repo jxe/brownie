@@ -690,6 +690,14 @@ final class ListeningHistory {
         return record
     }
 
+    /// Moves a meditation's listening to its new filename.
+    func rename(_ old: String, to new: String) {
+        guard old != new, let record = records.removeValue(forKey: old) else { return }
+        records[new] = record
+        if activeFile == old { activeFile = new }
+        save()
+    }
+
     func begin(filename: String) {
         started = Date()
         activeFile = filename

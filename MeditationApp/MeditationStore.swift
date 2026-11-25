@@ -99,6 +99,14 @@ final class MeditationStore {
         links[filename]
     }
 
+    /// Keeps a renamed file linked to its store record.
+    func renameLink(_ old: String, to new: String) {
+        guard old != new, let link = links.removeValue(forKey: old) else { return }
+        links[new] = link
+        if let update = updates.removeValue(forKey: old) { updates[new] = update }
+        saveLinks()
+    }
+
     /// Record names of store items that a file in the library (shared or downloaded) comes from.
     func recordsInLibrary() -> Set<String> {
         let localNames = Set(FileManager.default.meditationFiles().map { $0.deletingPathExtension().lastPathComponent })

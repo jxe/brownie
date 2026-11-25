@@ -20,9 +20,12 @@ struct MeditationEditorView: View {
     @State private var pendingFix: MeditationFix? = nil
     /// The script and filename as last written to disk (or as opened).
     @State private var saved: (content: String, filename: String)?
-    /// Set when the page opens, so a new meditation's filename field doesn't vanish
-    /// mid-typing once the first autosave has written the file.
-    @State private var showsFilename = false
+    /// The file's name follows the title (`date-slug`) while this is set: for a new
+    /// meditation, or one whose name still is what its title gives. Renaming it by hand
+    /// from the ⋯ menu stops that.
+    @State private var followsTitle = false
+    @State private var renamingFile = false
+    @State private var newFilename = ""
     /// The name this page's file has on disk: the opened file's, or what autosave last wrote.
     /// A rename removes it; a name that belongs to some other meditation is never written over.
     @State private var diskName: String?
@@ -61,13 +64,6 @@ struct MeditationEditorView: View {
                 ScrollView {
                     // Long lines are hard to follow on iPad, so cap the measure and center it.
                     VStack(alignment: .leading, spacing: 0) {
-                        if showsFilename {
-                            TextField("filename", text: $filename)
-                                .textFieldStyle(.roundedBorder)
-                                .padding()
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                        }
                         headerFields
                         Divider().padding(.horizontal, 20)
                         MedTextEditor(
@@ -173,6 +169,23 @@ struct MeditationEditorView: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .alert("Rename File", isPresented: $renamingFile) {
+            TextField("filename", text: $newFilename)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                let name = newFilename.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "/", with: "-")
+                guard !name.isEmpty, name != filename else { return }
+                followsTitle = false
+                filename = name
+            }
+        } message: {
+            Text(followsTitle
+                 ? "The file is named after the title. Renaming it stops that."
+                 : "The file's name in your Meditations folder.")
+        }
         .alert("New Pool", isPresented: $namingNewPool) {
             TextField("name", text: $newPoolName)
                 .textInputAutocapitalization(.never)
@@ -187,9 +200,13 @@ struct MeditationEditorView: View {
         .onAppear {
             syncDocument()
             if saved == nil {
-                saved = (content, filename)
-                showsFilename = isNew
                 if !isNew { diskName = filename.trimmingCharacters(in: .whitespaces) }
+                let derived = MedFilename.derived(from: meta.title, keepingDateOf: filename)
+                followsTitle = isNew
+                    || (filename == derived && MeditationStore.shared.link(for: filename) == nil)
+                // Before `saved`, so naming a new meditation isn't an edit to save.
+                if followsTitle { filename = derived }
+                saved = (content, filename)
                 // Editing one meditation while another plays isn't supported: the now-playing
                 // bar would sit under the wrong script. What's playing stops; this script, if
                 // it's the one playing, carries on.
@@ -250,6 +267,10 @@ struct MeditationEditorView: View {
                 : MeditationMetadataWriter.rewrite(source: doc.header, title: title, tags: tags)
                     .trimmingCharacters(in: .newlines)
         }
+        if followsTitle {
+            let name = MedFilename.derived(from: title, keepingDateOf: filename)
+            if name != filename { filename = name }
+        }
     }
 
     private var isFoundation: Bool { meta.tags.contains(EraIndex.timelessTag) }
@@ -295,6 +316,17 @@ struct MeditationEditorView: View {
                     } icon: {
                         Image(systemName: "number")
                     }
+                }
+            }
+            Button {
+                newFilename = diskName ?? filename
+                renamingFile = true
+            } label: {
+                Label {
+                    Text("Rename File…")
+                    Text(diskName ?? filename)
+                } icon: {
+                    Image(systemName: "doc")
                 }
             }
         } label: {
@@ -490,8 +522,10 @@ struct MeditationEditorView: View {
         if let diskName, diskName != target {
             let old = FileManager.default.meditationsDirectory.appendingPathComponent("\(diskName).med")
             FileManager.default.deleteMeditation(at: old)
-            // Eras that it was brought along to know it by name.
+            // Eras, listening stats and store links know it by name.
             EraIndex.rename(diskName, to: target)
+            player.listeningHistory.rename(diskName, to: target)
+            MeditationStore.shared.renameLink(diskName, to: target)
         }
         diskName = target
         saved = (content, filename)
@@ -855,5 +889,31 @@ struct MedDocument: Equatable {
         let first = pool.prefix { $0 != "\n" }.trimmingCharacters(in: .whitespaces)
         guard MeditationParser.isPoolDefinitionHeader(first) else { return nil }
         return first.dropFirst().trimmingCharacters(in: .whitespaces)
+    }
+}
+
+/// Meditation filenames made from titles: `yyyy-MM-dd-the-title`.
+enum MedFilename {
+    /// The title in lowercase words joined by hyphens; "meditation" when it has none.
+    static func slug(_ title: String) -> String {
+        let slug = title
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+        return slug.isEmpty ? "meditation" : slug
+    }
+
+    /// `date-slug`, keeping the date `filename` starts with (the day it was made), else today.
+    static func derived(from title: String, keepingDateOf filename: String) -> String {
+        let date: String
+        if let range = filename.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
+            date = String(filename[range])
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            date = formatter.string(from: Date())
+        }
+        return "\(date)-\(slug(title))"
     }
 }
