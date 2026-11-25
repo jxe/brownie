@@ -757,7 +757,7 @@ struct MedItemMarkerMenu: View {
                         .fixedSize()
                 }
             }
-            // At least the pool ⋯ menu's box, so the trailing controls share a column; more
+            // At least 36pt wide, an easy tap target; more
             // markers (🪨🪨) grow it leftward rather than being cut to "🪨…".
             .frame(minWidth: 36, minHeight: 26, alignment: .trailing)
             .contentShape(Rectangle())

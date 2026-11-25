@@ -589,7 +589,7 @@ struct MeditationEditorView: View {
 }
 
 
-/// One pool under the script: a `~name` header with its item count and a ⋯ menu, then its
+/// One pool under the script: a `~name` header with its item count (long-press it for options), then its
 /// items, each edited in place and written straight back to the pool block.
 private struct WellSection: View {
     let name: String
@@ -722,30 +722,27 @@ private struct WellSection: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Menu {
-                if onlyItem != nil {
-                    Button {
-                        confirmingInline = true
-                    } label: {
-                        Label("Replace ~\(name) with Its Text", systemImage: "text.insert")
-                    }
-                    .disabled(!canInline)
-                }
-                Button(role: .destructive) {
-                    confirmingDelete = true
-                } label: {
-                    Label("Delete Pool", systemImage: "trash")
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, height: 30)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Pool options")
         }
+        .frame(minHeight: 30)
         .padding(.leading, 12)
-        .padding(.trailing, 4)
+        .padding(.trailing, 12)
+        // The pool's options are a long press on its name row, not a visible button.
+        .contentShape(Rectangle())
+        .contextMenu {
+            if onlyItem != nil {
+                Button {
+                    confirmingInline = true
+                } label: {
+                    Label("Replace ~\(name) with Its Text", systemImage: "text.insert")
+                }
+                .disabled(!canInline)
+            }
+            Button(role: .destructive) {
+                confirmingDelete = true
+            } label: {
+                Label("Delete Pool", systemImage: "trash")
+            }
+        }
         .accessibilityHint(isUnused ? "Not used in the script" : "")
     }
 
