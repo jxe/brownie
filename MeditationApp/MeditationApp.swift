@@ -186,6 +186,13 @@ struct ContentView: View {
                             )
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
+                    // When the bar goes, the pages take back its space at once, under it,
+                    // and it slides away over them. Growing them alongside it left a gap
+                    // that flashed white, since the pages (hosted by UIKit) don't resize
+                    // smoothly in step with the slide.
+                    .transaction(value: nowPlayingBarShown) { transaction in
+                        if !nowPlayingBarShown { transaction.animation = nil }
+                    }
                     if nowPlayingBarShown {
                         // A flying row stands in for the bar: the real one comes in only as it
                         // lands, unseen under it (no slide of its own), and its contents fade in
