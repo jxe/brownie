@@ -713,7 +713,7 @@ struct MedPoolEditorSheet: View {
 }
 
 /// A pool item's options: comment it out, pronouns, 🪨 weight, and (with `onDelete`) remove it.
-/// Its label shows the markers set, or a faint ⋯ when there are none.
+/// Its label shows the markers set, or an up-down chevron when there are none.
 struct MedItemMarkerMenu: View {
     @Binding var item: MedPoolBlock.Item
     var onDelete: (() -> Void)? = nil
@@ -749,10 +749,10 @@ struct MedItemMarkerMenu: View {
             let markers = Self.markerText(item)
             Group {
                 if markers.isEmpty {
-                    // Quiet: most items never need it.
-                    Image(systemName: "ellipsis")
+                    // The pop-up picker's chevron: choices for this item.
+                    Image(systemName: "chevron.up.chevron.down")
                         .font(.footnote)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 } else {
                     Text(markers)
                         .lineLimit(1)
