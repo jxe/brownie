@@ -390,7 +390,7 @@ struct MeditationEditorView: View {
                     .id(WellSection.anchor(name))
                 }
             }
-            // Reads as the outline of the next well: same shape and width, dashed and empty.
+            // Centered under the wells, where the next one would go.
             Button {
                 newPoolName = ""
                 namingNewPool = true
@@ -402,11 +402,6 @@ struct MeditationEditorView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
                     .contentShape(Rectangle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.secondary.opacity(0.3),
-                                          style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    )
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 8)
@@ -624,6 +619,13 @@ private struct WellSection: View {
     @State private var extracting: (item: UUID, range: NSRange)?
     @State private var newPoolName = ""
 
+    /// How far the card is swiped left to show Delete behind it; 0 when closed.
+    @State private var swipeOffset: CGFloat = 0
+    /// Where the card sat when the current swipe began.
+    @State private var swipeStart: CGFloat?
+    /// How far a swipe opens the card.
+    private static let deleteWidth: CGFloat = 88
+
     static func anchor(_ name: String) -> String { "well:\(name)" }
 
     /// The pool's one live item, when it has exactly one.
@@ -639,30 +641,41 @@ private struct WellSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            ForEach(items) { item in
-                row(item.id)
-            }
-            Button {
-                addItem(after: nil)
-            } label: {
-                Label("Item", systemImage: "plus")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 6)
+        // Swipe the card left for Delete, as in Mail; a long swipe asks to delete straight away.
+        ZStack(alignment: .trailing) {
+            if swipeOffset < 0 {
+                Button {
+                    confirmingDelete = true
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "trash")
+                        Text("Delete").font(.footnote.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: max(0, -swipeOffset - 8))
+                    .frame(maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.red))
                     .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
+            card
+                .offset(x: swipeOffset)
+                // While it's open, a tap on the card closes it instead of editing.
+                .overlay {
+                    if swipeOffset < 0 {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .offset(x: swipeOffset)
+                            .onTapGesture { closeSwipe() }
+                    }
+                }
         }
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        // A faint card holds each well, so its items read as one group.
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.secondary.opacity(0.06))
-        )
+        .simultaneousGesture(swipe)
+        .accessibilityAction(named: "Delete Pool") { confirmingDelete = true }
+        .onChange(of: confirmingDelete) { _, showing in
+            if !showing { closeSwipe() }
+        }
         // Content inside lines up with the title and script (8 + 12 = 20).
         .padding(.horizontal, 8)
         .padding(.top, 12)
@@ -704,6 +717,68 @@ private struct WellSection: View {
         } message: {
             Text("The selected text becomes an item of the new pool, and ~name takes its place.")
         }
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            ForEach(items) { item in
+                row(item.id)
+            }
+            Button {
+                addItem(after: nil)
+            } label: {
+                Label("Item", systemImage: "plus")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        // A faint card holds each well, so its items read as one group.
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.secondary.opacity(0.06))
+                // Opaque under the tint, so Delete behind shows only where the card moved off.
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(uiColor: .systemBackground)))
+        )
+    }
+
+    /// A sideways drag on the card; drags that are mostly up or down are left to the page.
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                if swipeStart == nil {
+                    guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                    swipeStart = swipeOffset
+                }
+                guard let start = swipeStart else { return }
+                swipeOffset = min(0, start + value.translation.width)
+            }
+            .onEnded { value in
+                guard let start = swipeStart else { return }
+                swipeStart = nil
+                let end = start + value.predictedEndTranslation.width
+                withAnimation(.snappy) {
+                    if end < -Self.deleteWidth * 2.6 {
+                        swipeOffset = -Self.deleteWidth
+                        confirmingDelete = true
+                    } else if end < -Self.deleteWidth / 2 {
+                        swipeOffset = -Self.deleteWidth
+                    } else {
+                        swipeOffset = 0
+                    }
+                }
+            }
+    }
+
+    private func closeSwipe() {
+        withAnimation(.snappy) { swipeOffset = 0 }
     }
 
     private var header: some View {
