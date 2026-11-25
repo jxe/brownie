@@ -201,11 +201,15 @@ struct ContentView: View {
                         // as the stand-in fades out. Switching to another meditation while the
                         // bar is up flies nothing: the bar's contents just roll over.
                         NowPlayingBar(contentHidden: rowFlight != nil)
-                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { nowPlayingBarFrame = $0 }
                             // A stop sinks it down and fades it, explicitly, before it goes: a
                             // removal transition here didn't run.
                             .offset(y: nowPlayingBarSinking ? nowPlayingBarHeight + bottomSafeInset : 0)
                             .opacity(nowPlayingBarSinking ? 0 : 1)
+                            // Measured outside the sink's offset (and not while sinking), so a
+                            // flight lands where the bar sits, not where it sank to.
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                                if !nowPlayingBarSinking { nowPlayingBarFrame = frame }
+                            }
                             .transition(rowFlight == nil
                                 ? AnyTransition.asymmetric(insertion: .move(edge: .bottom), removal: .identity)
                                 : .identity)
