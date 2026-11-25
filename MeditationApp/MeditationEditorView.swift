@@ -398,7 +398,7 @@ struct MeditationEditorView: View {
                 Label("New Pool", systemImage: "plus")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
                     .contentShape(Rectangle())
