@@ -729,6 +729,8 @@ struct MedItemMarkerMenu: View {
                     Label("Comment Out", systemImage: "number")
                 }
             }
+            // The menu's items appear as it opens: put the keyboard away then.
+            .onAppear { dismissKeyboard() }
             Picker("Pronouns", selection: $item.gender) {
                 Text("No pronouns").tag(Gender?.none)
                 Text("♀ she / her").tag(Gender?.some(.female))

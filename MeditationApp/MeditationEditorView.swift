@@ -69,7 +69,7 @@ struct MeditationEditorView: View {
                         MedTextEditor(
                             text: scriptBinding,
                             outside: doc.prefix,
-                            onOpenPool: { scrollToWell($0) },
+                            onOpenPool: { dismissKeyboard(); scrollToWell($0) },
                             onNewPool: { addPool(named: $0, item: $1) },
                             scrolls: false
                         )
@@ -77,8 +77,20 @@ struct MeditationEditorView: View {
                     }
                     .frame(maxWidth: 720)
                     .frame(maxWidth: .infinity)
+                    .background {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { dismissKeyboard() }
+                    }
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // A tap on the page's empty space (between and below the wells) puts the
+                // keyboard away; fields and buttons on top take their own taps.
+                .background {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissKeyboard() }
+                }
                 // Play floats at the bottom corner while nothing plays; once something does,
                 // the now-playing bar takes its place.
                 .overlay(alignment: .bottomTrailing) {
@@ -289,6 +301,7 @@ struct MeditationEditorView: View {
         ))
         .font(.title2.weight(.semibold))
         .submitLabel(.done)
+        .onSubmit { dismissKeyboard() }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 10)
@@ -386,7 +399,7 @@ struct MeditationEditorView: View {
                         onExtract: { items, newPool, text in
                             extract(from: name, items: items, into: newPool, text: text)
                         },
-                        onOpenPool: { scrollToWell($0) })
+                        onOpenPool: { dismissKeyboard(); scrollToWell($0) })
                     .id(WellSection.anchor(name))
                 }
             }
@@ -498,6 +511,7 @@ struct MeditationEditorView: View {
     private var playButton: some View {
         if player.state == .idle || player.state == .finished {
             Button {
+                dismissKeyboard()
                 // Write any pending edit first, so a new meditation has a file (and a row)
                 // and the play is counted under the name it has now.
                 saveIfNeeded()
@@ -756,6 +770,7 @@ private struct WellSection: View {
                 if swipeStart == nil {
                     guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
                     swipeStart = swipeOffset
+                    dismissKeyboard()
                 }
                 guard let start = swipeStart else { return }
                 swipeOffset = min(0, start + value.translation.width)
@@ -812,6 +827,8 @@ private struct WellSection: View {
             } label: {
                 Label("Delete Pool", systemImage: "trash")
             }
+            // The menu's items appear as it opens: put the keyboard away then.
+            .onAppear { dismissKeyboard() }
         }
         .accessibilityHint(isUnused ? "Not used in the script" : "")
     }
@@ -1010,4 +1027,10 @@ enum MedFilename {
         }
         return "\(date)-\(slug(title))"
     }
+}
+
+/// Puts the keyboard away, from whichever field has it.
+@MainActor
+func dismissKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
