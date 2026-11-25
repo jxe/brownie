@@ -1166,9 +1166,30 @@ private struct LastPlayedLabel: View {
 /// indicator. `ContentView` keeps one under the main navigation stack while a meditation is
 /// starting, playing or paused, on every page. It reads the player itself, so its changes don't re-render the pages above it.
 struct NowPlayingBar: View {
-    @Environment(MeditationPlayer.self) private var player
     @Environment(\.appPalette) private var palette
     var contentHidden = false
+
+    var body: some View {
+        NowPlayingBarContent()
+            // Hidden while a row flies in, which stands in for it.
+            .opacity(contentHidden ? 0 : 1)
+            .background {
+                ZStack {
+                    palette.canvas
+                    palette.highlight
+                }
+                .ignoresSafeArea(edges: .bottom)
+                .overlay(alignment: .top) { Divider() }
+            }
+            .accessibilityElement(children: .contain)
+    }
+}
+
+/// What's inside the now-playing bar: the dot, title and time, pause and stop, all live. The
+/// row flying into the bar draws this too, so whatever the player does mid-flight (starting,
+/// the first seconds ticking) already shows on it, and the landing changes nothing.
+struct NowPlayingBarContent: View {
+    @Environment(MeditationPlayer.self) private var player
     /// What the bar last showed while something was on. A stop resets the player at once
     /// (no title, no time, not playing), but the bar is still sliding away then, so it keeps
     /// showing what was playing instead of changing under your finger on its way out.
@@ -1195,7 +1216,6 @@ struct NowPlayingBar: View {
     }
 
     var body: some View {
-        let fill = palette.highlight
         let shown = isOn ? live : held
         let title = shown.title
         HStack(spacing: 10) {
@@ -1257,17 +1277,6 @@ struct NowPlayingBar: View {
         .frame(maxWidth: 720)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        // Hidden while a row flies in or out, which stands in for it.
-        .opacity(contentHidden ? 0 : 1)
-        .background {
-            ZStack {
-                palette.canvas
-                fill
-            }
-            .ignoresSafeArea(edges: .bottom)
-            .overlay(alignment: .top) { Divider() }
-        }
-        .accessibilityElement(children: .contain)
         .onChange(of: live, initial: true) { _, now in
             if isOn { held = now }
         }

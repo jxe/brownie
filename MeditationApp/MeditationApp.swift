@@ -385,8 +385,9 @@ private struct RowFlight {
 ///   along a curve that arrives at the bar from above;
 /// - it keeps its row shape for the first part of the trip and only spreads into the bar's
 ///   full width, square corners and highlight colour as it nears the bottom;
-/// - the title slides from its place in the row to its place in the bar, and the playing dot
-///   fades in ahead of it.
+/// - the row's title slides toward the bar's title line while the bar's own live contents
+///   (`NowPlayingBarContent`: dot, title, time, buttons) fade in over it, so playback that
+///   starts mid-flight already shows, and the landing changes nothing.
 private struct RowFlightView: View, Animatable {
     var progress: CGFloat
     let title: String
@@ -436,6 +437,7 @@ private struct RowFlightView: View, Animatable {
         // on the title line above the time.
         let titleX = Self.lerp(14, 20 + 12 + 10, spread)
         let titleCenterY = Self.lerp(from.height / 2, (barHeight - 40) / 2 + 11, spread)
+        let barContent = Self.smoothstep((spread - 0.15) / 0.7)
 
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -445,10 +447,8 @@ private struct RowFlightView: View, Animatable {
                 )
                 .shadow(color: .black.opacity(0.22 * lift * (1 - spread) + 0.06 * (1 - spread)),
                         radius: 6 + 10 * lift, y: 2 + 6 * lift)
-            PlayingPulseDot(isPulsing: false)
-                .frame(width: 12, height: 12)
-                .opacity(Self.smoothstep((spread - 0.3) / 0.7))
-                .offset(x: 20, y: titleCenterY - 6)
+            // The row's title heads for the bar's title line, fading as the bar's own
+            // contents come up in its place.
             Text(title)
                 .font(.body)
                 .fontWeight(.medium)
@@ -456,6 +456,12 @@ private struct RowFlightView: View, Animatable {
                 .foregroundStyle(Color.primary)
                 .frame(width: max(0, width - titleX - 110), height: 22, alignment: .leading)
                 .offset(x: titleX, y: titleCenterY - 11)
+                .opacity(1 - barContent)
+            // The real bar's contents, live, so the time and the playing dot are already
+            // there if playback starts mid-flight, and nothing jumps when it lands.
+            NowPlayingBarContent()
+                .frame(width: width, height: barHeight)
+                .opacity(barContent)
         }
         .frame(width: width, height: height, alignment: .topLeading)
         .scaleEffect(scale)
