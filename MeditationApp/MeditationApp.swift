@@ -129,6 +129,8 @@ struct ContentView: View {
     @State private var nowPlayingBarShown = false
     /// The bar's frame on screen (above the home indicator), for where a flying row lands.
     @State private var nowPlayingBarFrame: CGRect = .zero
+    /// The home indicator's inset, for guessing where the bar goes before it has ever shown.
+    @State private var bottomSafeInset: CGFloat = 34
     /// A row flying into the bar, and how far along it is (0 at the row, 1 at the bar).
     @State private var rowFlight: RowFlight?
     @State private var rowFlightProgress: CGFloat = 0
@@ -185,26 +187,28 @@ struct ContentView: View {
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
                     if nowPlayingBarShown {
-                        // While a row flies in, the stand-in is the bar: the real one takes its
-                        // place unseen (no slide of its own) and fades in under it as it lands.
-                        // Into a bar that's already up, only its contents hide.
+                        // A flying row stands in for the bar: the real one comes in only as it
+                        // lands, unseen under it (no slide of its own), and its contents fade in
+                        // as the stand-in fades out. Into a bar that's already up, only its
+                        // contents give way.
                         NowPlayingBar(contentHidden: rowFlight != nil)
-                            .opacity(rowFlight.map { $0.intoBarAlreadyUp } ?? true ? 1 : 0)
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { nowPlayingBarFrame = $0 }
                             .transition(rowFlight == nil ? AnyTransition.move(edge: .bottom) : .identity)
                     }
                 }
-                // What shows in the bar's place before the stand-in gets there.
-                .background(palette.canvas.ignoresSafeArea())
                 .environment(\.rowInFlight, rowFlight?.url)
+                .onChange(of: geo.safeAreaInsets.bottom, initial: true) { _, inset in bottomSafeInset = inset }
                 .onChange(of: wantsNowPlayingBar, initial: true) { _, wants in
                     guard wants != nowPlayingBarShown else { return }
                     // From the main screen, the row that started flies down into the bar,
                     // background and all. A stop just slides the bar away.
+                    // The bar itself comes in when the stand-in lands, so no empty strip opens
+                    // at the bottom while it's on its way.
                     if wants, homeIsInFront, let url = player.currentSourceURL,
                        let row = visibleRowFrame(url, in: geo) {
                         flyRow(url, title: player.currentTitle.isEmpty ? url.deletingPathExtension().lastPathComponent : player.currentTitle,
                                from: row, intoBarAlreadyUp: false)
+                        return
                     }
                     withAnimation(.spring(duration: 0.3, bounce: 0.15)) { nowPlayingBarShown = wants }
                 }
@@ -267,25 +271,36 @@ struct ContentView: View {
         let flight = RowFlight(url: url, title: title, from: from, intoBarAlreadyUp: intoBarAlreadyUp)
         rowFlight = flight
         rowFlightProgress = 0
-        // The next turn, so the stand-in is drawn over the row before it moves, and the bar
-        // has been laid out where it lands. Eased rather than sprung: a gentle start for the
-        // lift, a long glide down, and a soft landing with no bounce.
+        // The next turn, so the stand-in is drawn over the row before it moves. Eased rather
+        // than sprung: a quick lift, a glide down, and a soft landing with no bounce.
         DispatchQueue.main.async {
-            withAnimation(.timingCurve(0.45, 0, 0.15, 1, duration: 0.62)) {
+            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.42)) {
                 rowFlightProgress = 1
             } completion: {
                 guard rowFlight?.id == flight.id else { return }
-                // Crossfade: the stand-in fades out as the real bar, and the row's
+                // The real bar slips in under the stand-in, with no animation, so the pages
+                // make room for it while it's covered...
+                if !nowPlayingBarShown && wantsNowPlayingBar {
+                    var instant = Transaction()
+                    instant.disablesAnimations = true
+                    withTransaction(instant) { nowPlayingBarShown = true }
+                }
+                // ...then the stand-in fades out as the bar's contents, and the row's
                 // playing look, fade in.
-                withAnimation(.easeOut(duration: 0.22)) { rowFlight = nil }
+                DispatchQueue.main.async {
+                    guard rowFlight?.id == flight.id else { return }
+                    withAnimation(.easeOut(duration: 0.18)) { rowFlight = nil }
+                }
             }
         }
     }
 
-    /// Where a flight lands: the bar's frame, run down under the home indicator.
+    /// Where a flight lands: the bar's frame, run down under the home indicator. The bar isn't
+    /// up yet, so this is where it last was (it always sits in the same place), or a guess
+    /// the first time.
     private func rowFlightTarget(screen: CGRect) -> CGRect {
         let bar = nowPlayingBarFrame.isEmpty
-            ? CGRect(x: screen.minX, y: screen.maxY - 90, width: screen.width, height: 56)
+            ? CGRect(x: screen.minX, y: screen.maxY - bottomSafeInset - 56, width: screen.width, height: 56)
             : nowPlayingBarFrame
         return CGRect(x: bar.minX, y: bar.minY, width: bar.width, height: screen.maxY - bar.minY)
     }
@@ -379,11 +394,13 @@ private struct RowFlightView: View, Animatable {
         // The lift: up and back in the first half, gone by the time it spreads.
         let lift = sin(.pi * min(p / 0.55, 1))
 
-        // The card's centre on a cubic curve: first up off the row, then down onto the bar.
+        // The card's centre on a cubic curve: up and out to the side off the row, then
+        // swinging back in as it comes down onto the bar.
         let p0 = CGPoint(x: from.midX, y: from.midY)
         let p3 = CGPoint(x: to.midX, y: to.midY)
-        let p1 = CGPoint(x: p0.x, y: p0.y - 36)
-        let p2 = CGPoint(x: p3.x, y: p3.y - max(80, (p3.y - p0.y) * 0.45))
+        let swing = min(80, to.width * 0.2)
+        let p1 = CGPoint(x: p0.x + swing, y: p0.y - 30)
+        let p2 = CGPoint(x: p3.x + swing * 0.8, y: p3.y - max(80, (p3.y - p0.y) * 0.4))
         let u = 1 - p
         let center = CGPoint(
             x: u * u * u * p0.x + 3 * u * u * p * p1.x + 3 * u * p * p * p2.x + p * p * p * p3.x,
@@ -393,7 +410,8 @@ private struct RowFlightView: View, Animatable {
         let width = Self.lerp(from.width, to.width, spread)
         let height = Self.lerp(from.height, to.height, spread)
         let corner = Self.lerp(14, 0, spread)
-        let scale = 1 + 0.04 * lift * (1 - spread)
+        // A little bigger as it lifts, then smaller in mid-air so the swing has room.
+        let scale = (1 + 0.04 * lift - 0.22 * sin(.pi * p)) * (1 - spread) + spread
 
         // The title: at the row's padding, centred in the row; in the bar, after the dot,
         // on the title line above the time.

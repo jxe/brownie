@@ -505,8 +505,8 @@ struct MeditationListView: View {
         // The now-playing bar shows the time now, on every page, so the row doesn't.
         let showElapsedTime = false
         let inactiveFill = palette.card
-        // Its stand-in is on its way into the now-playing bar: the row stays as an empty
-        // place, and fills back in with its playing look once the stand-in lands.
+        // Its stand-in is on its way into the now-playing bar: the row stays, a little faded,
+        // and takes its playing look once the stand-in lands.
         let isAway = rowInFlight == url
         Button {
             tappableFrames.noteRowTap()
@@ -550,14 +550,14 @@ struct MeditationListView: View {
                 Color.clear
                     .frame(width: Self.editButtonWidth - 8, height: 1)
             }
-            .opacity(isAway ? 0 : 1)
+            .opacity(isAway ? 0.45 : 1)
             .padding(.horizontal, 14 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
             .background(
                 // The playing row has flown into the now-playing bar: what stays behind is
                 // a quieter mark, an outline in the tint, rather than the bar's own fill.
                 RowFillShape()
-                    .fill(inactiveFill.opacity(isAway ? 0.35 : 1))
+                    .fill(inactiveFill.opacity(isAway ? 0.7 : 1))
                     .overlay(RowFillShape().stroke(palette.tint.opacity(isEngaged && !isAway ? 0.6 : 0), lineWidth: 1.5))
             )
             // Empties at once as the stand-in lifts off; fills back in gently.
@@ -599,7 +599,7 @@ struct MeditationListView: View {
                 .accessibilityLabel("Edit")
             }
             .padding(.trailing, 6 + RowFillShape.margin.width)
-            .opacity(isAway ? 0 : 1)
+            .opacity(isAway ? 0.45 : 1)
         }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
