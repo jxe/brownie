@@ -753,10 +753,13 @@ struct MedItemMarkerMenu: View {
                         .foregroundStyle(.secondary)
                 } else {
                     Text(markers)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
-            // Same box as the pool's ⋯ menu, so the trailing controls share a column.
-            .frame(width: 36, height: 26)
+            // At least the pool ⋯ menu's box, so the trailing controls share a column; more
+            // markers (🪨🪨) grow it leftward rather than being cut to "🪨…".
+            .frame(minWidth: 36, minHeight: 26, alignment: .trailing)
             .contentShape(Rectangle())
         }
         .accessibilityLabel("Comment, pronouns and weight")

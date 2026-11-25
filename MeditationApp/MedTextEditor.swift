@@ -1221,10 +1221,12 @@ struct MedItemField: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> UITextView {
-        let field = UITextView()
+        let field = MedItemTextView()
         field.isScrollEnabled = false
         field.backgroundColor = .clear
-        field.textContainerInset = .zero
+        // Chips stand a little proud of the line; room for them, and let them draw outside.
+        field.textContainerInset = UIEdgeInsets(top: 2, left: 0, bottom: 2, right: 0)
+        field.clipsToBounds = false
         field.textContainer.lineFragmentPadding = 0
         field.autocorrectionType = .no
         field.autocapitalizationType = .none
@@ -1264,12 +1266,15 @@ struct MedItemField: UIViewRepresentable {
         return CGSize(width: width, height: max(fitted.height, medFont.lineHeight))
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate,
+                             UIPopoverPresentationControllerDelegate {
         var parent: MedItemField
         weak var field: UITextView?
         var refTap: UITapGestureRecognizer?
         /// The well a tap would jump to, found as the tap begins.
         private var pendingPool: String?
+        /// The time, pause or count a tap would edit, found as the tap begins.
+        private var pendingValue: MedValueEdit?
         init(_ parent: MedItemField) { self.parent = parent }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
@@ -1282,10 +1287,59 @@ struct MedItemField: UIViewRepresentable {
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard gestureRecognizer === refTap else { return true }
-            // Without a handler (the pool sheet), never intercept — let the tap place the cursor.
-            guard let field, parent.onOpenPool != nil else { return false }
-            pendingPool = poolRef(at: gestureRecognizer.location(in: field), in: field)
-            return pendingPool != nil
+            guard let field else { return false }
+            let point = gestureRecognizer.location(in: field)
+            pendingValue = parent.dimmed ? nil : valueEdit(at: point, in: field)
+            // Without a handler (the pool sheet), a reference tap places the cursor as usual.
+            pendingPool = pendingValue == nil && parent.onOpenPool != nil ? poolRef(at: point, in: field) : nil
+            return pendingValue != nil || pendingPool != nil
+        }
+
+        /// The time, pause or count whose chip is under `point`, as in the script editor.
+        private func valueEdit(at point: CGPoint, in field: UITextView) -> MedValueEdit? {
+            for target in MedItemTextView.valueTargets(in: field.text ?? "") {
+                guard case .value(let edit) = target else { continue }
+                let hit = MedTextView.chipRects(for: target, in: field).contains { chip in
+                    let dx = max(4, (36 - chip.width) / 2)
+                    return chip.insetBy(dx: -dx, dy: -4).contains(point)
+                }
+                if hit { return edit }
+            }
+            return nil
+        }
+
+        private func presentValue(_ edit: MedValueEdit, from field: UITextView) {
+            guard let presenter = field.medTopViewController() else { return }
+            // Typing while the popover is up would shift the text it's editing.
+            field.resignFirstResponder()
+            var range = edit.valueRange
+            var current = ((field.text ?? "") as NSString).substring(with: range)
+            let popover = MedValuePopover(edit: edit) { [weak self, weak field] value in
+                guard let self, let field else { return }
+                let ns = (field.text ?? "") as NSString
+                guard NSMaxRange(range) <= ns.length, ns.substring(with: range) == current else { return }
+                let replacement = edit.text(for: value)
+                field.text = ns.replacingCharacters(in: range, with: replacement)
+                range.length = (replacement as NSString).length
+                current = replacement
+                self.textViewDidChange(field)
+            }
+            let host = UIHostingController(rootView: popover)
+            host.sizingOptions = .preferredContentSize
+            host.modalPresentationStyle = .popover
+            if let pop = host.popoverPresentationController {
+                pop.sourceView = field
+                pop.sourceRect = MedTextView.chipRects(for: edit.hitRange, in: field).first ?? .zero
+                pop.permittedArrowDirections = [.up, .down]
+                pop.delegate = self
+            }
+            presenter.present(host, animated: true)
+        }
+
+        /// Keep the popover a popover on iPhone instead of turning it into a sheet.
+        func adaptivePresentationStyle(for controller: UIPresentationController,
+                                       traitCollection: UITraitCollection) -> UIModalPresentationStyle {
+            .none
         }
 
         /// The field's own tap waits for ours, which fails at once unless it landed on a reference.
@@ -1299,6 +1353,11 @@ struct MedItemField: UIViewRepresentable {
         }
 
         @objc func handleRefTap() {
+            if let edit = pendingValue, let field {
+                pendingValue = nil
+                presentValue(edit, from: field)
+                return
+            }
             guard let pool = pendingPool else { return }
             pendingPool = nil
             parent.onOpenPool?(pool)
@@ -1368,9 +1427,100 @@ struct MedItemField: UIViewRepresentable {
                         }
                     }
                 }
+                // Room on each side of a time or pause, as in the script, so its chip doesn't
+                // crowd the words next to it.
+                let ns = text as NSString
+                func addGap(at index: Int) {
+                    guard index >= 0, index < storage.length else { return }
+                    let existing = (storage.attribute(.kern, at: index, effectiveRange: nil) as? CGFloat) ?? 0
+                    storage.addAttribute(.kern, value: existing + medChipGap, range: NSRange(location: index, length: 1))
+                }
+                for target in MedItemTextView.valueTargets(in: text)
+                where target.hitRange.length > 0 && NSMaxRange(target.hitRange) <= ns.length {
+                    addGap(at: target.hitRange.location - 1)
+                    addGap(at: NSMaxRange(target.hitRange) - 1)
+                }
             }
             storage.endEditing()
             field.selectedRange = selection
+            (field as? MedItemTextView)?.showsChips = !parent.dimmed
+            (field as? MedItemTextView)?.setChipsNeedUpdate()
+        }
+    }
+}
+
+/// A pool item's text view: draws the same rounded chips as the script behind each time,
+/// pause and repeat count.
+final class MedItemTextView: UITextView {
+    var showsChips = true
+    private let chipView = UIView()
+    private var chipLayers: [CALayer] = []
+    private var chipsNeedUpdate = true
+    private var chipWidth: CGFloat = 0
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        chipView.isUserInteractionEnabled = false
+        chipView.backgroundColor = .clear
+        insertSubview(chipView, at: 0)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// The times, pauses and counts in an item. An item is one line on its own, so a leading
+    /// `#` (commented out) or `~name` is never a title or a pool here.
+    static func valueTargets(in text: String) -> [MedQuickEditTarget] {
+        MedQuickEdit.allTargets(in: text, outside: " ").filter {
+            if case .value = $0 { return true }
+            return false
+        }
+    }
+
+    func setChipsNeedUpdate() {
+        chipsNeedUpdate = true
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if chipView.superview === self { sendSubviewToBack(chipView) }
+        guard chipsNeedUpdate || bounds.width != chipWidth else { return }
+        chipsNeedUpdate = false
+        chipWidth = bounds.width
+        updateChips()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        setChipsNeedUpdate()
+    }
+
+    private func updateChips() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        chipLayers.forEach { $0.removeFromSuperlayer() }
+        chipLayers = []
+        chipView.frame = CGRect(origin: .zero, size: bounds.size)
+        guard showsChips else { return }
+        var paths: [UIColor: UIBezierPath] = [:]
+        for target in Self.valueTargets(in: text ?? "") {
+            let tint = target.tapTint
+            let path = paths[tint] ?? UIBezierPath()
+            for chip in MedTextView.chipRects(for: target, in: self) {
+                path.append(UIBezierPath(roundedRect: chip, cornerRadius: min(8, chip.height / 2)))
+            }
+            paths[tint] = path
+        }
+        for (color, path) in paths {
+            let resolved = color.resolvedColor(with: traitCollection)
+            let layer = CAShapeLayer()
+            layer.path = path.cgPath
+            layer.fillColor = resolved.withAlphaComponent(0.10).cgColor
+            layer.strokeColor = resolved.withAlphaComponent(0.35).cgColor
+            layer.lineWidth = 0.75
+            chipView.layer.addSublayer(layer)
+            chipLayers.append(layer)
         }
     }
 }

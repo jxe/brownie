@@ -79,6 +79,13 @@ struct MeditationEditorView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // Play floats at the bottom corner while nothing plays; once something does,
+                // the now-playing bar takes its place.
+                .overlay(alignment: .bottomTrailing) {
+                    playButton
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 16)
+                }
                 .onChange(of: scrollTarget) { _, name in
                     guard let name else { return }
                     scrollTarget = nil
@@ -159,7 +166,6 @@ struct MeditationEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                playbackControls
                 moreMenu
             }
         }
@@ -384,16 +390,29 @@ struct MeditationEditorView: View {
                     .id(WellSection.anchor(name))
                 }
             }
+            // Reads as the outline of the next well: same shape and width, dashed and empty.
             Button {
                 newPoolName = ""
                 namingNewPool = true
             } label: {
                 Label("New Pool", systemImage: "plus")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color.secondary.opacity(0.3),
+                                          style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    )
             }
-            .buttonStyle(ShelfChipStyle(selected: false))
-            .padding(.horizontal, 20)
-            .padding(.top, doc.pools.isEmpty ? 4 : 20)
-            .padding(.bottom, 32)
+            .buttonStyle(.plain)
+            .padding(.horizontal, 8)
+            .padding(.top, 12)
+            // Room to scroll the last well clear of the play button.
+            .padding(.bottom, 88)
         }
     }
 
@@ -478,11 +497,11 @@ struct MeditationEditorView: View {
         addPool(named: newPool, item: text)
     }
 
-    /// Plays the script as it stands. Pause and stop are on the now-playing bar at the bottom,
-    /// as on every other page, so this steps aside while this script is the one playing.
+    /// A round play button floating at the bottom corner: plays the script as it stands. Pause
+    /// and stop are on the now-playing bar, so it shows only while that bar is down.
     @ViewBuilder
-    private var playbackControls: some View {
-        if !isPlayingThisScript {
+    private var playButton: some View {
+        if player.state == .idle || player.state == .finished {
             Button {
                 // Write any pending edit first, so a new meditation has a file (and a row)
                 // and the play is counted under the name it has now.
@@ -493,8 +512,16 @@ struct MeditationEditorView: View {
                 player.play(MeditationParser.parse(content), sourceURL: fileURL)
             } label: {
                 Image(systemName: "play.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(Circle().fill(Color.accentColor))
+                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                    .contentShape(Circle())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Play")
+            .transition(.scale.combined(with: .opacity))
         }
     }
 
