@@ -783,12 +783,7 @@ private struct WellSection: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Text("~\(name)")
-                Text("\(liveCount)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+            Text("~\(name)")
             .font(.subheadline.monospaced().weight(.semibold))
             .opacity(isUnused ? 0.45 : 1)
             if isUnused {
