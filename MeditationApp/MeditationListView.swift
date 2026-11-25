@@ -1175,6 +1175,7 @@ struct NowPlayingBar: View {
     @State private var held = Held()
 
     private struct Held: Equatable {
+        var url: URL?
         var title = ""
         var isPlaying = true
         var isPreparing = false
@@ -1190,7 +1191,7 @@ struct NowPlayingBar: View {
     private var live: Held {
         let title = !player.currentTitle.isEmpty ? player.currentTitle
             : player.currentSourceURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
-        return Held(title: title, isPlaying: player.isPlaying, isPreparing: player.isPreparing)
+        return Held(url: player.currentSourceURL, title: title, isPlaying: player.isPlaying, isPreparing: player.isPreparing)
     }
 
     var body: some View {
@@ -1200,19 +1201,27 @@ struct NowPlayingBar: View {
         HStack(spacing: 10) {
             PlayingPulseDot(isPulsing: shown.isPlaying)
                 .frame(width: 12, height: 12)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                if shown.isPreparing {
-                    Text("Starting…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    PlaybackTimeLabel()
+            // Switching to another meditation while the bar is up rolls the title and time
+            // over to the new one: the old pair rises out as the new one comes up from below.
+            ZStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    if shown.isPreparing {
+                        Text("Starting…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        PlaybackTimeLabel()
+                    }
                 }
+                .id(shown.url)
+                .transition(.push(from: .bottom))
             }
+            .clipped()
+            .animation(.snappy(duration: 0.3), value: shown.url)
             Spacer(minLength: 8)
             Group {
                 if shown.isPreparing {

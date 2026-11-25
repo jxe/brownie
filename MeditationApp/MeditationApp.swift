@@ -134,8 +134,6 @@ struct ContentView: View {
     /// A row flying into the bar, and how far along it is (0 at the row, 1 at the bar).
     @State private var rowFlight: RowFlight?
     @State private var rowFlightProgress: CGFloat = 0
-    /// What's playing, with its title, for a row that starts while another plays.
-    @State private var lastPlaying: (url: URL, title: String)?
 
     /// Something is starting, playing or paused, whatever page is on top.
     private var wantsNowPlayingBar: Bool {
@@ -196,8 +194,8 @@ struct ContentView: View {
                     if nowPlayingBarShown {
                         // A flying row stands in for the bar: the real one comes in only as it
                         // lands, unseen under it (no slide of its own), and its contents fade in
-                        // as the stand-in fades out. Into a bar that's already up, only its
-                        // contents give way.
+                        // as the stand-in fades out. Switching to another meditation while the
+                        // bar is up flies nothing: the bar's contents just roll over.
                         NowPlayingBar(contentHidden: rowFlight != nil)
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { nowPlayingBarFrame = $0 }
                             .transition(rowFlight == nil ? AnyTransition.move(edge: .bottom) : .identity)
@@ -214,24 +212,10 @@ struct ContentView: View {
                     if wants, homeIsInFront, let url = player.currentSourceURL,
                        let row = visibleRowFrame(url, in: geo) {
                         flyRow(url, title: player.currentTitle.isEmpty ? url.deletingPathExtension().lastPathComponent : player.currentTitle,
-                               from: row, intoBarAlreadyUp: false)
+                               from: row)
                         return
                     }
                     withAnimation(.spring(duration: 0.3, bounce: 0.15)) { nowPlayingBarShown = wants }
-                }
-                // Another row started while one was playing: it flies into the bar too.
-                .onChange(of: player.currentSourceURL) { old, new in
-                    if let new {
-                        lastPlaying = (new, player.currentTitle.isEmpty ? new.deletingPathExtension().lastPathComponent : player.currentTitle)
-                    }
-                    guard old != nil, let new, nowPlayingBarShown, homeIsInFront,
-                          let row = visibleRowFrame(new, in: geo) else { return }
-                    flyRow(new, title: lastPlaying?.title ?? "", from: row, intoBarAlreadyUp: true)
-                }
-                .onChange(of: player.currentTitle) { _, title in
-                    if let url = lastPlaying?.url, !title.isEmpty, player.currentSourceURL == url {
-                        lastPlaying = (url, title)
-                    }
                 }
                 .environment(\.openPanel, { setPanel(open: true) })
                 .environment(\.panelIsOpen, panelOpen)
@@ -274,8 +258,8 @@ struct ContentView: View {
         return frame
     }
 
-    private func flyRow(_ url: URL, title: String, from: CGRect, intoBarAlreadyUp: Bool) {
-        let flight = RowFlight(url: url, title: title, from: from, intoBarAlreadyUp: intoBarAlreadyUp)
+    private func flyRow(_ url: URL, title: String, from: CGRect) {
+        let flight = RowFlight(url: url, title: title, from: from)
         rowFlight = flight
         rowFlightProgress = 0
         // The next turn, so the stand-in is drawn over the row before it moves. Eased rather
@@ -362,8 +346,6 @@ private struct RowFlight {
     let title: String
     /// The row's fill, in global coordinates.
     let from: CGRect
-    /// Another row was already playing, so the bar is up and only its contents give way.
-    let intoBarAlreadyUp: Bool
 }
 
 /// A row card on its way into the now-playing bar. `progress` is what animates (0 at the row,
