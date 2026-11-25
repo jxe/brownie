@@ -47,6 +47,9 @@ extension EnvironmentValues {
     /// The main screen says whether one of its own pages (Feelings, To-dos, the editor) is
     /// pushed over it, so the now-playing bar knows the main screen isn't on top.
     @Entry var setHomePagePushed: (Bool) -> Void = { _ in }
+    /// The main screen's row whose stand-in is flying into the now-playing bar. The row
+    /// shows itself empty while it's away, and takes its playing look once it lands.
+    @Entry var rowInFlight: URL? = nil
     /// Closes the left panel and opens one of its pages on the main screen.
     @Entry var openFromPanel: (PanelPage) -> Void = { _ in }
 }
@@ -124,11 +127,11 @@ struct ContentView: View {
     /// Whether the now-playing bar is up. Follows `wantsNowPlayingBar` in an update of its
     /// own, so only the bar and the pages' resizing animate, never a push or pop with them.
     @State private var nowPlayingBarShown = false
-    /// The bar's height above the home indicator, for where a flying row lands.
-    @State private var nowPlayingBarHeight: CGFloat = 56
-    /// A row flying into the bar, and whether it has got there.
+    /// The bar's frame on screen (above the home indicator), for where a flying row lands.
+    @State private var nowPlayingBarFrame: CGRect = .zero
+    /// A row flying into the bar, and how far along it is (0 at the row, 1 at the bar).
     @State private var rowFlight: RowFlight?
-    @State private var rowFlightLanded = false
+    @State private var rowFlightProgress: CGFloat = 0
     /// What's playing, with its title, for a row that starts while another plays.
     @State private var lastPlaying: (url: URL, title: String)?
 
@@ -182,19 +185,26 @@ struct ContentView: View {
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
                     if nowPlayingBarShown {
+                        // While a row flies in, the stand-in is the bar: the real one takes its
+                        // place unseen (no slide of its own) and fades in under it as it lands.
+                        // Into a bar that's already up, only its contents hide.
                         NowPlayingBar(contentHidden: rowFlight != nil)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { nowPlayingBarHeight = $0 }
-                            .transition(.move(edge: .bottom))
+                            .opacity(rowFlight.map { $0.intoBarAlreadyUp } ?? true ? 1 : 0)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { nowPlayingBarFrame = $0 }
+                            .transition(rowFlight == nil ? AnyTransition.move(edge: .bottom) : .identity)
                     }
                 }
+                // What shows in the bar's place before the stand-in gets there.
+                .background(palette.canvas.ignoresSafeArea())
+                .environment(\.rowInFlight, rowFlight?.url)
                 .onChange(of: wantsNowPlayingBar, initial: true) { _, wants in
                     guard wants != nowPlayingBarShown else { return }
                     // From the main screen, the row that started flies down into the bar,
                     // background and all. A stop just slides the bar away.
                     if wants, homeIsInFront, let url = player.currentSourceURL,
                        let row = visibleRowFrame(url, in: geo) {
-                        flyRow(title: player.currentTitle.isEmpty ? url.deletingPathExtension().lastPathComponent : player.currentTitle,
-                               from: row, to: barFrame(in: geo))
+                        flyRow(url, title: player.currentTitle.isEmpty ? url.deletingPathExtension().lastPathComponent : player.currentTitle,
+                               from: row, intoBarAlreadyUp: false)
                     }
                     withAnimation(.spring(duration: 0.3, bounce: 0.15)) { nowPlayingBarShown = wants }
                 }
@@ -205,7 +215,7 @@ struct ContentView: View {
                     }
                     guard old != nil, let new, nowPlayingBarShown, homeIsInFront,
                           let row = visibleRowFrame(new, in: geo) else { return }
-                    flyRow(title: lastPlaying?.title ?? "", from: row, to: barFrame(in: geo))
+                    flyRow(new, title: lastPlaying?.title ?? "", from: row, intoBarAlreadyUp: true)
                 }
                 .onChange(of: player.currentTitle) { _, title in
                     if let url = lastPlaying?.url, !title.isEmpty, player.currentSourceURL == url {
@@ -245,13 +255,6 @@ struct ContentView: View {
         }
     }
 
-    /// Where the bar sits once it's up: full width along the bottom, down under the home indicator.
-    private func barFrame(in geo: GeometryProxy) -> CGRect {
-        let screen = geo.frame(in: .global)
-        return CGRect(x: screen.minX, y: screen.maxY - nowPlayingBarHeight,
-                      width: screen.width, height: nowPlayingBarHeight + geo.safeAreaInsets.bottom)
-    }
-
     /// The row's fill, if it's on screen now.
     private func visibleRowFrame(_ url: URL, in geo: GeometryProxy) -> CGRect? {
         guard !UIAccessibility.isReduceMotionEnabled,
@@ -260,18 +263,31 @@ struct ContentView: View {
         return frame
     }
 
-    private func flyRow(title: String, from: CGRect, to: CGRect) {
-        let flight = RowFlight(title: title, from: from, to: to)
+    private func flyRow(_ url: URL, title: String, from: CGRect, intoBarAlreadyUp: Bool) {
+        let flight = RowFlight(url: url, title: title, from: from, intoBarAlreadyUp: intoBarAlreadyUp)
         rowFlight = flight
-        rowFlightLanded = false
-        // The next turn, so the stand-in is drawn where it starts before it moves.
+        rowFlightProgress = 0
+        // The next turn, so the stand-in is drawn over the row before it moves, and the bar
+        // has been laid out where it lands. Eased rather than sprung: a gentle start for the
+        // lift, a long glide down, and a soft landing with no bounce.
         DispatchQueue.main.async {
-            withAnimation(.spring(duration: 0.5, bounce: 0.12)) {
-                rowFlightLanded = true
+            withAnimation(.timingCurve(0.45, 0, 0.15, 1, duration: 0.62)) {
+                rowFlightProgress = 1
             } completion: {
-                if rowFlight?.id == flight.id { rowFlight = nil }
+                guard rowFlight?.id == flight.id else { return }
+                // Crossfade: the stand-in fades out as the real bar, and the row's
+                // playing look, fade in.
+                withAnimation(.easeOut(duration: 0.22)) { rowFlight = nil }
             }
         }
+    }
+
+    /// Where a flight lands: the bar's frame, run down under the home indicator.
+    private func rowFlightTarget(screen: CGRect) -> CGRect {
+        let bar = nowPlayingBarFrame.isEmpty
+            ? CGRect(x: screen.minX, y: screen.maxY - 90, width: screen.width, height: 56)
+            : nowPlayingBarFrame
+        return CGRect(x: bar.minX, y: bar.minY, width: bar.width, height: screen.maxY - bar.minY)
     }
 
     /// The stand-in for a row on its way into the bar, its background and all, drawn over everything.
@@ -279,34 +295,16 @@ struct ContentView: View {
     private var rowFlightLayer: some View {
         GeometryReader { layer in
             if let flight = rowFlight {
-                let origin = layer.frame(in: .global).origin
-                let atBar = rowFlightLanded
-                let frame = rowFlightLanded ? flight.to : flight.from
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: atBar ? 0 : 14, style: .continuous)
-                        .fill(atBar ? palette.highlight : palette.card)
-                        .background(
-                            RoundedRectangle(cornerRadius: atBar ? 0 : 14, style: .continuous)
-                                .fill(palette.canvas)
-                        )
-                        // Lifted off the list while it travels, settled once it's the bar.
-                        .shadow(color: .black.opacity(atBar ? 0 : 0.18), radius: 10, y: 4)
-                    HStack(spacing: 10) {
-                        PlayingPulseDot(isPulsing: false)
-                            .frame(width: 12, height: 12)
-                            .opacity(atBar ? 1 : 0)
-                        Text(flight.title)
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .lineLimit(1)
-                    }
-                    // In a row the title starts at its padding with no dot before it; in
-                    // the bar the dot comes first and the title rides above the time.
-                    .padding(.leading, atBar ? 20 : 14 - 22)
-                    .frame(height: atBar ? nowPlayingBarHeight - 16 : frame.height)
-                }
-                .frame(width: frame.width, height: frame.height)
-                .offset(x: frame.minX - origin.x, y: frame.minY - origin.y)
+                let screen = layer.frame(in: .global)
+                RowFlightView(
+                    progress: rowFlightProgress,
+                    title: flight.title,
+                    from: flight.from.offsetBy(dx: -screen.minX, dy: -screen.minY),
+                    to: rowFlightTarget(screen: screen).offsetBy(dx: -screen.minX, dy: -screen.minY),
+                    barHeight: nowPlayingBarFrame.isEmpty ? 56 : nowPlayingBarFrame.height,
+                    palette: palette
+                )
+                .transition(.opacity)
             }
         }
         .ignoresSafeArea()
@@ -338,9 +336,94 @@ struct ContentView: View {
 /// A meditation row flying into the now-playing bar.
 private struct RowFlight {
     let id = UUID()
+    let url: URL
+    let title: String
+    /// The row's fill, in global coordinates.
+    let from: CGRect
+    /// Another row was already playing, so the bar is up and only its contents give way.
+    let intoBarAlreadyUp: Bool
+}
+
+/// A row card on its way into the now-playing bar. `progress` is what animates (0 at the row,
+/// 1 at the bar); everything else follows from it, so the path can curve and the parts can
+/// keep their own timing within one eased animation:
+/// - the card lifts first (rises a little and grows, its shadow deepening), then swoops down
+///   along a curve that arrives at the bar from above;
+/// - it keeps its row shape for the first part of the trip and only spreads into the bar's
+///   full width, square corners and highlight colour as it nears the bottom;
+/// - the title slides from its place in the row to its place in the bar, and the playing dot
+///   fades in ahead of it.
+private struct RowFlightView: View, Animatable {
+    var progress: CGFloat
     let title: String
     let from: CGRect
     let to: CGRect
+    let barHeight: CGFloat
+    let palette: AppPalette
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    private static func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+    private static func smoothstep(_ t: CGFloat) -> CGFloat {
+        let t = min(max(t, 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    var body: some View {
+        let p = progress
+        // How far it has spread from a row card into the bar.
+        let spread = Self.smoothstep((p - 0.4) / 0.6)
+        // The lift: up and back in the first half, gone by the time it spreads.
+        let lift = sin(.pi * min(p / 0.55, 1))
+
+        // The card's centre on a cubic curve: first up off the row, then down onto the bar.
+        let p0 = CGPoint(x: from.midX, y: from.midY)
+        let p3 = CGPoint(x: to.midX, y: to.midY)
+        let p1 = CGPoint(x: p0.x, y: p0.y - 36)
+        let p2 = CGPoint(x: p3.x, y: p3.y - max(80, (p3.y - p0.y) * 0.45))
+        let u = 1 - p
+        let center = CGPoint(
+            x: u * u * u * p0.x + 3 * u * u * p * p1.x + 3 * u * p * p * p2.x + p * p * p * p3.x,
+            y: u * u * u * p0.y + 3 * u * u * p * p1.y + 3 * u * p * p * p2.y + p * p * p * p3.y
+        )
+
+        let width = Self.lerp(from.width, to.width, spread)
+        let height = Self.lerp(from.height, to.height, spread)
+        let corner = Self.lerp(14, 0, spread)
+        let scale = 1 + 0.04 * lift * (1 - spread)
+
+        // The title: at the row's padding, centred in the row; in the bar, after the dot,
+        // on the title line above the time.
+        let titleX = Self.lerp(14, 20 + 12 + 10, spread)
+        let titleCenterY = Self.lerp(from.height / 2, (barHeight - 40) / 2 + 11, spread)
+
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(palette.card.mix(with: palette.highlight, by: Double(spread)))
+                .background(
+                    RoundedRectangle(cornerRadius: corner, style: .continuous).fill(palette.canvas)
+                )
+                .shadow(color: .black.opacity(0.22 * lift * (1 - spread) + 0.06 * (1 - spread)),
+                        radius: 6 + 10 * lift, y: 2 + 6 * lift)
+            PlayingPulseDot(isPulsing: false)
+                .frame(width: 12, height: 12)
+                .opacity(Self.smoothstep((spread - 0.3) / 0.7))
+                .offset(x: 20, y: titleCenterY - 6)
+            Text(title)
+                .font(.body)
+                .fontWeight(.medium)
+                .lineLimit(1)
+                .foregroundStyle(Color.primary)
+                .frame(width: max(0, width - titleX - 110), height: 22, alignment: .leading)
+                .offset(x: titleX, y: titleCenterY - 11)
+        }
+        .frame(width: width, height: height, alignment: .topLeading)
+        .scaleEffect(scale)
+        .position(center)
+    }
 }
 
 /// Pulls the panel out with a swipe from the screen's left edge. It hangs a UIKit edge-pan
