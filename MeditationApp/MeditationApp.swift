@@ -127,6 +127,8 @@ struct ContentView: View {
     /// Whether the now-playing bar is up. Follows `wantsNowPlayingBar` in an update of its
     /// own, so only the bar and the pages' resizing animate, never a push or pop with them.
     @State private var nowPlayingBarShown = false
+    /// The bar is sinking away after a stop; it's removed once it's down.
+    @State private var nowPlayingBarSinking = false
     /// The bar's frame on screen (above the home indicator), for where a flying row lands.
     @State private var nowPlayingBarFrame: CGRect = .zero
     /// The home indicator's inset, for guessing where the bar goes before it has ever shown.
@@ -190,12 +192,9 @@ struct ContentView: View {
                             )
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
+                    // The pages keep the bar's space until it has sunk away, then take it
+                    // back at once.
                     .safeAreaPadding(.bottom, nowPlayingBarShown ? nowPlayingBarHeight : 0)
-                    // When the bar goes, the pages take back its space at once, under it,
-                    // and it sinks away over them.
-                    .transaction(value: nowPlayingBarShown) { transaction in
-                        if !nowPlayingBarShown { transaction.animation = nil }
-                    }
                     if nowPlayingBarShown {
                         // A flying row stands in for the bar: the real one comes in only as it
                         // lands, unseen under it (no slide of its own), and its contents fade in
@@ -203,9 +202,12 @@ struct ContentView: View {
                         // bar is up flies nothing: the bar's contents just roll over.
                         NowPlayingBar(contentHidden: rowFlight != nil)
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { nowPlayingBarFrame = $0 }
+                            // A stop sinks it down and fades it, explicitly, before it goes: a
+                            // removal transition here didn't run.
+                            .offset(y: nowPlayingBarSinking ? nowPlayingBarHeight + bottomSafeInset : 0)
+                            .opacity(nowPlayingBarSinking ? 0 : 1)
                             .transition(rowFlight == nil
-                                ? AnyTransition.asymmetric(insertion: .move(edge: .bottom),
-                                                           removal: .move(edge: .bottom).combined(with: .opacity))
+                                ? AnyTransition.asymmetric(insertion: .move(edge: .bottom), removal: .identity)
                                 : .identity)
                             .zIndex(1)
                     }
@@ -213,7 +215,22 @@ struct ContentView: View {
                 .environment(\.rowInFlight, rowFlight?.url)
                 .onChange(of: geo.safeAreaInsets.bottom, initial: true) { _, inset in bottomSafeInset = inset }
                 .onChange(of: wantsNowPlayingBar, initial: true) { _, wants in
+                    // Started again while it was sinking: bring it back up.
+                    if wants && nowPlayingBarSinking {
+                        withAnimation(.spring(duration: 0.3, bounce: 0.15)) { nowPlayingBarSinking = false }
+                        return
+                    }
                     guard wants != nowPlayingBarShown else { return }
+                    if !wants {
+                        withAnimation(.easeIn(duration: 0.25)) {
+                            nowPlayingBarSinking = true
+                        } completion: {
+                            guard nowPlayingBarSinking else { return }
+                            if !wantsNowPlayingBar { nowPlayingBarShown = false }
+                            nowPlayingBarSinking = false
+                        }
+                        return
+                    }
                     // From the main screen, the row that started flies down into the bar,
                     // background and all. A stop just slides the bar away.
                     // The bar itself comes in when the stand-in lands, so no empty strip opens
