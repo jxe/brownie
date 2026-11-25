@@ -135,6 +135,11 @@ struct ContentView: View {
     @State private var rowFlight: RowFlight?
     @State private var rowFlightProgress: CGFloat = 0
 
+    /// The bar's own height (above the home indicator), which the pages get as bottom safe area.
+    private var nowPlayingBarHeight: CGFloat {
+        nowPlayingBarFrame.isEmpty ? 56 : nowPlayingBarFrame.height
+    }
+
     /// Something is starting, playing or paused, whatever page is on top.
     private var wantsNowPlayingBar: Bool {
         switch player.state {
@@ -164,10 +169,11 @@ struct ContentView: View {
                     .frame(width: panelWidth)
                 }
 
-                // One now-playing bar for every page, under the whole stack rather than
-                // inside each page, so when it comes or goes the stack shrinks or grows
-                // with it in one animation.
-                VStack(spacing: 0) {
+                // One now-playing bar for every page, over the bottom of the whole stack rather
+                // than inside each page. The stack keeps its full size: its pages just get
+                // the bar's height as extra bottom safe area, so their backgrounds run on
+                // under the bar and nothing behind it can show through as it comes and goes.
+                ZStack(alignment: .bottom) {
                     NavigationStack(path: $mainPath) {
                         MeditationListView(shelf: .home)
                             .navigationDestination(for: PanelPage.self) { PanelPageView(page: $0) }
@@ -184,10 +190,9 @@ struct ContentView: View {
                             )
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
+                    .safeAreaPadding(.bottom, nowPlayingBarShown ? nowPlayingBarHeight : 0)
                     // When the bar goes, the pages take back its space at once, under it,
-                    // and it slides away over them. Growing them alongside it left a gap
-                    // that flashed white, since the pages (hosted by UIKit) don't resize
-                    // smoothly in step with the slide.
+                    // and it sinks away over them.
                     .transaction(value: nowPlayingBarShown) { transaction in
                         if !nowPlayingBarShown { transaction.animation = nil }
                     }
@@ -198,7 +203,11 @@ struct ContentView: View {
                         // bar is up flies nothing: the bar's contents just roll over.
                         NowPlayingBar(contentHidden: rowFlight != nil)
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { nowPlayingBarFrame = $0 }
-                            .transition(rowFlight == nil ? AnyTransition.move(edge: .bottom) : .identity)
+                            .transition(rowFlight == nil
+                                ? AnyTransition.asymmetric(insertion: .move(edge: .bottom),
+                                                           removal: .move(edge: .bottom).combined(with: .opacity))
+                                : .identity)
+                            .zIndex(1)
                     }
                 }
                 .environment(\.rowInFlight, rowFlight?.url)
