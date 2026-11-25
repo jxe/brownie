@@ -1169,23 +1169,43 @@ struct NowPlayingBar: View {
     @Environment(MeditationPlayer.self) private var player
     @Environment(\.appPalette) private var palette
     var contentHidden = false
+    /// What the bar last showed while something was on. A stop resets the player at once
+    /// (no title, no time, not playing), but the bar is still sliding away then, so it keeps
+    /// showing what was playing instead of changing under your finger on its way out.
+    @State private var held = Held()
 
-    private var title: String {
-        if !player.currentTitle.isEmpty { return player.currentTitle }
-        return player.currentSourceURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+    private struct Held: Equatable {
+        var title = ""
+        var isPlaying = true
+        var isPreparing = false
+    }
+
+    private var isOn: Bool {
+        switch player.state {
+        case .preparing, .playing, .paused: true
+        case .idle, .finished: false
+        }
+    }
+
+    private var live: Held {
+        let title = !player.currentTitle.isEmpty ? player.currentTitle
+            : player.currentSourceURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+        return Held(title: title, isPlaying: player.isPlaying, isPreparing: player.isPreparing)
     }
 
     var body: some View {
         let fill = palette.highlight
+        let shown = isOn ? live : held
+        let title = shown.title
         HStack(spacing: 10) {
-            PlayingPulseDot(isPulsing: player.isPlaying)
+            PlayingPulseDot(isPulsing: shown.isPlaying)
                 .frame(width: 12, height: 12)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                if player.isPreparing {
+                if shown.isPreparing {
                     Text("Starting…")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1195,18 +1215,18 @@ struct NowPlayingBar: View {
             }
             Spacer(minLength: 8)
             Group {
-                if player.isPreparing {
+                if shown.isPreparing {
                     ProgressView()
                 } else {
                     Button {
                         player.togglePause()
                     } label: {
-                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        Image(systemName: shown.isPlaying ? "pause.fill" : "play.fill")
                             .contentTransition(.symbolEffect(.replace))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
-                    .accessibilityLabel(player.isPlaying ? "Pause" : "Resume")
+                    .accessibilityLabel(shown.isPlaying ? "Pause" : "Resume")
                 }
             }
             .frame(width: 44, height: 44)
@@ -1239,6 +1259,9 @@ struct NowPlayingBar: View {
             .overlay(alignment: .top) { Divider() }
         }
         .accessibilityElement(children: .contain)
+        .onChange(of: live, initial: true) { _, now in
+            if isOn { held = now }
+        }
     }
 }
 
@@ -1246,12 +1269,24 @@ struct NowPlayingBar: View {
 /// once-a-second elapsedSeconds tick only re-renders this label, not the list.
 struct PlaybackTimeLabel: View {
     @Environment(MeditationPlayer.self) private var player
+    /// The last time shown while something was on, kept through a stop (which resets the
+    /// player's times to zero) so the bar doesn't change as it slides away.
+    @State private var held: (elapsed: Int, total: Int?) = (0, nil)
+
+    private var isOn: Bool {
+        switch player.state {
+        case .preparing, .playing, .paused: true
+        case .idle, .finished: false
+        }
+    }
 
     var body: some View {
+        let elapsed = isOn ? player.elapsedSeconds : held.elapsed
+        let total = isOn ? player.totalSeconds : held.total
         HStack(spacing: 4) {
-            Text(Self.formatTime(player.elapsedSeconds))
+            Text(Self.formatTime(elapsed))
                 .foregroundStyle(Color.accentColor)
-            if let total = player.totalSeconds {
+            if let total {
                 Text("/")
                 Text(Self.formatTime(total))
             }
@@ -1259,6 +1294,12 @@ struct PlaybackTimeLabel: View {
         .font(.caption)
         .monospacedDigit()
         .foregroundStyle(.secondary)
+        .onChange(of: player.elapsedSeconds, initial: true) { _, seconds in
+            if isOn { held.elapsed = seconds }
+        }
+        .onChange(of: player.totalSeconds, initial: true) { _, seconds in
+            if isOn { held.total = seconds }
+        }
     }
 
     private static func formatTime(_ totalSeconds: Int) -> String {
