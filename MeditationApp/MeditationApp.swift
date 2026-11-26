@@ -69,6 +69,7 @@ extension EnvironmentValues {
 enum PanelPage: Hashable {
     case settings
     case leaderboard
+    case pastEras
     case era(EraSelection)
     case checkIn(UUID)
     case todo(UUID)
@@ -85,6 +86,8 @@ private struct PanelPageView: View {
             SettingsView()
         case .leaderboard:
             EmotionLeaderboardView()
+        case .pastEras:
+            PastErasView()
         case .era(let era):
             MeditationListView(shelf: .past(era))
         case .checkIn(let id):

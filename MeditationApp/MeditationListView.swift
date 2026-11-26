@@ -94,17 +94,7 @@ struct MeditationListView: View {
 
     /// Meditations from a past era, minus ones already brought along to this one.
     private func pastFiles(_ selection: EraSelection) -> [URL] {
-        guard let current = eraIndex.current else { return [] }
-        let candidates = files.filter { !isTimeless($0) && !eraIndex.belongs($0, to: current) }
-        switch selection {
-        case .era(let id):
-            guard let era = eraIndex.era(id) else { return [] }
-            return candidates.filter { eraIndex.belongs($0, to: era) }
-        case .older:
-            // Made before the first era and never brought along to any.
-            let kept = Set(eraIndex.eras.flatMap(\.kept))
-            return candidates.filter { eraIndex.eraMade($0) == nil && !kept.contains(EraIndex.name(of: $0)) }
-        }
+        eraIndex.pastFiles(selection, from: files, isTimeless: isTimeless)
     }
 
     /// The era before this one, whose leftovers wait at the bottom of the main screen.

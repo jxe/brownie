@@ -90,6 +90,22 @@ struct EraIndex {
         return current.kept.contains(Self.name(of: url)) && eraMade(url)?.id != current.id
     }
 
+    /// A past era's meditations, minus Evergreen ones and ones brought along to the current
+    /// era: what its page lists.
+    func pastFiles(_ selection: EraSelection, from files: [URL], isTimeless: (URL) -> Bool) -> [URL] {
+        guard let current else { return [] }
+        let candidates = files.filter { !isTimeless($0) && !belongs($0, to: current) }
+        switch selection {
+        case .era(let id):
+            guard let era = era(id) else { return [] }
+            return candidates.filter { belongs($0, to: era) }
+        case .older:
+            // Made before the first era and never brought along to any.
+            let kept = Set(eras.flatMap(\.kept))
+            return candidates.filter { eraMade($0) == nil && !kept.contains(Self.name(of: $0)) }
+        }
+    }
+
     /// `Since 19 Nov` for the current era, `16 Oct – 19 Nov` for a past one.
     func label(for era: Era) -> String {
         let start = Self.shortDate(era.started)

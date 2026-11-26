@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The left panel: History (streak, leaderboard, past eras, past entries by day), with Settings
+/// The left panel: History (streak, leaderboard and past eras rows, past entries by day), with Settings
 /// as a toolbar button.
 struct JournalView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -8,8 +8,6 @@ struct JournalView: View {
     @Environment(\.openFromPanel) private var openFromPanel
     @Environment(\.closePanel) private var closePanel
     @State private var eraIndex = EraIndex()
-    /// Past Eras starts folded.
-    @AppStorage("historyPastErasExpanded") private var pastErasExpanded = false
 
     /// Eras before the current one, newest first, then what was made before the first era.
     private var pastEras: [EraSelection] {
@@ -78,24 +76,6 @@ struct JournalView: View {
         }
     }
 
-    /// A section header that folds its section, like the main screen's.
-    private func sectionToggle(_ title: String, isExpanded: Binding<Bool>) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.25)) { isExpanded.wrappedValue.toggle() }
-        } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .rotationEffect(.degrees(isExpanded.wrappedValue ? 90 : 0))
-                Spacer()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityValue(isExpanded.wrappedValue ? "Expanded" : "Collapsed")
-    }
-
     private var sidebarColor: Color {
         colorScheme == .dark
             ? Color(red: 0.14, green: 0.14, blue: 0.14)
@@ -128,23 +108,14 @@ struct JournalView: View {
                 // A list tints button text with the accent color; these read as plain rows.
                 .tint(.primary)
                 .listRowBackground(Color.clear)
-            }
 
-            // Earlier eras, each opening its meditations
-            if !pastEras.isEmpty {
-                Section {
-                    if pastErasExpanded {
-                        ForEach(pastEras, id: \.self) { era in
-                            Button { openFromPanel(.era(era)) } label: {
-                                PanelLinkLabel { Text(eraIndex.label(for: era)) }
-                            }
-                            // A list tints button text with the accent color; these read as plain rows.
-                            .tint(.primary)
-                        }
-                        .listRowBackground(Color.clear)
+                // Earlier eras, on a page of their own
+                if !pastEras.isEmpty {
+                    Button { openFromPanel(.pastEras) } label: {
+                        PanelLinkLabel { Text("Past Eras") }
                     }
-                } header: {
-                    sectionToggle("Past Eras", isExpanded: $pastErasExpanded)
+                    .tint(.primary)
+                    .listRowBackground(Color.clear)
                 }
             }
 
@@ -663,6 +634,84 @@ private struct EmotionTile: View {
                     ))
             }
             .accessibilityLabel(name)
+    }
+}
+
+/// The Past Eras page, opened from History: each past era newest first, then what came
+/// before the first one, with its date range, how many meditations it lists, and its
+/// most-listened meditation. A tap opens the era's own page.
+struct PastErasView: View {
+    @Environment(\.appPalette) private var palette
+    @Environment(MeditationPlayer.self) private var player
+    @State private var eraIndex = EraIndex()
+    @State private var summaries: [EraSelection: Summary] = [:]
+
+    struct Summary {
+        var count = 0
+        var mostListened: String?
+    }
+
+    private var pastEras: [EraSelection] {
+        guard !eraIndex.eras.isEmpty else { return [] }
+        return eraIndex.eras.dropFirst().map { .era($0.id) } + [.older]
+    }
+
+    var body: some View {
+        List {
+            ForEach(pastEras, id: \.self) { era in
+                NavigationLink(value: PanelPage.era(era)) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(eraIndex.label(for: era))
+                            if let title = summaries[era]?.mostListened {
+                                Text(title)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if let count = summaries[era]?.count {
+                            Text("\(count)")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(palette.panel)
+        .navigationTitle("Past Eras")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+    }
+
+    /// Reads every meditation's title and tags off the main thread, then sums up each era.
+    private func load() async {
+        let index = EraIndex.load()
+        eraIndex = index
+        let metas: [(url: URL, title: String, tags: [String])] = await Task.detached {
+            FileManager.default.meditationFiles().map { url in
+                let meta = MeditationParser.parseMetadata(FileManager.default.readMeditation(at: url) ?? "")
+                return (url, meta.title.isEmpty ? EraIndex.name(of: url) : meta.title, meta.tags)
+            }
+        }.value
+        let tags = Dictionary(uniqueKeysWithValues: metas.map { ($0.url, $0.tags) })
+        let titles = Dictionary(uniqueKeysWithValues: metas.map { ($0.url, $0.title) })
+        let files = metas.map(\.url)
+        let history = player.listeningHistory
+        var result: [EraSelection: Summary] = [:]
+        let eras: [EraSelection] = index.eras.isEmpty ? [] : index.eras.dropFirst().map { .era($0.id) } + [.older]
+        for era in eras {
+            let eraFiles = index.pastFiles(era, from: files) { tags[$0]?.contains(EraIndex.timelessTag) == true }
+            let listened = eraFiles
+                .map { ($0, history.record(for: EraIndex.name(of: $0), at: Date())?.totalSeconds ?? 0) }
+                .filter { $0.1 > 0 }
+                .max { $0.1 < $1.1 }
+            result[era] = Summary(count: eraFiles.count, mostListened: listened.flatMap { titles[$0.0] })
+        }
+        summaries = result
     }
 }
 
