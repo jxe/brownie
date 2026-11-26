@@ -623,8 +623,12 @@ private struct EmotionTile: View {
         guard let chip = Emotion.named(name)?.chipColor(for: colorScheme) else {
             return Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08)
         }
-        return chip.mix(with: .white, by: colorScheme == .dark ? 0.12 : 0.35)
+        return chip.mix(with: .white, by: colorScheme == .dark ? Self.darkLightening : Self.lightLightening)
     }
+
+    /// How far a tile's colour is mixed toward white from the chips' colour.
+    static let lightLightening = 0.35
+    static let darkLightening = 0.12
 
     var body: some View {
         Text(emoji)
