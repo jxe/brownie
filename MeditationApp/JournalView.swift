@@ -609,8 +609,8 @@ private struct PastRowLine: View {
     }
 }
 
-/// A feeling's emoji on a small rounded tile in that feeling's chip colour (the same
-/// `Emotion.chipColor` the Feelings page and the home header use), a little lighter at the top.
+/// A feeling's emoji on a small rounded tile in a lighter shade of that feeling's chip colour
+/// (`Emotion.chipColor`, as on the Feelings page and the home header), lighter still at the top.
 /// A feeling no longer in `Emotion.all` gets a neutral tile.
 private struct EmotionTile: View {
     static let height: CGFloat = 26
@@ -618,9 +618,12 @@ private struct EmotionTile: View {
     let emoji: String
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Lighter than the chips' colour: on a tile this small the full colour reads too heavy.
     private var base: Color {
-        Emotion.named(name)?.chipColor(for: colorScheme)
-            ?? Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08)
+        guard let chip = Emotion.named(name)?.chipColor(for: colorScheme) else {
+            return Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08)
+        }
+        return chip.mix(with: .white, by: colorScheme == .dark ? 0.12 : 0.35)
     }
 
     var body: some View {
