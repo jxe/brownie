@@ -45,12 +45,17 @@ struct JournalView: View {
         return "\(weekday) \(dayMonth)" + (sameYear ? "" : " \(day.formatted(.dateTime.year()))")
     }
 
+    /// Closes the panel first, then starts it once the main screen is in front, so the bar
+    /// comes up (or the row drops into it) the way it does from the main screen, not in the
+    /// middle of the slide.
     private func play(_ url: URL) {
-        if player.currentSourceURL != url,
-           let content = FileManager.default.readMeditation(at: url) {
-            player.play(MeditationParser.parse(content), sourceURL: url)
+        guard player.currentSourceURL != url,
+              let content = FileManager.default.readMeditation(at: url) else {
+            closePanel {}
+            return
         }
-        closePanel()
+        let meditation = MeditationParser.parse(content)
+        closePanel { player.play(meditation, sourceURL: url) }
     }
 
     /// One line per past row; a tap opens its details on the main screen.

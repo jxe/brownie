@@ -52,8 +52,8 @@ extension EnvironmentValues {
     @Entry var rowInFlight: URL? = nil
     /// Closes the left panel and opens one of its pages on the main screen.
     @Entry var openFromPanel: (PanelPage) -> Void = { _ in }
-    /// Closes the left panel, leaving the main screen as it is.
-    @Entry var closePanel: () -> Void = {}
+    /// Closes the left panel, leaving the main screen as it is, then runs `then` once it's shut.
+    @Entry var closePanel: (_ then: @escaping () -> Void) -> Void = { then in then() }
     /// Opens the playing meditation's editor on the main screen (a tap on the now-playing bar).
     @Entry var openNowPlaying: () -> Void = {}
 }
@@ -205,7 +205,7 @@ struct ContentView: View {
                         mainPath = [page]
                         setPanel(open: false)
                     })
-                    .environment(\.closePanel, { setPanel(open: false) })
+                    .environment(\.closePanel, { then in setPanel(open: false, then: then) })
                     .frame(width: panelWidth)
                 }
 
@@ -402,13 +402,14 @@ struct ContentView: View {
         .allowsHitTesting(false)
     }
 
-    private func setPanel(open: Bool) {
+    private func setPanel(open: Bool, then: (() -> Void)? = nil) {
         if open { panelMounted = true }
         withAnimation(.snappy(duration: 0.3)) {
             panelOpen = open
             drag.offset = 0
         } completion: {
             if !panelOpen && drag.offset == 0 { panelMounted = false }
+            then?()
         }
     }
 

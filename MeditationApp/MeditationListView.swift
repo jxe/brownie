@@ -1247,15 +1247,19 @@ private struct LastPlayedLabel: View {
 struct NowPlayingBar: View {
     @Environment(\.appPalette) private var palette
     var contentHidden = false
+    /// The bar's tap (which opens the editor) is down: the whole bar shades.
+    @State private var pressed = false
 
     var body: some View {
-        NowPlayingBarContent()
+        NowPlayingBarContent(pressed: $pressed)
             // Hidden while a row flies in, which stands in for it.
             .opacity(contentHidden ? 0 : 1)
             .background {
                 ZStack {
                     palette.canvas
                     palette.highlight
+                    Color.primary.opacity(pressed ? 0.08 : 0)
+                        .animation(.easeOut(duration: 0.15), value: pressed)
                 }
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) { Divider() }
@@ -1268,6 +1272,8 @@ struct NowPlayingBar: View {
 /// row flying into the bar draws this too, so whatever the player does mid-flight (starting,
 /// the first seconds ticking) already shows on it, and the landing changes nothing.
 struct NowPlayingBarContent: View {
+    /// Set while the bar's tap is down, for the bar to shade itself.
+    var pressed: Binding<Bool>? = nil
     @Environment(MeditationPlayer.self) private var player
     @Environment(\.openNowPlaying) private var openNowPlaying
     /// What the bar last showed while something was on. A stop resets the player at once
@@ -1298,8 +1304,9 @@ struct NowPlayingBarContent: View {
     var body: some View {
         let shown = isOn ? live : held
         let title = shown.title
-        HStack(spacing: 10) {
-            // The dot and title open the playing meditation's editor.
+        // No spacing before pause, so the tap reaches right up to it.
+        HStack(spacing: 0) {
+            // Anywhere but pause and stop opens the playing meditation's editor.
             Button { openNowPlaying() } label: {
                 HStack(spacing: 10) {
                     PlayingPulseDot(isPulsing: shown.isPlaying)
@@ -1327,9 +1334,12 @@ struct NowPlayingBarContent: View {
                     .animation(.snappy(duration: 0.3), value: shown.url)
                     Spacer(minLength: 8)
                 }
+                // The whole bar but pause and stop: out to the leading edge, and its height.
+                .padding(.leading, 20)
+                .padding(.vertical, 6)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(BarPressStyle())
+            .buttonStyle(BarPressStyle(pressed: pressed))
             .accessibilityLabel("Edit \(title)")
             Group {
                 if shown.isPreparing {
@@ -1355,13 +1365,12 @@ struct NowPlayingBarContent: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Stop")
+            .padding(.leading, 10)
         }
         .font(.title3)
         .buttonStyle(.plain)
         .foregroundStyle(Color.primary)
-        .padding(.leading, 20)
         .padding(.trailing, 10)
-        .padding(.vertical, 6)
         .frame(maxWidth: 720)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -1371,16 +1380,16 @@ struct NowPlayingBarContent: View {
     }
 }
 
-/// The now-playing bar's title area, lightly shaded while pressed.
+/// The now-playing bar's tap: passes its pressed state up, and `NowPlayingBar` shades the
+/// whole bar, edge to edge and down to the bottom.
 private struct BarPressStyle: ButtonStyle {
+    var pressed: Binding<Bool>?
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.vertical, 6)
-            .padding(.leading, 20)
-            .background(Color.primary.opacity(configuration.isPressed ? 0.08 : 0))
-            .padding(.vertical, -6)
-            .padding(.leading, -20)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, isPressed in
+                pressed?.wrappedValue = isPressed
+            }
     }
 }
 
