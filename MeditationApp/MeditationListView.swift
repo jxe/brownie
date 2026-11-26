@@ -128,16 +128,10 @@ struct MeditationListView: View {
             List {
                 switch shelf {
                 case .home:
-                    VStack(spacing: 0) {
-                        feelingsCard
-                        Divider().padding(.horizontal, 14)
-                        todosCard
-                    }
-                    .background(palette.card)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    feelingsHeader
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 10, trailing: 20))
                     if !files.isEmpty || hasOpenTodos {
                         // Current comes first: it's what's pressing right now.
                         Section {
@@ -246,6 +240,28 @@ struct MeditationListView: View {
                                 }
                         }
                         .accessibilityLabel("History and Settings")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showingTodos = true
+                        } label: {
+                            Image(systemName: "checklist")
+                                .overlay(alignment: .topTrailing) {
+                                    let count = openTodoCount
+                                    if count > 0 {
+                                        Text("\(count)")
+                                            .font(.caption2.weight(.bold))
+                                            .monospacedDigit()
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 4)
+                                            .frame(minWidth: 16, minHeight: 16)
+                                            .background(Capsule().fill(palette.tint))
+                                            .offset(x: 9, y: -8)
+                                    }
+                                }
+                        }
+                        .accessibilityLabel("To-dos")
+                        .accessibilityValue(openTodoCount == 0 ? "Nothing open" : "\(openTodoCount) open")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -391,44 +407,17 @@ struct MeditationListView: View {
     }
 
     /// Feelings is the timeless practice with its own screen, and checking in is how
-    /// to-dos start, so it leads the main screen. Its own view, so a chip tap on the
-    /// check-in screen re-renders just this card, not the whole list beneath it.
-    private var feelingsCard: some View {
-        FeelingsCard(tappableFrames: tappableFrames) { showingFeelings = true }
+    /// to-dos start, so it leads the main screen: not a card like the meditation rows, but
+    /// a heading and the check-in's own chips right on the page. Its own view, so a chip
+    /// tap on the check-in screen re-renders just this, not the whole list beneath it.
+    private var feelingsHeader: some View {
+        FeelingsHeader(tappableFrames: tappableFrames) { showingFeelings = true }
     }
 
-    /// Open to-dos live on their own page, like Feelings. The card counts them and
-    /// previews the newest open actions.
-    private var todosCard: some View {
-        let open = store.openTodos
-        let actions = open.flatMap { todo in todo.openActions.map { (todo, $0) } }
-        let needingAction = open.filter { $0.openActions.isEmpty }.count
-        let counts = [
-            actions.isEmpty ? nil : (actions.count == 1 ? "1 to-do" : "\(actions.count) to-dos"),
-            needingAction > 0 ? "\(needingAction) need\(needingAction == 1 ? "s" : "") an action" : nil,
-        ].compactMap { $0 }
-        return pageCard(
-            title: "To-dos",
-            lines: [counts.isEmpty ? "Nothing open" : counts.joined(separator: " · ")],
-            highlighted: false
-        ) {
-            showingTodos = true
-        } trailing: {
-            EmptyView()
-        }
-    }
-
-    private func pageCard<Trailing: View>(
-        title: String,
-        lines: [String],
-        highlighted: Bool,
-        action: @escaping () -> Void,
-        @ViewBuilder trailing: () -> Trailing
-    ) -> some View {
-        PageCard(
-            title: title, lines: lines, highlighted: highlighted,
-            tappableFrames: tappableFrames, action: action, trailing: trailing()
-        )
+    /// Open to-dos live on their own page, reached from a toolbar button whose badge
+    /// counts open actions plus to-dos that still need one.
+    private var openTodoCount: Int {
+        store.openTodos.reduce(0) { $0 + max($1.openActions.count, 1) }
     }
 
     private func emptyRow(_ message: String) -> some View {
@@ -907,102 +896,130 @@ private final class ScrollTouchDelayDisablingView: UIView {
     }
 }
 
-/// The Feelings card. During a check-in it lists that check-in's feelings. It reads the check-in itself, which changes on every chip tap, so only
-/// this card re-renders then.
-private struct FeelingsCard: View {
+/// The top of the main screen: a "Feelings" heading and, during a check-in, that check-in's
+/// feelings as the same coloured chips as on the Feelings page. With no check-in, the
+/// feelings you've spent the most time with, faded, to start from. A chip tap opens
+/// Feelings with that feeling tapped, as if tapped there. It reads the check-in itself,
+/// which changes on every chip tap, so only this re-renders then.
+private struct FeelingsHeader: View {
     let tappableFrames: TappableFrames
-    let action: () -> Void
+    let open: () -> Void
     @Environment(EmotionStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
 
+    private static let maxChips = 6
+    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+
     var body: some View {
-        card
-            // An old check-in ends here too, not only once Feelings opens, so this row
-            // never shows feelings that opening the page would clear.
+        content
+            // An old check-in ends here too, not only once Feelings opens, so this never
+            // shows feelings that opening the page would clear.
             .onAppear { store.clearSessionIfStale() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { store.clearSessionIfStale() }
             }
+            .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
+            .tracksTappableFrame("card|Feelings", in: tappableFrames)
     }
 
-    @ViewBuilder private var card: some View {
-        let feelings = store.selectedEmotionsSorted()
-        let inSession = !feelings.isEmpty
-        let names = feelings.prefix(4).map { "\($0.emoji) \($0.name)" }
-        let more = feelings.count > 4 ? ["+\(feelings.count - 4)"] : []
-        PageCard(
-            title: "Feelings",
-            lines: inSession
-                ? [(names + more).joined(separator: " · ")]
-                : ["Check in with what you’re feeling"],
-            highlighted: inSession,
-            tappableFrames: tappableFrames,
-            action: action,
-            // This check-in's time, live while a feeling is accruing.
-            trailing: Group {
-                if inSession {
-                    // Styled like a meditation row's last-played label.
-                    LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+    @ViewBuilder private var content: some View {
+        let session = store.selectedEmotionsRankedForCheckIn()
+        let inSession = !session.isEmpty
+        let shown = inSession ? Array(session.prefix(Self.maxChips)) : suggestions
+        VStack(alignment: .leading, spacing: 10) {
+            Button { openFeelings() } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Feelings")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    if inSession {
+                        LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if !inSession {
+                Text(shown.isEmpty ? "How are you feeling? Tap to check in." : "How are you feeling?")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if !shown.isEmpty {
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(shown) { emotion in
+                        HomeEmotionChip(emotion: emotion, faded: !inSession) {
+                            _ = store.tap(emotion)
+                            openFeelings()
+                        }
+                    }
+                }
+                if inSession, session.count > Self.maxChips {
+                    Button { openFeelings() } label: {
+                        Text("\(session.count - Self.maxChips) more")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-        )
+        }
+    }
+
+    /// The feelings you've spent the most time with in past check-ins.
+    private var suggestions: [Emotion] {
+        let usage = store.historicalEmotionUsage()
+        return Emotion.all
+            .filter { (usage[$0.name]?.engagementSeconds ?? 0) > 0 || (usage[$0.name]?.tapCount ?? 0) > 0 }
+            .sorted {
+                let l = usage[$0.name]!, r = usage[$1.name]!
+                if l.engagementSeconds != r.engagementSeconds { return l.engagementSeconds > r.engagementSeconds }
+                return l.tapCount > r.tapCount
+            }
+            .prefix(4)
+            .map { $0 }
+    }
+
+    private func openFeelings() {
+        // Opening Feelings leaves a playing meditation playing: mark the tap so the list's
+        // tap-to-stop lets it be, even if this view's frame went stale.
+        tappableFrames.noteRowTap()
+        open()
     }
 }
 
-/// One independently tappable row inside the shared shortcuts card.
-private struct PageCard<Trailing: View>: View {
-    let title: String
-    let lines: [String]
-    let highlighted: Bool
-    let tappableFrames: TappableFrames
+/// A feeling chip on the main screen, drawn like the Feelings page's chips.
+private struct HomeEmotionChip: View {
+    let emotion: Emotion
+    let faded: Bool
     let action: () -> Void
-    let trailing: Trailing
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        // A button, not a NavigationLink: the list's tap-to-stop gesture swallows a
-        // NavigationLink row's plain tap.
-        Button {
-            // Opening Feelings or To-dos leaves a playing meditation playing: mark the tap
-            // so the list's tap-to-stop lets it be, even if this row's frame went stale.
-            tappableFrames.noteRowTap()
-            action()
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    // The same shade as an idle meditation row's title.
-                    Text(title)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.primary.opacity(0.88))
-                    // Sized like the playing meditation's time line, so the rows match in height.
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.caption)
-                            .foregroundStyle(highlighted ? .primary : .secondary)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer()
-                trailing
-                // A plain chevron, since the whole row opens the page; the circled one on
-                // meditation rows is a separate button. Same column as that button.
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: MeditationListView.editButtonWidth)
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(emotion.emoji)
+                    .font(.title3)
+                Text(emotion.name)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 6)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(EmotionChipBackground(emotion: emotion, colorScheme: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(colorScheme == .dark ? .white : .black)
+            .opacity(faded ? 0.5 : 1)
         }
         .buttonStyle(MeditationRowPressStyle())
-        .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
-        .tracksTappableFrame("card|\(title)", in: tappableFrames)
     }
 }
 

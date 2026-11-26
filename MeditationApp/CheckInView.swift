@@ -872,7 +872,7 @@ private struct FlightChipView: View {
     }
 }
 
-private struct EmotionChipBackground: View {
+struct EmotionChipBackground: View {
     let emotion: Emotion
     let colorScheme: ColorScheme
 
