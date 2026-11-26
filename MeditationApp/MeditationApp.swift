@@ -312,11 +312,14 @@ struct ContentView: View {
                     instant.disablesAnimations = true
                     withTransaction(instant) { nowPlayingBarShown = true }
                 }
-                // ...then the stand-in fades out as the bar's contents, and the row's
-                // playing look, fade in.
+                // ...then the stand-in, which by now looks exactly like it, goes at once: no
+                // crossfade, which only dimmed the two copies as they passed. The row takes its
+                // playing look with its own fade.
                 DispatchQueue.main.async {
                     guard rowFlight?.id == flight.id else { return }
-                    withAnimation(.easeOut(duration: 0.18)) { rowFlight = nil }
+                    // Not withAnimation, and not disabling animations either: the row's own
+                    // fade still has to run.
+                    rowFlight = nil
                 }
             }
         }
@@ -347,7 +350,7 @@ struct ContentView: View {
                     barHeight: nowPlayingBarFrame.isEmpty ? 56 : nowPlayingBarFrame.height,
                     palette: palette
                 )
-                .transition(.opacity)
+                .transition(.identity)
             }
         }
         .ignoresSafeArea()
@@ -428,7 +431,8 @@ private struct RowFlightView: View, Animatable {
         // Where the card is caught: its middle on the bar's content line.
         let caughtY = to.minY + barHeight / 2
         // The fall: a little hop first, then gravity (distance grows with the square of time).
-        let hop = 14 * sin(.pi * min(fallT / 0.3, 1)) * (1 - fallT)
+        let hopPhase = sin(.pi * min(fallT / 0.35, 1))
+        let hop = 30 * hopPhase * (1 - fallT)
         let fallY = Self.lerp(from.midY, caughtY, fallT * fallT) - hop
 
         // The catch: it spreads fast at the moment of impact and eases into place.
@@ -446,7 +450,10 @@ private struct RowFlightView: View, Animatable {
 
         // Stretched a little by its speed as it falls, back to round as it's caught.
         let speedStretch = 0.06 * fallT * (1 - spread)
-        let lifted = (1 - spread) * (0.08 + 0.14 * sin(.pi * min(fallT / 0.3, 1)))
+        // Lifted toward you at the top of the hop (bigger, with a deeper, softer shadow), and
+        // still floating on a shadow as it falls, until the bar takes it.
+        let lift = (1 - spread) * (0.4 + 0.6 * hopPhase)
+        let liftScale = 1 + 0.05 * hopPhase * (1 - spread)
 
         // The row's title rides on the card and heads for the bar's title line as the bar's
         // own contents come up in its place.
@@ -460,7 +467,7 @@ private struct RowFlightView: View, Animatable {
                 .background(
                     RoundedRectangle(cornerRadius: corner, style: .continuous).fill(palette.canvas)
                 )
-                .shadow(color: .black.opacity(lifted), radius: 6 + 8 * (1 - spread), y: 3 + 4 * (1 - spread))
+                .shadow(color: .black.opacity(0.28 * lift), radius: 6 + 14 * lift, y: 3 + 12 * lift)
             Text(title)
                 .font(.body)
                 .fontWeight(.medium)
@@ -474,7 +481,7 @@ private struct RowFlightView: View, Animatable {
                 .opacity(barContent)
         }
         .frame(width: width, height: height, alignment: .topLeading)
-        .scaleEffect(x: 1 - speedStretch * 0.5, y: 1 + speedStretch)
+        .scaleEffect(x: (1 - speedStretch * 0.5) * liftScale, y: (1 + speedStretch) * liftScale)
         .position(center)
     }
 }
