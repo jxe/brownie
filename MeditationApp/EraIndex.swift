@@ -235,6 +235,13 @@ struct EraIndex {
         dayFormatter.string(from: Date())
     }
 
+    /// Whole days from the day a meditation was made to today, or nil if that day can't be read.
+    static func daysSinceMade(_ url: URL) -> Int? {
+        guard let made = dayFormatter.date(from: dateString(for: url)) else { return nil }
+        let calendar = Calendar.current
+        return calendar.dateComponents([.day], from: calendar.startOfDay(for: made), to: calendar.startOfDay(for: Date())).day
+    }
+
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"

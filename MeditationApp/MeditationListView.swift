@@ -35,6 +35,10 @@ struct MeditationListView: View {
     /// fold them away, and the app remembers how they were left.
     @AppStorage("homeCurrentExpanded") private var currentExpanded = true
     @AppStorage("homeFoundationsExpanded") private var foundationsExpanded = true
+    /// Whether the rarely played meditations hidden from each section are showing. Not
+    /// remembered: they're hidden again each time the app starts.
+    @State private var showingQuietCurrent = false
+    @State private var showingQuietEarlier = false
     @State private var showingEditor = false
     @State private var editorContent = ""
     @State private var editorFilename = ""
@@ -65,6 +69,23 @@ struct MeditationListView: View {
         let base = files.filter { !isTimeless($0) }
         guard let current = eraIndex.current else { return base }
         return base.filter { eraIndex.belongs($0, to: current) }
+    }
+
+    /// Rarely played meditations past their first few days are hidden from the main screen
+    /// until asked for. Only ones whose whole life listening has been counted for: older
+    /// ones' plays were never measured. One that's playing, or was brought along to this era,
+    /// always shows.
+    private static let quietAfterDays = 4
+    private static let quietBelowSeconds: TimeInterval = 5 * 60
+
+    private func isQuiet(_ url: URL) -> Bool {
+        guard EraIndex.dateString(for: url) >= ListeningHistory.countedSince,
+              let days = EraIndex.daysSinceMade(url), days > Self.quietAfterDays,
+              player.currentSourceURL != url,
+              !eraIndex.wasBroughtAlong(url)
+        else { return false }
+        let listened = player.listeningHistory.record(for: EraIndex.name(of: url), at: Date())?.totalSeconds ?? 0
+        return listened < Self.quietBelowSeconds
     }
 
     private var timelessFiles: [URL] {
@@ -136,8 +157,12 @@ struct MeditationListView: View {
                         // Current comes first: it's what's pressing right now.
                         Section {
                             if currentExpanded {
-                                ForEach(currentFiles, id: \.self) { url in
+                                let quiet = currentFiles.filter(isQuiet)
+                                ForEach(currentFiles.filter { showingQuietCurrent || !quiet.contains($0) }, id: \.self) { url in
                                     listRow(for: url, section: "current")
+                                }
+                                if !quiet.isEmpty {
+                                    quietToggle(count: quiet.count, section: "current", isShown: $showingQuietCurrent)
                                 }
                                 if currentFiles.isEmpty {
                                     emptyRow(earlierFiles.isEmpty
@@ -166,8 +191,12 @@ struct MeditationListView: View {
                         if let previousEra, !earlierFiles.isEmpty {
                             Section {
                                 if earlierExpanded.wrappedValue {
-                                    ForEach(earlierFiles, id: \.self) { url in
+                                    let quiet = earlierFiles.filter(isQuiet)
+                                    ForEach(earlierFiles.filter { showingQuietEarlier || !quiet.contains($0) }, id: \.self) { url in
                                         listRow(for: url, section: "earlier", bringAlong: true)
+                                    }
+                                    if !quiet.isEmpty {
+                                        quietToggle(count: quiet.count, section: "earlier", isShown: $showingQuietEarlier)
                                     }
                                 }
                             } header: {
@@ -431,6 +460,25 @@ struct MeditationListView: View {
             .allowsHitTesting(false)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+    }
+
+    /// Under a section's rows: shows or hides the rarely played meditations it leaves out.
+    private func quietToggle(count: Int, section: String, isShown: Binding<Bool>) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { isShown.wrappedValue.toggle() }
+        } label: {
+            Text(isShown.wrappedValue ? "Hide Rarely Played" : "\(count) Rarely Played")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Not a tap on empty space, so it never stops a playing meditation.
+        .tracksTappableFrame("quiet|\(section)", in: tappableFrames)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 
     /// A section header that folds its section away, like a disclosure group.

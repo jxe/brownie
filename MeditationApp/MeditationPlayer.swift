@@ -665,6 +665,10 @@ final class ListeningHistory {
         }
     }
 
+    /// The day listening time started being counted. Plays of a meditation made before then
+    /// weren't measured, so how much it was listened to is unknown.
+    static let countedSince = "2026-11-21"
+
     private let key = "meditationListeningHistory"
     private var records: [String: Record]
     private(set) var activeFile: String?
