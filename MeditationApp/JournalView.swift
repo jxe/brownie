@@ -8,6 +8,8 @@ struct JournalView: View {
     @Environment(\.openFromPanel) private var openFromPanel
     @Environment(\.closePanel) private var closePanel
     @State private var eraIndex = EraIndex()
+    /// Past Eras starts folded.
+    @AppStorage("historyPastErasExpanded") private var pastErasExpanded = false
 
     /// Eras before the current one, newest first, then what was made before the first era.
     private var pastEras: [EraSelection] {
@@ -76,6 +78,24 @@ struct JournalView: View {
         }
     }
 
+    /// A section header that folds its section, like the main screen's.
+    private func sectionToggle(_ title: String, isExpanded: Binding<Bool>) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { isExpanded.wrappedValue.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .rotationEffect(.degrees(isExpanded.wrappedValue ? 90 : 0))
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(isExpanded.wrappedValue ? "Expanded" : "Collapsed")
+    }
+
     private var sidebarColor: Color {
         colorScheme == .dark
             ? Color(red: 0.14, green: 0.14, blue: 0.14)
@@ -112,15 +132,19 @@ struct JournalView: View {
 
             // Earlier eras, each opening its meditations
             if !pastEras.isEmpty {
-                Section("Past Eras") {
-                    ForEach(pastEras, id: \.self) { era in
-                        Button { openFromPanel(.era(era)) } label: {
-                            PanelLinkLabel { Text(eraIndex.label(for: era)) }
+                Section {
+                    if pastErasExpanded {
+                        ForEach(pastEras, id: \.self) { era in
+                            Button { openFromPanel(.era(era)) } label: {
+                                PanelLinkLabel { Text(eraIndex.label(for: era)) }
+                            }
+                            // A list tints button text with the accent color; these read as plain rows.
+                            .tint(.primary)
                         }
-                        // A list tints button text with the accent color; these read as plain rows.
-                        .tint(.primary)
+                        .listRowBackground(Color.clear)
                     }
-                    .listRowBackground(Color.clear)
+                } header: {
+                    sectionToggle("Past Eras", isExpanded: $pastErasExpanded)
                 }
             }
 
@@ -543,46 +567,102 @@ private func todoSource(_ todo: FeelingTodo) -> String {
     return "\(todo.emoji) \(todo.emotionName) · \(day)" + (companions.isEmpty ? "" : ", with \(companions)")
 }
 
-/// A past row on one line, with any detail in gray on the right: "😠 😢 🙏 … 12m",
-/// "Call Sam … 😠", "Body scan", "Body scan … 45m", "😠 Anger". No emoji marks the kind of row.
+/// A past row on one line, with any detail in gray on the right: a check-in's feelings as
+/// coloured tiles … "12m"; "Call Sam" … its feeling's tile; "Body scan"; "Body scan" … "45m";
+/// an old reflection's tile and "Anger". No emoji marks the kind of row.
 private struct PastRowLine: View {
     let row: PastRow
 
-    private var parts: (main: String, detail: String?) {
+    private typealias Feeling = (name: String, emoji: String)
+
+    var body: some View {
         switch row {
-        case .listened(let day, let title, _):
-            return (title, JournalTimeFormatter.string(from: day.seconds))
+        case .listened(let day, let name, _):
+            line { title(name) } detail: { time(day.seconds) }
         case .todo(let todo):
-            return (todo.filledActions.first?.sentence ?? todo.emotionName, todo.emoji)
+            line { title(todo.filledActions.first?.sentence ?? todo.emotionName) } detail: {
+                EmotionTile(name: todo.emotionName, emoji: todo.emoji)
+            }
         case .entry(let entry):
             switch entry.content {
             case .checkInSession(let s):
-                let emojis = s.emotions.prefix(4).map(\.emoji).joined(separator: " ")
-                return (emojis.isEmpty ? "Check-in" : emojis, JournalTimeFormatter.string(from: s.engagementSeconds))
+                line {
+                    if s.emotions.isEmpty {
+                        title("Check-in")
+                    } else {
+                        HStack(spacing: 4) {
+                            ForEach(Array(s.emotions.prefix(4)), id: \.name) { tally in
+                                EmotionTile(name: tally.name, emoji: tally.emoji)
+                            }
+                        }
+                    }
+                } detail: { time(s.engagementSeconds) }
             case .meditation(let m):
-                return (m.title, nil)
+                line { title(m.title) } detail: { EmptyView() }
             case .reflection(let r):
-                return ("\(r.emoji) \(r.emotionName)", nil)
+                line {
+                    HStack(spacing: 8) {
+                        EmotionTile(name: r.emotionName, emoji: r.emoji)
+                        title(r.emotionName)
+                    }
+                } detail: { EmptyView() }
             }
         }
     }
 
-    var body: some View {
-        let parts = parts
+    private func line<Main: View, Detail: View>(@ViewBuilder _ main: () -> Main,
+                                                @ViewBuilder detail: () -> Detail) -> some View {
         HStack(spacing: 8) {
-            Text(parts.main)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            main()
             Spacer(minLength: 4)
-            if let detail = parts.detail {
-                Text(detail)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .layoutPriority(1)
-            }
+            detail()
+                .layoutPriority(1)
         }
+        .frame(minHeight: EmotionTile.height)
         .padding(.vertical, 2)
+    }
+
+    private func title(_ text: String) -> some View {
+        Text(text)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    private func time(_ seconds: TimeInterval) -> some View {
+        Text(JournalTimeFormatter.string(from: seconds))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+}
+
+/// A feeling's emoji on a small rounded tile in that feeling's chip colour (the same
+/// `Emotion.chipColor` the Feelings page and the home header use), a little lighter at the top.
+/// A feeling no longer in `Emotion.all` gets a neutral tile.
+private struct EmotionTile: View {
+    static let height: CGFloat = 26
+    let name: String
+    let emoji: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var base: Color {
+        Emotion.named(name)?.chipColor(for: colorScheme)
+            ?? Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08)
+    }
+
+    var body: some View {
+        Text(emoji)
+            .font(.system(size: 15))
+            .frame(width: 32, height: Self.height)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: [base.mix(with: .white, by: colorScheme == .dark ? 0.10 : 0.22), base],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ))
+            }
+            .accessibilityLabel(name)
     }
 }
 
