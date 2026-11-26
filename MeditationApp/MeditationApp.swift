@@ -289,13 +289,19 @@ struct ContentView: View {
     }
 
     private func flyRow(_ url: URL, title: String, from: CGRect) {
-        let flight = RowFlight(url: url, title: title, from: from)
+        // Drop and catch: the fall takes longer the further it has to go, as a real fall
+        // would; the catch always takes the same time.
+        let barTop = nowPlayingBarFrame.isEmpty ? from.maxY + 400 : nowPlayingBarFrame.minY
+        let distance = Double(max(0, barTop - from.maxY))
+        let fall = 0.2 + 0.22 * min(1, distance / 600)
+        let duration = fall + RowFlightView.catchDuration
+        let flight = RowFlight(url: url, title: title, from: from, fallShare: CGFloat(fall / duration))
         rowFlight = flight
         rowFlightProgress = 0
-        // The next turn, so the stand-in is drawn over the row before it moves. Eased rather
-        // than sprung: a quick lift, a glide down, and a soft landing with no bounce.
+        // The next turn, so the stand-in is drawn over the row before it moves. Linear: the
+        // view shapes its own timing (gravity, then the catch's settle) from the progress.
         DispatchQueue.main.async {
-            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.42)) {
+            withAnimation(.linear(duration: duration)) {
                 rowFlightProgress = 1
             } completion: {
                 guard rowFlight?.id == flight.id else { return }
@@ -334,6 +340,7 @@ struct ContentView: View {
                 let screen = layer.frame(in: .global)
                 RowFlightView(
                     progress: rowFlightProgress,
+                    fallShare: flight.fallShare,
                     title: flight.title,
                     from: flight.from.offsetBy(dx: -screen.minX, dy: -screen.minY),
                     to: rowFlightTarget(screen: screen).offsetBy(dx: -screen.minX, dy: -screen.minY),
@@ -376,20 +383,24 @@ private struct RowFlight {
     let title: String
     /// The row's fill, in global coordinates.
     let from: CGRect
+    /// How much of the flight is the fall; the rest is the catch.
+    let fallShare: CGFloat
 }
 
-/// A row card on its way into the now-playing bar. `progress` is what animates (0 at the row,
-/// 1 at the bar); everything else follows from it, so the path can curve and the parts can
-/// keep their own timing within one eased animation:
-/// - the card lifts first (rises a little and grows, its shadow deepening), then swoops down
-///   along a curve that arrives at the bar from above;
-/// - it keeps its row shape for the first part of the trip and only spreads into the bar's
-///   full width, square corners and highlight colour as it nears the bottom;
-/// - the row's title slides toward the bar's title line while the bar's own live contents
-///   (`NowPlayingBarContent`: dot, title, time, buttons) fade in over it, so playback that
-///   starts mid-flight already shows, and the landing changes nothing.
+/// A row card dropped into the now-playing bar and caught there. It stays the same card the
+/// whole way, with its title on it, so you can follow it. `progress` runs linearly from 0 to
+/// 1; the view turns it into two phases:
+/// - the fall (`fallShare` of the flight): a small hop up off the row, then down under
+///   gravity, speeding up, stretching a little with speed, lifted on a shadow;
+/// - the catch: as it reaches the bar's place it spreads at once into the bar's width,
+///   square corners and highlight, the bar's own live contents (`NowPlayingBarContent`)
+///   coming up on it as the row's title goes, and it dips under the impact and settles
+///   back, as if the bar had caught its weight.
 private struct RowFlightView: View, Animatable {
+    static let catchDuration: Double = 0.38
+
     var progress: CGFloat
+    let fallShare: CGFloat
     let title: String
     let from: CGRect
     let to: CGRect
@@ -402,42 +413,46 @@ private struct RowFlightView: View, Animatable {
     }
 
     private static func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+    private static func clamp(_ t: CGFloat) -> CGFloat { min(max(t, 0), 1) }
     private static func smoothstep(_ t: CGFloat) -> CGFloat {
-        let t = min(max(t, 0), 1)
+        let t = clamp(t)
         return t * t * (3 - 2 * t)
     }
 
     var body: some View {
         let p = progress
-        // How far it has spread from a row card into the bar.
-        let spread = Self.smoothstep((p - 0.4) / 0.6)
-        // The lift: up and back in the first half, gone by the time it spreads.
-        let lift = sin(.pi * min(p / 0.55, 1))
+        // 0...1 through each phase.
+        let fallT = Self.clamp(p / max(fallShare, 0.01))
+        let catchT = Self.clamp((p - fallShare) / max(1 - fallShare, 0.01))
 
-        // The card's centre on a cubic curve: up and out to the side off the row, then
-        // swinging back in as it comes down onto the bar.
-        let p0 = CGPoint(x: from.midX, y: from.midY)
-        let p3 = CGPoint(x: to.midX, y: to.midY)
-        let swing = min(80, to.width * 0.2)
-        let p1 = CGPoint(x: p0.x + swing, y: p0.y - 30)
-        let p2 = CGPoint(x: p3.x + swing * 0.8, y: p3.y - max(80, (p3.y - p0.y) * 0.4))
-        let u = 1 - p
-        let center = CGPoint(
-            x: u * u * u * p0.x + 3 * u * u * p * p1.x + 3 * u * p * p * p2.x + p * p * p * p3.x,
-            y: u * u * u * p0.y + 3 * u * u * p * p1.y + 3 * u * p * p * p2.y + p * p * p * p3.y
-        )
+        // Where the card is caught: its middle on the bar's content line.
+        let caughtY = to.minY + barHeight / 2
+        // The fall: a little hop first, then gravity (distance grows with the square of time).
+        let hop = 14 * sin(.pi * min(fallT / 0.3, 1)) * (1 - fallT)
+        let fallY = Self.lerp(from.midY, caughtY, fallT * fallT) - hop
+
+        // The catch: it spreads fast at the moment of impact and eases into place.
+        let spread = 1 - pow(1 - catchT, 3)
+        // The dip: pushed down by the impact, then a small spring back up and settle.
+        let dip = 9 * sin(.pi * 2 * 0.9 * catchT) * pow(1 - catchT, 2.2)
 
         let width = Self.lerp(from.width, to.width, spread)
         let height = Self.lerp(from.height, to.height, spread)
+        let centerY = catchT > 0
+            ? Self.lerp(caughtY, to.midY, spread) + dip
+            : fallY
+        let center = CGPoint(x: Self.lerp(from.midX, to.midX, spread), y: centerY)
         let corner = Self.lerp(14, 0, spread)
-        // A little bigger as it lifts, then smaller in mid-air so the swing has room.
-        let scale = (1 + 0.04 * lift - 0.22 * sin(.pi * p)) * (1 - spread) + spread
 
-        // The title: at the row's padding, centred in the row; in the bar, after the dot,
-        // on the title line above the time.
+        // Stretched a little by its speed as it falls, back to round as it's caught.
+        let speedStretch = 0.06 * fallT * (1 - spread)
+        let lifted = (1 - spread) * (0.08 + 0.14 * sin(.pi * min(fallT / 0.3, 1)))
+
+        // The row's title rides on the card and heads for the bar's title line as the bar's
+        // own contents come up in its place.
         let titleX = Self.lerp(14, 20 + 12 + 10, spread)
         let titleCenterY = Self.lerp(from.height / 2, (barHeight - 40) / 2 + 11, spread)
-        let barContent = Self.smoothstep((spread - 0.15) / 0.7)
+        let barContent = Self.smoothstep(spread / 0.7)
 
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -445,10 +460,7 @@ private struct RowFlightView: View, Animatable {
                 .background(
                     RoundedRectangle(cornerRadius: corner, style: .continuous).fill(palette.canvas)
                 )
-                .shadow(color: .black.opacity(0.22 * lift * (1 - spread) + 0.06 * (1 - spread)),
-                        radius: 6 + 10 * lift, y: 2 + 6 * lift)
-            // The row's title heads for the bar's title line, fading as the bar's own
-            // contents come up in its place.
+                .shadow(color: .black.opacity(lifted), radius: 6 + 8 * (1 - spread), y: 3 + 4 * (1 - spread))
             Text(title)
                 .font(.body)
                 .fontWeight(.medium)
@@ -457,14 +469,12 @@ private struct RowFlightView: View, Animatable {
                 .frame(width: max(0, width - titleX - 110), height: 22, alignment: .leading)
                 .offset(x: titleX, y: titleCenterY - 11)
                 .opacity(1 - barContent)
-            // The real bar's contents, live, so the time and the playing dot are already
-            // there if playback starts mid-flight, and nothing jumps when it lands.
             NowPlayingBarContent()
                 .frame(width: width, height: barHeight)
                 .opacity(barContent)
         }
         .frame(width: width, height: height, alignment: .topLeading)
-        .scaleEffect(scale)
+        .scaleEffect(x: 1 - speedStretch * 0.5, y: 1 + speedStretch)
         .position(center)
     }
 }
