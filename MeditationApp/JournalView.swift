@@ -149,8 +149,10 @@ struct JournalView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .onAppear { eraIndex = EraIndex.load() }
         .toolbar {
-            Button { openFromPanel(.settings) } label: {
-                Label("Settings", systemImage: "gear")
+            ToolbarItem(placement: .topBarLeading) {
+                Button { openFromPanel(.settings) } label: {
+                    Label("Settings", systemImage: "gear")
+                }
             }
         }
     }
