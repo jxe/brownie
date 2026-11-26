@@ -76,7 +76,7 @@ struct MeditationListView: View {
     /// ones' plays were never measured. One that's playing, or was brought along to this era,
     /// always shows.
     private static let quietAfterDays = 4
-    private static let quietBelowSeconds: TimeInterval = 5 * 60
+    private static let quietBelowSeconds: TimeInterval = 10 * 60
 
     private func isQuiet(_ url: URL) -> Bool {
         guard EraIndex.dateString(for: url) >= ListeningHistory.countedSince,
