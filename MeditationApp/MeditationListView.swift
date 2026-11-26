@@ -598,14 +598,21 @@ struct MeditationListView: View {
                     RowFillShape()
                         .fill(inactiveFill)
                         .opacity(isHole ? 0 : 1)
-                    // The hole: a little darker than the page, shadowed along its top edge as
-                    // if the page's surface overhangs it, with a faint lit rim along the bottom.
+                    // The hole: a floor a little darker than the page, shadowed along its top edge
+                    // as if the page's surface overhangs it, with a faint lit rim along the bottom.
+                    // In dark mode the page is already black, so nothing can be darker than it:
+                    // there the floor is a dim shade of the card instead, which the shadow can
+                    // fall across, and the rim is barely there.
                     RowFillShape()
-                        .fill(palette.canvas.mix(with: .black, by: colorScheme == .dark ? 0.35 : 0.06)
-                            .shadow(.inner(color: .black.opacity(colorScheme == .dark ? 0.7 : 0.22), radius: 5, y: 3)))
+                        .fill((colorScheme == .dark
+                               ? inactiveFill.mix(with: .black, by: 0.45)
+                               : palette.canvas.mix(with: .black, by: 0.06))
+                            .shadow(.inner(color: .black.opacity(colorScheme == .dark ? 0.95 : 0.22),
+                                           radius: colorScheme == .dark ? 7 : 5,
+                                           y: colorScheme == .dark ? 5 : 3)))
                         .overlay(
                             RowFillShape().stroke(
-                                LinearGradient(colors: [.clear, .white.opacity(colorScheme == .dark ? 0.10 : 0.7)],
+                                LinearGradient(colors: [.clear, .clear, .white.opacity(colorScheme == .dark ? 0.05 : 0.7)],
                                                startPoint: .top, endPoint: .bottom),
                                 lineWidth: 1)
                         )
