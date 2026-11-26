@@ -153,15 +153,6 @@ struct JournalView: View {
                         historyRow(row)
                             .listRowBackground(Color.clear)
                     }
-                    .onDelete { indexSet in
-                        let rows = pastRows
-                        for index in indexSet {
-                            switch rows[index] {
-                            case .todo(let todo): store.deleteTodo(todo)
-                            case .entry(let entry): store.deleteEntry(entry)
-                            }
-                        }
-                    }
                 }
             }
 
