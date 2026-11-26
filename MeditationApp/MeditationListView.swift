@@ -18,6 +18,7 @@ struct MeditationListView: View {
     @Environment(\.panelIsOpen) private var panelIsOpen
     @Environment(\.setHomePagePushed) private var setHomePagePushed
     @Environment(\.rowInFlight) private var rowInFlight
+    @Environment(\.colorScheme) private var colorScheme
     @State private var files: [URL] = []
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
@@ -546,9 +547,11 @@ struct MeditationListView: View {
         // The now-playing bar shows the time now, on every page, so the row doesn't.
         let showElapsedTime = false
         let inactiveFill = palette.card
-        // Its stand-in is on its way into the now-playing bar: the row stays, a little faded,
-        // and takes its playing look once the stand-in lands.
+        // Its stand-in is on its way into the now-playing bar.
         let isAway = rowInFlight == url
+        // The playing row's card has fallen into the now-playing bar: what's left is the hole
+        // it came out of, sunk into the page, with its name and listening time still in it.
+        let isHole = isEngaged || isAway
         Button {
             tappableFrames.noteRowTap()
             if isPreparing {
@@ -565,11 +568,7 @@ struct MeditationListView: View {
                         Text(titleFor(url))
                             .font(.body)
                             .fontWeight(.medium)
-                            .foregroundStyle(isEngaged ? Color.primary : Color.primary.opacity(0.88))
-                        PlayingPulseDot(isPulsing: isActive)
-                            .frame(width: 12, height: 12)
-                            .opacity(isEngaged ? 1 : 0)
-                            .scaleEffect(isEngaged ? 1 : 0.4)
+                            .foregroundStyle(Color.primary.opacity(0.88))
                     }
                     // Without the time label the title drops to the row's middle; the slot
                     // below keeps its height so rows don't change size when playback starts.
@@ -591,19 +590,30 @@ struct MeditationListView: View {
                 Color.clear
                     .frame(width: Self.editButtonWidth - 8, height: 1)
             }
-            .opacity(isAway ? 0.45 : 1)
+            .opacity(isHole ? 0.55 : 1)
             .padding(.horizontal, 14 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
-            .background(
-                // The playing row has flown into the now-playing bar: what stays behind is
-                // a quieter mark, an outline in the tint, rather than the bar's own fill.
-                RowFillShape()
-                    .fill(inactiveFill.opacity(isAway ? 0.7 : 1))
-                    .overlay(RowFillShape().stroke(palette.tint.opacity(isEngaged && !isAway ? 0.6 : 0), lineWidth: 1.5))
-            )
-            // Empties at once as the stand-in lifts off; fills back in gently.
-            .animation(isAway ? nil : .easeOut(duration: 0.3), value: isAway)
-            .animation(.spring(duration: 0.3, bounce: 0.25), value: isEngaged)
+            .background {
+                ZStack {
+                    RowFillShape()
+                        .fill(inactiveFill)
+                        .opacity(isHole ? 0 : 1)
+                    // The hole: a little darker than the page, shadowed along its top edge as
+                    // if the page's surface overhangs it, with a faint lit rim along the bottom.
+                    RowFillShape()
+                        .fill(palette.canvas.mix(with: .black, by: colorScheme == .dark ? 0.35 : 0.06)
+                            .shadow(.inner(color: .black.opacity(colorScheme == .dark ? 0.7 : 0.22), radius: 5, y: 3)))
+                        .overlay(
+                            RowFillShape().stroke(
+                                LinearGradient(colors: [.clear, .white.opacity(colorScheme == .dark ? 0.10 : 0.7)],
+                                               startPoint: .top, endPoint: .bottom),
+                                lineWidth: 1)
+                        )
+                        .opacity(isHole ? 1 : 0)
+                }
+            }
+            // Opens at once as the card lifts out; fills back in gently when it's put back.
+            .animation(isHole ? nil : .easeOut(duration: 0.3), value: isHole)
             .animation(.snappy(duration: 0.22), value: showElapsedTime)
             .contentShape(RoundedRectangle(cornerRadius: 14))
             .contentShape(.contextMenuPreview, RowFillShape())
@@ -640,7 +650,7 @@ struct MeditationListView: View {
                 .accessibilityLabel("Edit")
             }
             .padding(.trailing, 6 + RowFillShape.margin.width)
-            .opacity(isAway ? 0.45 : 1)
+            .opacity(isHole ? 0.55 : 1)
         }
         .background(DisableScrollTouchDelay().frame(width: 0, height: 0))
         .swipeActions(edge: .trailing) {
