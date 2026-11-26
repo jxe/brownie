@@ -165,11 +165,11 @@ struct SettingsView: View {
                 }
             }
 
-            // Every past check-in, finished to-do, reflection and helpful meditation, as Markdown.
+            // Every past check-in, finished to-do, reflection, helpful meditation and long listen, as Markdown.
             if !emotionStore.journalEntries.isEmpty || !emotionStore.doneTodos.isEmpty {
                 Section {
                     ShareLink(
-                        item: JournalExport.markdown(emotionStore),
+                        item: JournalExport.markdown(emotionStore, listening: player.listeningHistory),
                         subject: Text("Emotion Journal"),
                         message: Text("My emotional reflections")
                     ) {

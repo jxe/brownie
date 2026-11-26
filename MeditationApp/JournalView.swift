@@ -14,7 +14,9 @@ struct JournalView: View {
         return eraIndex.eras.dropFirst().map { .era($0.id) } + [.older]
     }
 
-    private var pastRows: [PastRow] { PastRow.all(in: store) }
+    @Environment(MeditationPlayer.self) private var player
+
+    private var pastRows: [PastRow] { PastRow.all(in: store, listening: player.listeningHistory) }
 
     /// Past rows grouped by the day they happened, newest day first.
     private var pastDays: [(day: Date, rows: [PastRow])] {
@@ -426,16 +428,40 @@ private enum JournalTimeFormatter {
 private enum PastRow: Identifiable {
     case entry(JournalEntry)
     case todo(FeelingTodo)
+    /// A day a meditation was listened to for `longListenSeconds` or more; `title` is its
+    /// title, or its filename once the file is gone.
+    case listened(ListeningHistory.DayListening, title: String)
 
-    /// Journal entries and done to-dos, newest first.
-    static func all(in store: EmotionStore) -> [PastRow] {
-        (store.journalEntries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo))
+    /// A day's listening to one meditation that earns a row of its own.
+    static let longListenSeconds: TimeInterval = 30 * 60
+
+    /// Journal entries, done to-dos and long listens, newest first.
+    static func all(in store: EmotionStore, listening: ListeningHistory) -> [PastRow] {
+        let listens = listening.days(atLeast: longListenSeconds).map { day in
+            PastRow.listened(day, title: meditationTitle(day.filename))
+        }
+        return (store.journalEntries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo) + listens)
             .sorted { $0.date > $1.date }
     }
 
-    /// The page its tap opens on the main screen. A meditation that helped has nothing more to show.
+    /// The meditation's title from its file, here or archived; its filename if it's gone.
+    private static func meditationTitle(_ filename: String) -> String {
+        let directory = FileManager.default.meditationsDirectory
+        for url in [directory.appendingPathComponent(filename + ".med"),
+                    directory.appendingPathComponent("Archive").appendingPathComponent(filename + ".med")] {
+            if let content = FileManager.default.readMeditation(at: url) {
+                let title = MeditationParser.parseMetadata(content).title
+                return title.isEmpty ? filename : title
+            }
+        }
+        return filename
+    }
+
+    /// The page its tap opens on the main screen. A meditation that helped, or one listened
+    /// to a lot, has nothing more to show.
     var page: PanelPage? {
         switch self {
+        case .listened: return nil
         case .todo(let todo): return .todo(todo.id)
         case .entry(let entry):
             switch entry.content {
@@ -446,10 +472,11 @@ private enum PastRow: Identifiable {
         }
     }
 
-    var id: UUID {
+    var id: String {
         switch self {
-        case .entry(let entry): entry.id
-        case .todo(let todo): todo.id
+        case .entry(let entry): entry.id.uuidString
+        case .todo(let todo): todo.id.uuidString
+        case .listened(let day, _): "\(day.filename) \(ListeningHistory.dayKey(day.day))"
         }
     }
 
@@ -457,6 +484,7 @@ private enum PastRow: Identifiable {
         switch self {
         case .entry(let entry): entry.timestamp
         case .todo(let todo): todo.doneAt ?? todo.createdAt
+        case .listened(let day, _): day.lastListened
         }
     }
 }
@@ -500,12 +528,14 @@ private func todoSource(_ todo: FeelingTodo) -> String {
 }
 
 /// A past row on one line, with any detail in gray on the right: "😠 😢 🙏 … 12m",
-/// "Call Sam … 😠", "Body scan", "😠 Anger". No emoji marks the kind of row.
+/// "Call Sam … 😠", "Body scan", "Body scan … 45m", "😠 Anger". No emoji marks the kind of row.
 private struct PastRowLine: View {
     let row: PastRow
 
     private var parts: (main: String, detail: String?) {
         switch row {
+        case .listened(let day, let title):
+            return (title, JournalTimeFormatter.string(from: day.seconds))
         case .todo(let todo):
             return (todo.filledActions.first?.sentence ?? todo.emotionName, todo.emoji)
         case .entry(let entry):
@@ -615,12 +645,19 @@ struct ReflectionDetailView: View {
 
 /// The whole journal as Markdown, for Settings' Export Journal.
 enum JournalExport {
-    static func markdown(_ store: EmotionStore) -> String {
-        PastRow.all(in: store).map { row -> String in
+    static func markdown(_ store: EmotionStore, listening: ListeningHistory) -> String {
+        PastRow.all(in: store, listening: listening).map { row -> String in
             let entry: JournalEntry
             switch row {
             case .entry(let e):
                 entry = e
+            case .listened(let day, let title):
+                let dateStr = day.day.formatted(date: .long, time: .omitted)
+                return """
+                # \(title) — \(dateStr)
+
+                **Listened:** \(JournalTimeFormatter.string(from: day.seconds))
+                """
             case .todo(let t):
                 let dateStr = (t.doneAt ?? t.createdAt).formatted(date: .long, time: .shortened)
                 return """

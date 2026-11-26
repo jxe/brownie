@@ -630,31 +630,57 @@ class MeditationPlayer: NSObject {
     }
 }
 
-/// Completed playback intervals and a live interval for the currently playing file.
+/// How long each meditation was listened to, by day, and a live interval for the playing file.
 @Observable
 final class ListeningHistory {
     struct Record: Codable {
         var lastPlayed: Date
-        /// Intervals that ended in the last 24 hours; older ones are folded into `olderSeconds`.
+        /// Listening per local calendar day ("yyyy-MM-dd"), split at midnight. The main record.
+        var days: [String: TimeInterval] = [:]
+        /// Listening counted before days were kept, which can't be split into days. It counts
+        /// toward the total, never toward a day.
+        var beforeDaily: TimeInterval = 0
+        /// The last 24 hours' intervals, only for the "last 24 hours" stat; older ones are
+        /// dropped (their time is already in `days`).
         var intervals: [DateInterval] = []
-        /// Listening time from intervals pruned out of `intervals`.
-        var olderSeconds: TimeInterval = 0
 
         init(lastPlayed: Date) {
             self.lastPlayed = lastPlayed
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case lastPlayed, days, beforeDaily, intervals
+            /// The old shape's folded-in total, read once to migrate.
+            case olderSeconds
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             lastPlayed = try container.decode(Date.self, forKey: .lastPlayed)
             intervals = try container.decodeIfPresent([DateInterval].self, forKey: .intervals) ?? []
-            olderSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .olderSeconds) ?? 0
+            if let days = try container.decodeIfPresent([String: TimeInterval].self, forKey: .days) {
+                self.days = days
+                beforeDaily = try container.decodeIfPresent(TimeInterval.self, forKey: .beforeDaily) ?? 0
+            } else {
+                // The old shape: a total of everything older than 24 hours, plus the last
+                // 24 hours' intervals, which seed the days.
+                beforeDaily = try container.decodeIfPresent(TimeInterval.self, forKey: .olderSeconds) ?? 0
+                for interval in intervals { addToDays(interval) }
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(lastPlayed, forKey: .lastPlayed)
+            try container.encode(days, forKey: .days)
+            try container.encode(beforeDaily, forKey: .beforeDaily)
+            try container.encode(intervals, forKey: .intervals)
         }
 
         /// All listening time recorded. Counting began with the rolling history, so plays
         /// from before it aren't included.
         var totalSeconds: TimeInterval {
-            olderSeconds + intervals.reduce(0) { $0 + $1.duration }
+            beforeDaily + days.values.reduce(0, +)
         }
 
         func seconds(inLastDayAt now: Date) -> TimeInterval {
@@ -663,6 +689,46 @@ final class ListeningHistory {
                 sum + max(0, min(now, interval.end).timeIntervalSince(max(cutoff, interval.start)))
             }
         }
+
+        /// Adds a finished interval: to its day (or days, split at midnight) and to the
+        /// recent intervals.
+        mutating func add(_ interval: DateInterval) {
+            intervals.append(interval)
+            addToDays(interval)
+        }
+
+        private mutating func addToDays(_ interval: DateInterval) {
+            let calendar = Calendar.current
+            var start = interval.start
+            while start < interval.end {
+                let nextDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start)) ?? interval.end
+                let end = min(nextDay, interval.end)
+                days[ListeningHistory.dayKey(start), default: 0] += end.timeIntervalSince(start)
+                start = end
+            }
+        }
+    }
+
+    /// A day's listening to one meditation.
+    struct DayListening {
+        let filename: String
+        let day: Date
+        let seconds: TimeInterval
+        /// When that day's listening ended, as near as is known: the last play if it was that
+        /// day, else the day's end.
+        let lastListened: Date
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    static func dayKey(_ date: Date) -> String {
+        dayFormatter.string(from: date)
     }
 
     /// The day listening time started being counted. Plays of a meditation made before then
@@ -684,13 +750,32 @@ final class ListeningHistory {
             let legacy = defaults.dictionary(forKey: "recentMeditationPlays") as? [String: Date] ?? [:]
             records = legacy.mapValues { Record(lastPlayed: $0) }
         }
+        // Writes an old shape back in the new one.
+        save()
+    }
+
+    /// Every day on which a meditation was listened to for at least `minimum`, the playing
+    /// one included.
+    func days(atLeast minimum: TimeInterval, at now: Date = Date()) -> [DayListening] {
+        let calendar = Calendar.current
+        var result: [DayListening] = []
+        for filename in Set(records.keys).union(activeFile.map { [$0] } ?? []) {
+            guard let record = record(for: filename, at: now) else { continue }
+            for (key, seconds) in record.days where seconds >= minimum {
+                guard let day = Self.dayFormatter.date(from: key).map({ calendar.startOfDay(for: $0) }) else { continue }
+                let dayEnd = calendar.date(byAdding: .day, value: 1, to: day)?.addingTimeInterval(-1) ?? day
+                let last = calendar.isDate(record.lastPlayed, inSameDayAs: day) ? record.lastPlayed : dayEnd
+                result.append(DayListening(filename: filename, day: day, seconds: seconds, lastListened: last))
+            }
+        }
+        return result
     }
 
     func record(for filename: String, at now: Date) -> Record? {
         guard activeFile == filename else { return records[filename] }
         var record = records[filename] ?? Record(lastPlayed: started)
         record.lastPlayed = max(now, started)
-        record.intervals.append(DateInterval(start: started, end: record.lastPlayed))
+        record.add(DateInterval(start: started, end: record.lastPlayed))
         return record
     }
 
@@ -729,9 +814,8 @@ final class ListeningHistory {
         if let activeFile { snapshot[activeFile] = record(for: activeFile, at: now) }
         for filename in snapshot.keys {
             guard var record = snapshot[filename] else { continue }
-            let pruned = record.intervals.filter { $0.end <= cutoff }
-            guard !pruned.isEmpty else { continue }
-            record.olderSeconds += pruned.reduce(0) { $0 + $1.duration }
+            // Their time is already in `days`; only the last 24 hours' stat needs them.
+            guard record.intervals.contains(where: { $0.end <= cutoff }) else { continue }
             record.intervals.removeAll { $0.end <= cutoff }
             snapshot[filename] = record
         }
