@@ -499,34 +499,44 @@ private func todoSource(_ todo: FeelingTodo) -> String {
     return "\(todo.emoji) \(todo.emotionName) · \(day)" + (companions.isEmpty ? "" : ", with \(companions)")
 }
 
-/// A past row on one line: "🪷 😠 😢 🙏 · 12m", "✓ Call Sam · 😠", "🧘 Body scan", "😠 Anger".
+/// A past row on one line, with any detail in gray on the right: "🪷 😠 😢 🙏 … 12m",
+/// "✓ Call Sam … 😠", "🧘 Body scan", "😠 Anger".
 private struct PastRowLine: View {
     let row: PastRow
 
-    private var text: String {
+    private var parts: (main: String, detail: String?) {
         switch row {
         case .todo(let todo):
-            let did = todo.filledActions.first?.sentence ?? todo.emotionName
-            return "✓ \(did) · \(todo.emoji)"
+            return ("✓ \(todo.filledActions.first?.sentence ?? todo.emotionName)", todo.emoji)
         case .entry(let entry):
             switch entry.content {
             case .checkInSession(let s):
                 let emojis = s.emotions.prefix(4).map(\.emoji).joined(separator: " ")
-                let time = JournalTimeFormatter.string(from: s.engagementSeconds)
-                return emojis.isEmpty ? "🪷 \(time)" : "🪷 \(emojis) · \(time)"
+                return ("🪷 \(emojis)", JournalTimeFormatter.string(from: s.engagementSeconds))
             case .meditation(let m):
-                return "🧘 \(m.title)"
+                return ("🧘 \(m.title)", nil)
             case .reflection(let r):
-                return "\(r.emoji) \(r.emotionName)"
+                return ("\(r.emoji) \(r.emotionName)", nil)
             }
         }
     }
 
     var body: some View {
-        Text(text)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.vertical, 2)
+        let parts = parts
+        HStack(spacing: 8) {
+            Text(parts.main)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            if let detail = parts.detail {
+                Text(detail)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 

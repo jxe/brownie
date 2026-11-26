@@ -130,8 +130,10 @@ struct ContentView: View {
     @Environment(\.appPalette) private var palette
     @Environment(MeditationPlayer.self) var player
     @State private var panelOpen = false
-    /// How far a drag has moved the main screen, while one is under way.
-    @State private var dragOffset: CGFloat = 0
+    /// How far a drag has moved the main screen, while one is under way. Kept in its own
+    /// object and read only by `PanelSlide`, so a drag re-renders just the slide, not this body
+    /// (whose fresh environment closures would re-render both screens every frame).
+    @State private var drag = PanelDrag()
     /// Whether History is built at all. It stays up through the closing slide, then goes,
     /// so nothing behind the main screen re-renders as the store changes.
     @State private var panelMounted = false
@@ -173,7 +175,6 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geo in
             let panelWidth = min(geo.size.width * 0.85, 380)
-            let offset = max(0, min(panelWidth, (panelOpen ? panelWidth : 0) + dragOffset))
             ZStack(alignment: .leading) {
                 if panelMounted {
                     NavigationStack {
@@ -182,7 +183,7 @@ struct ContentView: View {
                             // following the finger like the drag on the main screen does.
                             .background(
                                 PanelClosePan(isEnabled: panelOpen) { translation in
-                                    dragOffset = min(0, translation)
+                                    drag.offset = min(0, translation)
                                 } onEnded: { translation, velocity in
                                     setPanel(open: translation + velocity * 0.2 > -panelWidth / 3)
                                 }
@@ -209,7 +210,7 @@ struct ContentView: View {
                             .background(
                                 PanelEdgePan(isEnabled: !panelOpen) { translation in
                                     if !panelMounted { panelMounted = true }
-                                    dragOffset = max(0, translation)
+                                    drag.offset = max(0, translation)
                                 } onEnded: { translation, velocity in
                                     setPanel(open: translation + velocity * 0.2 > panelWidth / 3)
                                 }
@@ -283,17 +284,7 @@ struct ContentView: View {
                             .gesture(closeDrag(panelWidth: panelWidth))
                     }
                 }
-                // The shadow comes from a plain shape behind the screen: a shadow on the
-                // whole NavigationStack would re-render offscreen on every change.
-                .background {
-                    if offset > 0 {
-                        Rectangle()
-                            .fill(palette.canvas)
-                            .shadow(color: .black.opacity(0.18), radius: 12)
-                            .ignoresSafeArea()
-                    }
-                }
-                .offset(x: offset)
+                .modifier(PanelSlide(drag: drag, panelOpen: panelOpen, panelWidth: panelWidth, canvas: palette.canvas))
             }
         }
         .overlay { rowFlightLayer }
@@ -388,9 +379,9 @@ struct ContentView: View {
         if open { panelMounted = true }
         withAnimation(.snappy(duration: 0.3)) {
             panelOpen = open
-            dragOffset = 0
+            drag.offset = 0
         } completion: {
-            if !panelOpen && dragOffset == 0 { panelMounted = false }
+            if !panelOpen && drag.offset == 0 { panelMounted = false }
         }
     }
 
@@ -398,7 +389,7 @@ struct ContentView: View {
         // The overlay moves with the drag, so measure finger travel in a stationary space.
         DragGesture(minimumDistance: 10, coordinateSpace: .global)
             .onChanged { value in
-                dragOffset = min(0, value.translation.width)
+                drag.offset = min(0, value.translation.width)
             }
             .onEnded { value in
                 setPanel(open: value.predictedEndTranslation.width > -panelWidth / 3)
@@ -612,6 +603,36 @@ struct PanelEdgePan: UIViewRepresentable {
     }
 }
 
+/// A drag's offset of the main screen, apart from `ContentView`'s own state.
+@Observable final class PanelDrag {
+    var offset: CGFloat = 0
+}
+
+/// Slides the main screen right by the panel's width (while open) plus any drag. Only this
+/// reads the drag, so following a finger re-renders nothing else.
+private struct PanelSlide: ViewModifier {
+    let drag: PanelDrag
+    let panelOpen: Bool
+    let panelWidth: CGFloat
+    let canvas: Color
+
+    func body(content: Content) -> some View {
+        let offset = max(0, min(panelWidth, (panelOpen ? panelWidth : 0) + drag.offset))
+        content
+            // The shadow comes from a plain shape behind the screen: a shadow on the
+            // whole NavigationStack would re-render offscreen on every change.
+            .background {
+                if offset > 0 {
+                    Rectangle()
+                        .fill(canvas)
+                        .shadow(color: .black.opacity(0.18), radius: 12)
+                        .ignoresSafeArea()
+                }
+            }
+            .offset(x: offset)
+    }
+}
+
 /// A leftward pan on the panel's navigation controller that closes the panel. It only begins
 /// for mostly-horizontal leftward motion, so the list still scrolls vertically; once it
 /// begins it cancels the list's own scrolling and the row's tap.
@@ -638,6 +659,8 @@ struct PanelClosePan: UIViewRepresentable {
         var onChanged: (CGFloat) -> Void = { _ in }
         var onEnded: (CGFloat, CGFloat) -> Void = { _, _ in }
         private var recognizer: UIPanGestureRecognizer?
+        /// The list held still while the pan runs.
+        private weak var heldScrollView: UIScrollView?
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -688,15 +711,18 @@ struct PanelClosePan: UIViewRepresentable {
         }
 
         @objc private func handle(_ pan: UIPanGestureRecognizer) {
-            let translation = pan.translation(in: pan.view).x
+            // In the window's space, which nothing moves.
+            let space = pan.view?.window
+            let translation = pan.translation(in: space).x
             switch pan.state {
             case .began:
-                // Stop any scroll view under the finger, so the list doesn't drift while closing.
+                // Hold the list under the finger still until the pan ends.
                 var view = pan.view?.hitTest(pan.location(in: pan.view), with: nil)
                 while let current = view {
-                    if let scroll = current as? UIScrollView {
-                        scroll.panGestureRecognizer.isEnabled = false
-                        scroll.panGestureRecognizer.isEnabled = true
+                    if let scroll = current as? UIScrollView, scroll.isScrollEnabled {
+                        scroll.isScrollEnabled = false
+                        heldScrollView = scroll
+                        break
                     }
                     view = current.superview
                 }
@@ -704,12 +730,19 @@ struct PanelClosePan: UIViewRepresentable {
             case .changed:
                 onChanged(translation)
             case .ended:
-                onEnded(translation, pan.velocity(in: pan.view).x)
+                releaseScrollView()
+                onEnded(translation, pan.velocity(in: space).x)
             case .cancelled, .failed:
+                releaseScrollView()
                 onEnded(0, 0)
             default:
                 break
             }
+        }
+
+        private func releaseScrollView() {
+            heldScrollView?.isScrollEnabled = true
+            heldScrollView = nil
         }
     }
 }
