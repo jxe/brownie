@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Pushed from the meditation list. The title sits at the top as a field (Foundation and tags
+/// Pushed from the meditation list. The title sits at the top as a field (Evergreen and tags
 /// are in the title bar's ⋯ menu), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
 /// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
 /// pause and stop are on the now-playing bar, and it keeps playing after you go back. Opening
@@ -293,7 +293,7 @@ struct MeditationEditorView: View {
 
     private var isFoundation: Bool { meta.tags.contains(EraIndex.timelessTag) }
 
-    /// The title as a plain field. Foundation and tags are in the title bar's ⋯ menu.
+    /// The title as a plain field. Evergreen and tags are in the title bar's ⋯ menu.
     private var headerFields: some View {
         TextField("Title", text: Binding(
             get: { meta.title },
@@ -317,9 +317,9 @@ struct MeditationEditorView: View {
                 setHeader(title: meta.title, tags: tags)
             } label: {
                 if isFoundation {
-                    Label("Foundation", systemImage: "checkmark")
+                    Label("Evergreen", systemImage: "checkmark")
                 } else {
-                    Label("Foundation", systemImage: "square.stack.3d.up")
+                    Label("Evergreen", systemImage: "leaf")
                 }
             }
             let others = meta.tags.filter { $0 != EraIndex.timelessTag }

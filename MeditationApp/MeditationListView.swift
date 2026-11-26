@@ -63,8 +63,8 @@ struct MeditationListView: View {
         fileTags[url]?.contains(EraIndex.timelessTag) == true
     }
 
-    /// This era's meditations: made in it or brought along to it. Foundations are listed
-    /// once, under Foundations.
+    /// This era's meditations: made in it or brought along to it. Evergreen meditations are listed
+    /// once, under Evergreen.
     private var currentFiles: [URL] {
         let base = files.filter { !isTimeless($0) }
         guard let current = eraIndex.current else { return base }
@@ -180,11 +180,11 @@ struct MeditationListView: View {
                                     listRow(for: url, section: "always")
                                 }
                                 if timelessFiles.isEmpty {
-                                    emptyRow("Long-press a meditation and choose Make a Foundation.")
+                                    emptyRow("Long-press a meditation and choose Make Evergreen.")
                                 }
                             }
                         } header: {
-                            sectionToggle("Foundations", isExpanded: $foundationsExpanded)
+                            sectionToggle("Evergreen", isExpanded: $foundationsExpanded)
                         }
                         // Last era's meditations that haven't come along yet, to listen to and
                         // bring along from the long-press menu.
@@ -673,9 +673,9 @@ struct MeditationListView: View {
             }
             Button { toggleFoundation(url) } label: {
                 if isTimeless(url) {
-                    Label("Not a Foundation", systemImage: "square.stack.3d.up.slash")
+                    Label("Not Evergreen", systemImage: "xmark.circle")
                 } else {
-                    Label("Make a Foundation", systemImage: "square.stack.3d.up")
+                    Label("Make Evergreen", systemImage: "leaf")
                 }
             }
             if !bringAlong && !isPast && eraIndex.wasBroughtAlong(url) {

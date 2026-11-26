@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The left panel: Settings, then History (streak, past eras, past entries).
+/// The left panel: History (streak, leaderboard, past eras, past entries), with Settings
+/// as a toolbar button.
 struct JournalView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(EmotionStore.self) private var store
@@ -121,6 +122,16 @@ struct JournalView: View {
                 }
             }
 
+            // Which feelings have taken the most time, over every check-in
+            Section {
+                Button { openFromPanel(.leaderboard) } label: {
+                    PanelLinkLabel { Text("Emotion Leaderboard") }
+                }
+                // A list tints button text with the accent color; these read as plain rows.
+                .tint(.primary)
+                .listRowBackground(Color.clear)
+            }
+
             // Earlier eras, each opening its meditations
             if !pastEras.isEmpty {
                 Section("Past Eras") {
@@ -168,37 +179,14 @@ struct JournalView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(sidebarColor)
-        // Settings stays put at the bottom of the panel, below everything History scrolls.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                Button { openFromPanel(.settings) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "gear")
-                            .foregroundStyle(.secondary)
-                        Text("Settings")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .background(sidebarColor)
-        }
         .navigationTitle("History")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(sidebarColor, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .onAppear { eraIndex = EraIndex.load() }
         .toolbar {
-            Button { openFromPanel(.leaderboard) } label: {
-                Label("Emotion Leaderboard", systemImage: "chart.bar.xaxis")
+            Button { openFromPanel(.settings) } label: {
+                Label("Settings", systemImage: "gear")
             }
 
             if !pastRows.isEmpty {
@@ -326,22 +314,6 @@ struct OpenTodosSection: View {
 struct EmotionLeaderboardView: View {
     @Environment(\.appPalette) private var palette
     @Environment(EmotionStore.self) private var store
-    @State private var metric: Metric = .time
-    @State private var order: Order = .most
-
-    private enum Metric: String, CaseIterable, Identifiable {
-        case time = "Time"
-        case taps = "Taps"
-
-        var id: Self { self }
-    }
-
-    private enum Order: String, CaseIterable, Identifiable {
-        case most = "Most"
-        case least = "Least"
-
-        var id: Self { self }
-    }
 
     private struct Standing: Identifiable {
         let name: String
@@ -376,34 +348,16 @@ struct EmotionLeaderboardView: View {
         return totals.map { name, total in
             Standing(name: name, emoji: total.emoji, seconds: total.seconds, taps: total.taps)
         }
+        // Most time first; taps break ties.
         .sorted { lhs, rhs in
-            let lhsValue = metric == .time ? lhs.seconds : Double(lhs.taps)
-            let rhsValue = metric == .time ? rhs.seconds : Double(rhs.taps)
-            if lhsValue != rhsValue {
-                return order == .most ? lhsValue > rhsValue : lhsValue < rhsValue
-            }
+            if lhs.seconds != rhs.seconds { return lhs.seconds > rhs.seconds }
+            if lhs.taps != rhs.taps { return lhs.taps > rhs.taps }
             return lhs.name < rhs.name
         }
     }
 
     var body: some View {
         List {
-            Section {
-                Picker("Measure", selection: $metric) {
-                    ForEach(Metric.allCases) { metric in
-                        Text(metric.rawValue).tag(metric)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Picker("Order", selection: $order) {
-                    ForEach(Order.allCases) { order in
-                        Text(order.rawValue).tag(order)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
             Section {
                 ForEach(Array(standings.enumerated()), id: \.element.id) { index, standing in
                     HStack(spacing: 12) {
@@ -420,10 +374,10 @@ struct EmotionLeaderboardView: View {
                         Spacer()
 
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text(primaryValue(for: standing))
+                            Text(JournalTimeFormatter.string(from: standing.seconds))
                                 .fontWeight(.semibold)
                                 .monospacedDigit()
-                            Text(secondaryValue(for: standing))
+                            Text("\(standing.taps) taps")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
@@ -438,20 +392,6 @@ struct EmotionLeaderboardView: View {
         .background(palette.panel)
         .navigationTitle("Emotion Leaderboard")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func primaryValue(for standing: Standing) -> String {
-        if metric == .time {
-            return JournalTimeFormatter.string(from: standing.seconds)
-        }
-        return "\(standing.taps) taps"
-    }
-
-    private func secondaryValue(for standing: Standing) -> String {
-        if metric == .time {
-            return "\(standing.taps) taps"
-        }
-        return JournalTimeFormatter.string(from: standing.seconds)
     }
 }
 

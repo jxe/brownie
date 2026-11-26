@@ -29,9 +29,9 @@ Or on a separate `#` line immediately after the title (the line must contain onl
 
 Tags are used by the meditation list to filter and group meditations.
 
-### Foundations and eras
+### Evergreen and eras
 
-`#timeless` marks a **Foundation**: a meditation that is always shown, whatever era it is. The list shows only this tag; other tags stay in the file but are hidden.
+`#timeless` marks an **Evergreen** meditation: one that is always shown, whatever era it is. The list shows only this tag; other tags stay in the file but are hidden.
 
 **Eras** are stretches of time, from the day one is started until the next one, and they live outside the scripts. `eras.json`, next to the `.med` files, lists them newest first; the first one is the current era. A meditation belongs to the era it was made in (by its filename's date, else when the file was created), and to any era it was brought along to (`kept`, by filename):
 
