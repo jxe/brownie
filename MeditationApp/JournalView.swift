@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The left panel: History (streak, leaderboard, past eras, past entries), with Settings
+/// The left panel: History (streak, leaderboard, past eras, past entries by day), with Settings
 /// as a toolbar button.
 struct JournalView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -14,87 +14,45 @@ struct JournalView: View {
         return eraIndex.eras.dropFirst().map { .era($0.id) } + [.older]
     }
 
-    /// Journal entries and done to-dos, newest first.
-    private var pastRows: [PastRow] {
-        (store.journalEntries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo))
-            .sorted { $0.date > $1.date }
+    private var pastRows: [PastRow] { PastRow.all(in: store) }
+
+    /// Past rows grouped by the day they happened, newest day first.
+    private var pastDays: [(day: Date, rows: [PastRow])] {
+        let calendar = Calendar.current
+        var days: [(day: Date, rows: [PastRow])] = []
+        for row in pastRows {
+            let day = calendar.startOfDay(for: row.date)
+            if days.last?.day == day {
+                days[days.count - 1].rows.append(row)
+            } else {
+                days.append((day, [row]))
+            }
+        }
+        return days
     }
 
-    private var markdownExport: String {
-        pastRows.map { row -> String in
-            let entry: JournalEntry
-            switch row {
-            case .entry(let e):
-                entry = e
-            case .todo(let t):
-                let dateStr = (t.doneAt ?? t.createdAt).formatted(date: .long, time: .shortened)
-                return """
-                # \(t.emoji) \(t.emotionName) to-do — \(dateStr)
-
-                **Question:** \(t.question)
-
-                **\(t.concernPrompt):** \(t.concern)
-
-                **Long-term value or change:** \(t.value)
-
-                **Did:**
-                \(t.filledActions.map { "- \($0.sentence)" }.joined(separator: "\n"))
-                """
-            }
-            let dateStr = entry.timestamp.formatted(date: .long, time: .shortened)
-            switch entry.content {
-            case .reflection(let r):
-                return """
-                # \(r.emoji) \(r.emotionName) — \(dateStr)
-
-                **Question:** \(r.question)
-
-                **Reflection:** \(r.answer)
-                """
-            case .meditation(let m):
-                return """
-                # 🧘 \(m.title) — \(dateStr)
-
-                **Meditation:** Helped
-                """
-            case .checkInSession(let s):
-                let engagedStr = JournalTimeFormatter.string(from: s.engagementSeconds)
-                let lines = s.emotions.map { tally in
-                    let countString = "×\(tally.count)"
-                    if let seconds = tally.engagementSeconds, seconds > 0 {
-                        return "- \(tally.emoji) \(tally.name) \(JournalTimeFormatter.string(from: seconds)) (\(countString))"
-                    }
-                    return "- \(tally.emoji) \(tally.name) \(countString)"
-                }.joined(separator: "\n")
-                return """
-                # 🪷 Check-in — \(dateStr)
-
-                **Engaged:** \(engagedStr)
-
-                \(lines)
-                """
-            }
-        }.joined(separator: "\n\n---\n\n")
+    /// "Today", "Yesterday", then "Tue 24 Nov" (with the year once it isn't this one).
+    private func dayHeader(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        let weekday = day.formatted(.dateTime.weekday(.abbreviated))
+        let dayMonth = day.formatted(.dateTime.day().month(.abbreviated))
+        let sameYear = calendar.isDate(day, equalTo: .now, toGranularity: .year)
+        return "\(weekday) \(dayMonth)" + (sameYear ? "" : " \(day.formatted(.dateTime.year()))")
     }
 
+    /// One line per past row; a tap opens its details on the main screen.
     @ViewBuilder
     private func historyRow(_ row: PastRow) -> some View {
-        switch row {
-        case .todo(let todo):
-            DoneTodoRow(todo: todo)
-        case .entry(let entry):
-            switch entry.content {
-            case .reflection(let r):
-                ReflectionEntryRow(entry: entry, reflection: r)
-            case .meditation(let m):
-                MeditationLogRow(entry: entry, meditation: m)
-            case .checkInSession(let s):
-                Button { openFromPanel(.checkIn(entry.id)) } label: {
-                    PanelLinkLabel { CheckInSessionRow(entry: entry, session: s) }
-                }
-                // A list tints button text with the accent color; these read as plain rows.
-                .tint(.primary)
+        if let page = row.page {
+            Button { openFromPanel(page) } label: {
+                PanelLinkLabel { PastRowLine(row: row) }
             }
+            // A list tints button text with the accent color; these read as plain rows.
+            .tint(.primary)
+        } else {
+            PastRowLine(row: row)
         }
     }
 
@@ -146,10 +104,10 @@ struct JournalView: View {
                 }
             }
 
-            // Past entries section
-            if !pastRows.isEmpty {
-                Section("Past Entries") {
-                    ForEach(pastRows) { row in
+            // Past entries, under a header for each day
+            ForEach(pastDays, id: \.day) { day in
+                Section(dayHeader(day.day)) {
+                    ForEach(day.rows) { row in
                         historyRow(row)
                             .listRowBackground(Color.clear)
                     }
@@ -178,14 +136,6 @@ struct JournalView: View {
         .toolbar {
             Button { openFromPanel(.settings) } label: {
                 Label("Settings", systemImage: "gear")
-            }
-
-            if !pastRows.isEmpty {
-                ShareLink(
-                    item: markdownExport,
-                    subject: Text("Emotion Journal"),
-                    message: Text("My emotional reflections")
-                )
             }
         }
     }
@@ -397,127 +347,6 @@ private extension JournalView {
     }
 }
 
-private struct ReflectionEntryRow: View {
-    let entry: JournalEntry
-    let reflection: JournalEntry.Content.Reflection
-    @State private var isExpanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(reflection.emoji)
-                Text(reflection.emotionName)
-                    .font(.body)
-                    .fontWeight(.medium)
-                Spacer()
-                Text(entry.timestamp, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text(reflection.question)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text(reflection.answer)
-                .font(.subheadline)
-                .lineLimit(isExpanded ? nil : 3)
-                .foregroundStyle(.primary)
-
-            if !isExpanded && reflection.answer.count > 120 {
-                Button("Show more") {
-                    withAnimation { isExpanded = true }
-                }
-                .font(.caption)
-            } else if isExpanded {
-                Button("Show less") {
-                    withAnimation { isExpanded = false }
-                }
-                .font(.caption)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-private struct MeditationLogRow: View {
-    let entry: JournalEntry
-    let meditation: JournalEntry.Content.Meditation
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color.accentColor)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(meditation.title)
-                    .font(.body)
-                    .fontWeight(.medium)
-                Text("Meditation helped")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(entry.timestamp, style: .date)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-private struct CheckInSessionRow: View {
-    let entry: JournalEntry
-    let session: JournalEntry.Content.CheckInSession
-
-    private var topEmotions: ArraySlice<JournalEntry.Content.CheckInSession.EmotionTally> {
-        session.emotions.prefix(4)
-    }
-
-    private var moreCount: Int {
-        max(0, session.emotions.count - 4)
-    }
-
-    private var engagedString: String {
-        JournalTimeFormatter.string(from: session.engagementSeconds)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text("Check-in")
-                    .font(.body)
-                    .fontWeight(.medium)
-                Spacer()
-                Text(entry.timestamp, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 10) {
-                ForEach(Array(topEmotions), id: \.name) { tally in
-                    HStack(spacing: 3) {
-                        Text(tally.emoji)
-                        Text(tally.summaryString)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-                if moreCount > 0 {
-                    Text("+\(moreCount) more")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
-            Text("\(engagedString) engaged")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
 struct CheckInSessionDetailView: View {
     @Environment(\.appPalette) private var palette
     let entry: JournalEntry
@@ -571,13 +400,6 @@ struct CheckInSessionDetailView: View {
 }
 
 private extension JournalEntry.Content.CheckInSession.EmotionTally {
-    var summaryString: String {
-        if let engagementSeconds, engagementSeconds > 0 {
-            return JournalTimeFormatter.string(from: engagementSeconds)
-        }
-        return "\(count)"
-    }
-
     var detailTimeString: String {
         if let engagementSeconds, engagementSeconds > 0 {
             return JournalTimeFormatter.string(from: engagementSeconds)
@@ -604,6 +426,25 @@ private enum JournalTimeFormatter {
 private enum PastRow: Identifiable {
     case entry(JournalEntry)
     case todo(FeelingTodo)
+
+    /// Journal entries and done to-dos, newest first.
+    static func all(in store: EmotionStore) -> [PastRow] {
+        (store.journalEntries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo))
+            .sorted { $0.date > $1.date }
+    }
+
+    /// The page its tap opens on the main screen. A meditation that helped has nothing more to show.
+    var page: PanelPage? {
+        switch self {
+        case .todo(let todo): return .todo(todo.id)
+        case .entry(let entry):
+            switch entry.content {
+            case .checkInSession: return .checkIn(entry.id)
+            case .reflection: return .reflection(entry.id)
+            case .meditation: return nil
+            }
+        }
+    }
 
     var id: UUID {
         switch self {
@@ -658,40 +499,167 @@ private func todoSource(_ todo: FeelingTodo) -> String {
     return "\(todo.emoji) \(todo.emotionName) · \(day)" + (companions.isEmpty ? "" : ", with \(companions)")
 }
 
-private struct DoneTodoRow: View {
-    let todo: FeelingTodo
-    @Environment(EmotionStore.self) private var store
+/// A past row on one line: "🪷 😠 😢 🙏 · 12m", "✓ Call Sam · 😠", "🧘 Body scan", "😠 Anger".
+private struct PastRowLine: View {
+    let row: PastRow
+
+    private var text: String {
+        switch row {
+        case .todo(let todo):
+            let did = todo.filledActions.first?.sentence ?? todo.emotionName
+            return "✓ \(did) · \(todo.emoji)"
+        case .entry(let entry):
+            switch entry.content {
+            case .checkInSession(let s):
+                let emojis = s.emotions.prefix(4).map(\.emoji).joined(separator: " ")
+                let time = JournalTimeFormatter.string(from: s.engagementSeconds)
+                return emojis.isEmpty ? "🪷 \(time)" : "🪷 \(emojis) · \(time)"
+            case .meditation(let m):
+                return "🧘 \(m.title)"
+            case .reflection(let r):
+                return "\(r.emoji) \(r.emotionName)"
+            }
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(todo.emoji)
-                Text(todo.emotionName)
-                    .fontWeight(.medium)
-                Spacer()
-                Text((todo.doneAt ?? todo.createdAt).formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        Text(text)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.vertical, 2)
+    }
+}
+
+/// A finished to-do opened from History: what it was about, and what was done.
+struct DoneTodoDetailView: View {
+    @Environment(\.appPalette) private var palette
+    @Environment(EmotionStore.self) private var store
+    let todo: FeelingTodo
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Feeling", value: "\(todo.emoji) \(todo.emotionName)")
+                if let doneAt = todo.doneAt {
+                    LabeledContent("Done", value: doneAt.formatted(date: .abbreviated, time: .shortened))
+                }
             }
-            ForEach(todo.filledActions) { action in
-                Label(action.sentence, systemImage: action.doneAt == nil ? "circle" : "checkmark.circle.fill")
-                    .font(.subheadline)
+            Section("Did") {
+                ForEach(todo.filledActions) { action in
+                    Label(action.sentence, systemImage: action.doneAt == nil ? "circle" : "checkmark.circle.fill")
+                }
             }
-            Text("\(todo.concernPrompt): \(todo.concern)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("Toward: \(todo.value)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Section(todo.concernPrompt) {
+                Text(todo.concern)
+            }
+            Section("Toward") {
+                Text(todo.value)
+            }
+            if !todo.question.isEmpty {
+                Section("Question") {
+                    Text(todo.question)
+                }
+            }
+            if todo.doneAt != nil {
+                Section {
+                    Button {
+                        store.reopenTodo(todo)
+                    } label: {
+                        Label("Reopen", systemImage: "arrow.uturn.backward")
+                    }
+                }
+            }
         }
-        .padding(.vertical, 4)
-        .contextMenu {
-            Button {
-                store.reopenTodo(todo)
-            } label: {
-                Label("Reopen", systemImage: "arrow.uturn.backward")
+        .scrollContentBackground(.hidden)
+        .background(palette.panel)
+        .navigationTitle("To-do")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// An old reflection opened from History.
+struct ReflectionDetailView: View {
+    @Environment(\.appPalette) private var palette
+    let entry: JournalEntry
+    let reflection: JournalEntry.Content.Reflection
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Feeling", value: "\(reflection.emoji) \(reflection.emotionName)")
+                LabeledContent("When", value: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+            }
+            Section("Question") {
+                Text(reflection.question)
+            }
+            Section("Reflection") {
+                Text(reflection.answer)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(palette.panel)
+        .navigationTitle("Reflection")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// The whole journal as Markdown, for Settings' Export Journal.
+enum JournalExport {
+    static func markdown(_ store: EmotionStore) -> String {
+        PastRow.all(in: store).map { row -> String in
+            let entry: JournalEntry
+            switch row {
+            case .entry(let e):
+                entry = e
+            case .todo(let t):
+                let dateStr = (t.doneAt ?? t.createdAt).formatted(date: .long, time: .shortened)
+                return """
+                # \(t.emoji) \(t.emotionName) to-do — \(dateStr)
+
+                **Question:** \(t.question)
+
+                **\(t.concernPrompt):** \(t.concern)
+
+                **Long-term value or change:** \(t.value)
+
+                **Did:**
+                \(t.filledActions.map { "- \($0.sentence)" }.joined(separator: "\n"))
+                """
+            }
+            let dateStr = entry.timestamp.formatted(date: .long, time: .shortened)
+            switch entry.content {
+            case .reflection(let r):
+                return """
+                # \(r.emoji) \(r.emotionName) — \(dateStr)
+
+                **Question:** \(r.question)
+
+                **Reflection:** \(r.answer)
+                """
+            case .meditation(let m):
+                return """
+                # 🧘 \(m.title) — \(dateStr)
+
+                **Meditation:** Helped
+                """
+            case .checkInSession(let s):
+                let engagedStr = JournalTimeFormatter.string(from: s.engagementSeconds)
+                let lines = s.emotions.map { tally in
+                    let countString = "×\(tally.count)"
+                    if let seconds = tally.engagementSeconds, seconds > 0 {
+                        return "- \(tally.emoji) \(tally.name) \(JournalTimeFormatter.string(from: seconds)) (\(countString))"
+                    }
+                    return "- \(tally.emoji) \(tally.name) \(countString)"
+                }.joined(separator: "\n")
+                return """
+                # 🪷 Check-in — \(dateStr)
+
+                **Engaged:** \(engagedStr)
+
+                \(lines)
+                """
+            }
+        }.joined(separator: "\n\n---\n\n")
     }
 }
 

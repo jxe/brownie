@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(MeditationPlayer.self) var player
+    @Environment(EmotionStore.self) private var emotionStore
     @AppStorage(AppPalette.preferenceKey) private var palette = AppPalette.defaultPalette
     @State private var isRefreshing = false
     @State private var metadataQuery: NSMetadataQuery?
@@ -161,6 +162,19 @@ struct SettingsView: View {
                     ArchivedMeditationsView()
                 } label: {
                     Label("Archived Meditations", systemImage: "archivebox")
+                }
+            }
+
+            // Every past check-in, finished to-do, reflection and helpful meditation, as Markdown.
+            if !emotionStore.journalEntries.isEmpty || !emotionStore.doneTodos.isEmpty {
+                Section {
+                    ShareLink(
+                        item: JournalExport.markdown(emotionStore),
+                        subject: Text("Emotion Journal"),
+                        message: Text("My emotional reflections")
+                    ) {
+                        Label("Export Journal", systemImage: "square.and.arrow.up")
+                    }
                 }
             }
 

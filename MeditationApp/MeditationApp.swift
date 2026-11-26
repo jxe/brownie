@@ -60,6 +60,8 @@ enum PanelPage: Hashable {
     case leaderboard
     case era(EraSelection)
     case checkIn(UUID)
+    case todo(UUID)
+    case reflection(UUID)
 }
 
 private struct PanelPageView: View {
@@ -80,6 +82,19 @@ private struct PanelPageView: View {
                 CheckInSessionDetailView(entry: entry, session: session)
             } else {
                 ContentUnavailableView("Check-in Not Found", systemImage: "clock")
+            }
+        case .todo(let id):
+            if let todo = store.todos.first(where: { $0.id == id }) {
+                DoneTodoDetailView(todo: todo)
+            } else {
+                ContentUnavailableView("To-do Not Found", systemImage: "clock")
+            }
+        case .reflection(let id):
+            if let entry = store.journalEntries.first(where: { $0.id == id }),
+               case .reflection(let reflection) = entry.content {
+                ReflectionDetailView(entry: entry, reflection: reflection)
+            } else {
+                ContentUnavailableView("Reflection Not Found", systemImage: "clock")
             }
         }
     }
@@ -163,6 +178,16 @@ struct ContentView: View {
                 if panelMounted {
                     NavigationStack {
                         JournalView()
+                            // A leftward swipe anywhere on the panel, rows included, closes it,
+                            // following the finger like the drag on the main screen does.
+                            .background(
+                                PanelClosePan(isEnabled: panelOpen) { translation in
+                                    dragOffset = min(0, translation)
+                                } onEnded: { translation, velocity in
+                                    setPanel(open: translation + velocity * 0.2 > -panelWidth / 3)
+                                }
+                                .frame(width: 0, height: 0)
+                            )
                     }
                     .environment(\.openFromPanel, { page in
                         mainPath = [page]
@@ -575,6 +600,108 @@ struct PanelEdgePan: UIViewRepresentable {
             let translation = pan.translation(in: pan.view).x
             switch pan.state {
             case .began, .changed:
+                onChanged(translation)
+            case .ended:
+                onEnded(translation, pan.velocity(in: pan.view).x)
+            case .cancelled, .failed:
+                onEnded(0, 0)
+            default:
+                break
+            }
+        }
+    }
+}
+
+/// A leftward pan on the panel's navigation controller that closes the panel. It only begins
+/// for mostly-horizontal leftward motion, so the list still scrolls vertically; once it
+/// begins it cancels the list's own scrolling and the row's tap.
+struct PanelClosePan: UIViewRepresentable {
+    var isEnabled: Bool
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (_ translation: CGFloat, _ velocity: CGFloat) -> Void
+
+    func makeUIView(context: Context) -> PanelClosePanView {
+        let view = PanelClosePanView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: PanelClosePanView, context: Context) {
+        uiView.isEnabled = isEnabled
+        uiView.onChanged = onChanged
+        uiView.onEnded = onEnded
+    }
+
+    final class PanelClosePanView: UIView {
+        var isEnabled = true
+        private lazy var panDelegate = PanDelegate(view: self)
+        var onChanged: (CGFloat) -> Void = { _ in }
+        var onEnded: (CGFloat, CGFloat) -> Void = { _, _ in }
+        private var recognizer: UIPanGestureRecognizer?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil, recognizer == nil else { return }
+            DispatchQueue.main.async { [weak self] in self?.attach() }
+        }
+
+        private func attach() {
+            guard recognizer == nil, let nav = owningNavigationController() else { return }
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(handle(_:)))
+            pan.delegate = panDelegate
+            nav.view.addGestureRecognizer(pan)
+            recognizer = pan
+        }
+
+        private func owningNavigationController() -> UINavigationController? {
+            var responder: UIResponder? = self
+            while let current = responder {
+                if let vc = current as? UIViewController, let nav = vc.navigationController {
+                    return nav
+                }
+                responder = current.next
+            }
+            return nil
+        }
+
+        fileprivate func shouldBegin(_ pan: UIPanGestureRecognizer) -> Bool {
+            guard isEnabled else { return false }
+            let v = pan.velocity(in: pan.view)
+            return v.x < 0 && abs(v.x) > abs(v.y)
+        }
+
+        private final class PanDelegate: NSObject, UIGestureRecognizerDelegate {
+            weak var view: PanelClosePanView?
+
+            init(view: PanelClosePanView) { self.view = view }
+
+            func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+                guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+                return view?.shouldBegin(pan) ?? false
+            }
+
+            /// Alongside the list's scrolling, which it then stops (see `handle`).
+            func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                                   shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+                true
+            }
+        }
+
+        @objc private func handle(_ pan: UIPanGestureRecognizer) {
+            let translation = pan.translation(in: pan.view).x
+            switch pan.state {
+            case .began:
+                // Stop any scroll view under the finger, so the list doesn't drift while closing.
+                var view = pan.view?.hitTest(pan.location(in: pan.view), with: nil)
+                while let current = view {
+                    if let scroll = current as? UIScrollView {
+                        scroll.panGestureRecognizer.isEnabled = false
+                        scroll.panGestureRecognizer.isEnabled = true
+                    }
+                    view = current.superview
+                }
+                onChanged(translation)
+            case .changed:
                 onChanged(translation)
             case .ended:
                 onEnded(translation, pan.velocity(in: pan.view).x)
