@@ -329,6 +329,20 @@ struct MeditationListView: View {
             .onChange(of: panelIsOpen) { _, isOpen in
                 if !isOpen { hasGoodVoice = MeditationPlayer.hasGoodVoice }
             }
+            // A tap on the now-playing bar: open the playing meditation's editor, over
+            // whatever the main screen has pushed. Already open on it: nothing to do.
+            .onChange(of: EditorRequest.shared.url) { _, url in
+                guard shelf == .home, let url else { return }
+                EditorRequest.shared.url = nil
+                if showingEditor {
+                    guard editorURL != url else { return }
+                    // Another meditation's editor: close it, then open this one.
+                    showingEditor = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { editFile(url) }
+                } else {
+                    editFile(url)
+                }
+            }
             .navigationDestination(isPresented: $showingEditor) {
                 MeditationEditorView(
                     content: $editorContent,
@@ -1255,6 +1269,7 @@ struct NowPlayingBar: View {
 /// the first seconds ticking) already shows on it, and the landing changes nothing.
 struct NowPlayingBarContent: View {
     @Environment(MeditationPlayer.self) private var player
+    @Environment(\.openNowPlaying) private var openNowPlaying
     /// What the bar last showed while something was on. A stop resets the player at once
     /// (no title, no time, not playing), but the bar is still sliding away then, so it keeps
     /// showing what was playing instead of changing under your finger on its way out.
@@ -1284,30 +1299,38 @@ struct NowPlayingBarContent: View {
         let shown = isOn ? live : held
         let title = shown.title
         HStack(spacing: 10) {
-            PlayingPulseDot(isPulsing: shown.isPlaying)
-                .frame(width: 12, height: 12)
-            // Switching to another meditation while the bar is up rolls the title and time
-            // over to the new one: the old pair rises out as the new one comes up from below.
-            ZStack(alignment: .leading) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                    if shown.isPreparing {
-                        Text("Starting…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        PlaybackTimeLabel()
+            // The dot and title open the playing meditation's editor.
+            Button { openNowPlaying() } label: {
+                HStack(spacing: 10) {
+                    PlayingPulseDot(isPulsing: shown.isPlaying)
+                        .frame(width: 12, height: 12)
+                    // Switching to another meditation while the bar is up rolls the title and time
+                    // over to the new one: the old pair rises out as the new one comes up from below.
+                    ZStack(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(title)
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            if shown.isPreparing {
+                                Text("Starting…")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                PlaybackTimeLabel()
+                            }
+                        }
+                        .id(shown.url)
+                        .transition(.push(from: .bottom))
                     }
+                    .clipped()
+                    .animation(.snappy(duration: 0.3), value: shown.url)
+                    Spacer(minLength: 8)
                 }
-                .id(shown.url)
-                .transition(.push(from: .bottom))
+                .contentShape(Rectangle())
             }
-            .clipped()
-            .animation(.snappy(duration: 0.3), value: shown.url)
-            Spacer(minLength: 8)
+            .buttonStyle(BarPressStyle())
+            .accessibilityLabel("Edit \(title)")
             Group {
                 if shown.isPreparing {
                     ProgressView()
@@ -1345,6 +1368,19 @@ struct NowPlayingBarContent: View {
         .onChange(of: live, initial: true) { _, now in
             if isOn { held = now }
         }
+    }
+}
+
+/// The now-playing bar's title area, lightly shaded while pressed.
+private struct BarPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.vertical, 6)
+            .padding(.leading, 20)
+            .background(Color.primary.opacity(configuration.isPressed ? 0.08 : 0))
+            .padding(.vertical, -6)
+            .padding(.leading, -20)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 

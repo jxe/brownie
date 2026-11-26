@@ -6,6 +6,7 @@ struct JournalView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(EmotionStore.self) private var store
     @Environment(\.openFromPanel) private var openFromPanel
+    @Environment(\.closePanel) private var closePanel
     @State private var eraIndex = EraIndex()
 
     /// Eras before the current one, newest first, then what was made before the first era.
@@ -44,10 +45,22 @@ struct JournalView: View {
         return "\(weekday) \(dayMonth)" + (sameYear ? "" : " \(day.formatted(.dateTime.year()))")
     }
 
+    private func play(_ url: URL) {
+        if player.currentSourceURL != url,
+           let content = FileManager.default.readMeditation(at: url) {
+            player.play(MeditationParser.parse(content), sourceURL: url)
+        }
+        closePanel()
+    }
+
     /// One line per past row; a tap opens its details on the main screen.
     @ViewBuilder
     private func historyRow(_ row: PastRow) -> some View {
-        if let page = row.page {
+        if case .listened(_, _, let url?) = row {
+            // A meditation listened to a lot plays again, and the panel closes onto its bar.
+            Button { play(url) } label: { PastRowLine(row: row) }
+                .tint(.primary)
+        } else if let page = row.page {
             Button { openFromPanel(page) } label: {
                 PanelLinkLabel { PastRowLine(row: row) }
             }
@@ -410,18 +423,15 @@ private extension JournalEntry.Content.CheckInSession.EmotionTally {
     }
 }
 
+/// "45s", "38m", "1h 38m", "2h".
 private enum JournalTimeFormatter {
     static func string(from seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds))
-        if total < 60 {
-            return "\(total)s"
-        }
-
-        let roundedMinutes = (Double(total) / 60 * 10).rounded() / 10
-        if roundedMinutes.rounded() == roundedMinutes {
-            return "\(Int(roundedMinutes))m"
-        }
-        return String(format: "%.1fm", roundedMinutes)
+        if total < 60 { return "\(total)s" }
+        let minutes = total / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60, rest = minutes % 60
+        return rest == 0 ? "\(hours)h" : "\(hours)h \(rest)m"
     }
 }
 
@@ -429,8 +439,8 @@ private enum PastRow: Identifiable {
     case entry(JournalEntry)
     case todo(FeelingTodo)
     /// A day a meditation was listened to for `longListenSeconds` or more; `title` is its
-    /// title, or its filename once the file is gone.
-    case listened(ListeningHistory.DayListening, title: String)
+    /// title, or its filename once the file is gone (and `url` nil).
+    case listened(ListeningHistory.DayListening, title: String, url: URL?)
 
     /// A day's listening to one meditation that earns a row of its own.
     static let longListenSeconds: TimeInterval = 30 * 60
@@ -438,27 +448,28 @@ private enum PastRow: Identifiable {
     /// Journal entries, done to-dos and long listens, newest first.
     static func all(in store: EmotionStore, listening: ListeningHistory) -> [PastRow] {
         let listens = listening.days(atLeast: longListenSeconds).map { day in
-            PastRow.listened(day, title: meditationTitle(day.filename))
+            let file = meditationFile(day.filename)
+            return PastRow.listened(day, title: file?.title ?? day.filename, url: file?.url)
         }
         return (store.journalEntries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo) + listens)
             .sorted { $0.date > $1.date }
     }
 
-    /// The meditation's title from its file, here or archived; its filename if it's gone.
-    private static func meditationTitle(_ filename: String) -> String {
+    /// The meditation's file, here or archived, and its title; nil if it's gone.
+    private static func meditationFile(_ filename: String) -> (url: URL, title: String)? {
         let directory = FileManager.default.meditationsDirectory
         for url in [directory.appendingPathComponent(filename + ".med"),
                     directory.appendingPathComponent("Archive").appendingPathComponent(filename + ".med")] {
             if let content = FileManager.default.readMeditation(at: url) {
                 let title = MeditationParser.parseMetadata(content).title
-                return title.isEmpty ? filename : title
+                return (url, title.isEmpty ? filename : title)
             }
         }
-        return filename
+        return nil
     }
 
-    /// The page its tap opens on the main screen. A meditation that helped, or one listened
-    /// to a lot, has nothing more to show.
+    /// The page its tap opens on the main screen. A meditation that helped has nothing more
+    /// to show; one listened to a lot plays instead (see `JournalView.historyRow`).
     var page: PanelPage? {
         switch self {
         case .listened: return nil
@@ -476,7 +487,7 @@ private enum PastRow: Identifiable {
         switch self {
         case .entry(let entry): entry.id.uuidString
         case .todo(let todo): todo.id.uuidString
-        case .listened(let day, _): "\(day.filename) \(ListeningHistory.dayKey(day.day))"
+        case .listened(let day, _, _): "\(day.filename) \(ListeningHistory.dayKey(day.day))"
         }
     }
 
@@ -484,7 +495,7 @@ private enum PastRow: Identifiable {
         switch self {
         case .entry(let entry): entry.timestamp
         case .todo(let todo): todo.doneAt ?? todo.createdAt
-        case .listened(let day, _): day.lastListened
+        case .listened(let day, _, _): day.lastListened
         }
     }
 }
@@ -534,7 +545,7 @@ private struct PastRowLine: View {
 
     private var parts: (main: String, detail: String?) {
         switch row {
-        case .listened(let day, let title):
+        case .listened(let day, let title, _):
             return (title, JournalTimeFormatter.string(from: day.seconds))
         case .todo(let todo):
             return (todo.filledActions.first?.sentence ?? todo.emotionName, todo.emoji)
@@ -651,7 +662,7 @@ enum JournalExport {
             switch row {
             case .entry(let e):
                 entry = e
-            case .listened(let day, let title):
+            case .listened(let day, let title, _):
                 let dateStr = day.day.formatted(date: .long, time: .omitted)
                 return """
                 # \(title) — \(dateStr)

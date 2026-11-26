@@ -52,6 +52,17 @@ extension EnvironmentValues {
     @Entry var rowInFlight: URL? = nil
     /// Closes the left panel and opens one of its pages on the main screen.
     @Entry var openFromPanel: (PanelPage) -> Void = { _ in }
+    /// Closes the left panel, leaving the main screen as it is.
+    @Entry var closePanel: () -> Void = {}
+    /// Opens the playing meditation's editor on the main screen (a tap on the now-playing bar).
+    @Entry var openNowPlaying: () -> Void = {}
+}
+
+/// The main screen's request to open a meditation's editor, from outside the list that
+/// holds the editor (the now-playing bar). The home list takes it and clears it.
+@Observable final class EditorRequest {
+    static let shared = EditorRequest()
+    var url: URL?
 }
 
 /// A page the left panel opens. It opens on the main screen, not inside the panel.
@@ -194,6 +205,7 @@ struct ContentView: View {
                         mainPath = [page]
                         setPanel(open: false)
                     })
+                    .environment(\.closePanel, { setPanel(open: false) })
                     .frame(width: panelWidth)
                 }
 
@@ -243,6 +255,7 @@ struct ContentView: View {
                     }
                 }
                 .environment(\.rowInFlight, rowFlight?.url)
+                .environment(\.openNowPlaying, { openNowPlaying() })
                 .onChange(of: geo.safeAreaInsets.bottom, initial: true) { _, inset in bottomSafeInset = inset }
                 .onChange(of: wantsNowPlayingBar, initial: true) { _, wants in
                     // Started again while it was sinking: bring it back up.
@@ -293,6 +306,20 @@ struct ContentView: View {
             guard let id = MeditationStore.recordName(from: url) else { return }
             setPanel(open: false)
             MeditationStore.shared.openedLinkID = id
+        }
+    }
+
+    /// Opens the playing meditation's editor: closes the panel, pops any page the panel opened,
+    /// and asks the home list (which holds the editor) to push it.
+    private func openNowPlaying() {
+        guard let url = player.currentSourceURL else { return }
+        if panelOpen { setPanel(open: false) }
+        if mainPath.isEmpty {
+            EditorRequest.shared.url = url
+        } else {
+            // The panel's page pops first; pushing the editor while that pop runs garbles both.
+            mainPath = []
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { EditorRequest.shared.url = url }
         }
     }
 
