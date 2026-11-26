@@ -499,22 +499,22 @@ private func todoSource(_ todo: FeelingTodo) -> String {
     return "\(todo.emoji) \(todo.emotionName) · \(day)" + (companions.isEmpty ? "" : ", with \(companions)")
 }
 
-/// A past row on one line, with any detail in gray on the right: "🪷 😠 😢 🙏 … 12m",
-/// "✓ Call Sam … 😠", "🧘 Body scan", "😠 Anger".
+/// A past row on one line, with any detail in gray on the right: "😠 😢 🙏 … 12m",
+/// "Call Sam … 😠", "Body scan", "😠 Anger". No emoji marks the kind of row.
 private struct PastRowLine: View {
     let row: PastRow
 
     private var parts: (main: String, detail: String?) {
         switch row {
         case .todo(let todo):
-            return ("✓ \(todo.filledActions.first?.sentence ?? todo.emotionName)", todo.emoji)
+            return (todo.filledActions.first?.sentence ?? todo.emotionName, todo.emoji)
         case .entry(let entry):
             switch entry.content {
             case .checkInSession(let s):
                 let emojis = s.emotions.prefix(4).map(\.emoji).joined(separator: " ")
-                return ("🪷 \(emojis)", JournalTimeFormatter.string(from: s.engagementSeconds))
+                return (emojis.isEmpty ? "Check-in" : emojis, JournalTimeFormatter.string(from: s.engagementSeconds))
             case .meditation(let m):
-                return ("🧘 \(m.title)", nil)
+                return (m.title, nil)
             case .reflection(let r):
                 return ("\(r.emoji) \(r.emotionName)", nil)
             }
