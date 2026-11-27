@@ -99,45 +99,15 @@ struct CheckInView: View {
             VStack(spacing: 0) {
                 GeometryReader { geo in
                     let barHorizontalPadding: CGFloat = 40
-                    // One rounded bar pinched in at the middle, so it reads as two segments.
-                    let barShape = PinchedBarShape(cornerRadius: 18)
 
-                    HStack(spacing: 0) {
-                        Button {
-                            openEmotionPicker(.negative)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.body)
-                                    .foregroundStyle(.tint)
-                                Text("Negative")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 28)
+                    // Two separate glass capsules; the container lets them blend
+                    // at their edges as they animate, the system's "pair" cue.
+                    GlassEffectContainer(spacing: 12) {
+                        HStack(spacing: 12) {
+                            feelingButton(.negative, title: "Negative", systemImage: "minus.circle.fill")
+                            feelingButton(.positive, title: "Positive", systemImage: "plus.circle.fill")
                         }
-                        .buttonStyle(GlassPressStyle())
-
-                        Button {
-                            openEmotionPicker(.positive)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.body)
-                                    .foregroundStyle(.tint)
-                                Text("Positive")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 28)
-                        }
-                        .buttonStyle(GlassPressStyle())
                     }
-                    .clipShape(barShape)
-                    .contentShape(Rectangle())
-                    .glassEffect(.regular, in: barShape)
                     .padding(.horizontal, barHorizontalPadding)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
@@ -257,6 +227,26 @@ struct CheckInView: View {
         guard !tappedChip else { return }
 
         stopAccruingAndShowCredit()
+    }
+
+    private func feelingButton(_ category: EmotionCategory, title: String, systemImage: String) -> some View {
+        Button {
+            openEmotionPicker(category)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                    .foregroundStyle(.tint)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 28)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
     }
 
     private func openEmotionPicker(_ category: EmotionCategory) {
@@ -534,85 +524,6 @@ struct LeftSwipeGesture: UIGestureRecognizerRepresentable {
             let velocity = pan.velocity(in: pan.view)
             return velocity.x < 0 && abs(velocity.x) > abs(velocity.y) * 1.5
         }
-    }
-}
-
-/// A rounded bar whose top and bottom edges dip in smoothly at the middle,
-/// marking where Negative ends and Positive begins without a divider line.
-private struct PinchedBarShape: Shape {
-    var cornerRadius: CGFloat
-    /// How far each edge dips in at the center.
-    var pinchDepth: CGFloat = 6
-    /// How wide the dip is along the edge.
-    var pinchWidth: CGFloat = 48
-
-    func path(in rect: CGRect) -> Path {
-        let r = min(cornerRadius, rect.height / 2, rect.width / 2)
-        let d = min(pinchDepth, rect.height / 4)
-        let half = min(pinchWidth / 2, rect.width / 2 - r)
-        let midX = rect.midX
-        // Control points a third of the way along each half give an S-curve
-        // that leaves and rejoins the straight edge without a kink.
-        let k = half * 0.55
-
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
-        p.addLine(to: CGPoint(x: midX - half, y: rect.minY))
-        p.addCurve(
-            to: CGPoint(x: midX, y: rect.minY + d),
-            control1: CGPoint(x: midX - half + k, y: rect.minY),
-            control2: CGPoint(x: midX - k, y: rect.minY + d)
-        )
-        p.addCurve(
-            to: CGPoint(x: midX + half, y: rect.minY),
-            control1: CGPoint(x: midX + k, y: rect.minY + d),
-            control2: CGPoint(x: midX + half - k, y: rect.minY)
-        )
-        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
-        p.addArc(
-            center: CGPoint(x: rect.maxX - r, y: rect.minY + r), radius: r,
-            startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
-        )
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
-        p.addArc(
-            center: CGPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r,
-            startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
-        )
-        p.addLine(to: CGPoint(x: midX + half, y: rect.maxY))
-        p.addCurve(
-            to: CGPoint(x: midX, y: rect.maxY - d),
-            control1: CGPoint(x: midX + half - k, y: rect.maxY),
-            control2: CGPoint(x: midX + k, y: rect.maxY - d)
-        )
-        p.addCurve(
-            to: CGPoint(x: midX - half, y: rect.maxY),
-            control1: CGPoint(x: midX - k, y: rect.maxY - d),
-            control2: CGPoint(x: midX - half + k, y: rect.maxY)
-        )
-        p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
-        p.addArc(
-            center: CGPoint(x: rect.minX + r, y: rect.maxY - r), radius: r,
-            startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false
-        )
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
-        p.addArc(
-            center: CGPoint(x: rect.minX + r, y: rect.minY + r), radius: r,
-            startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
-        )
-        p.closeSubpath()
-        return p
-    }
-}
-
-private struct GlassPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                Rectangle()
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.2 : 0))
-                    .blendMode(.plusLighter)
-            )
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
