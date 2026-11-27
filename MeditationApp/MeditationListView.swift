@@ -18,6 +18,7 @@ struct MeditationListView: View {
     @Environment(\.panelIsOpen) private var panelIsOpen
     @Environment(\.setHomePagePushed) private var setHomePagePushed
     @Environment(\.rowInFlight) private var rowInFlight
+    @Environment(\.colorScheme) private var colorScheme
     @State private var files: [URL] = []
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
@@ -544,6 +545,20 @@ struct MeditationListView: View {
     }
 
     private static let timeSlotHeight: CGFloat = 17
+
+    /// The title left in a playing row's gap: a muted shade of the bar's colour, darker than
+    /// the page in light mode and dimmer than the other titles in dark.
+    private var holeTitleColor: Color {
+        colorScheme == .dark
+            ? palette.tint.mix(with: .black, by: 0.45)
+            : palette.tint.mix(with: palette.canvas, by: 0.25).mix(with: .black, by: 0.1)
+    }
+
+    /// The lit lower lip of the pressed-in title.
+    private var holeTitleEdge: Color {
+        colorScheme == .dark ? .white.opacity(0.12) : .white.opacity(0.9)
+    }
+
     static let editButtonWidth: CGFloat = 36
 
     @ViewBuilder
@@ -590,7 +605,14 @@ struct MeditationListView: View {
                         Text(titleFor(url))
                             .font(.body)
                             .fontWeight(.medium)
-                            .foregroundStyle(Color.primary.opacity(0.88))
+                            // In the gap, the title is pressed into the page like a label left
+                            // behind, in a muted shade of the bar's colour: shadowed inside along
+                            // the top of each letter, with a lit lip just under it.
+                            .foregroundStyle(isHole
+                                ? AnyShapeStyle(holeTitleColor.shadow(.inner(
+                                    color: .black.opacity(colorScheme == .dark ? 0.7 : 0.4), radius: 0.6, y: 1)))
+                                : AnyShapeStyle(Color.primary.opacity(0.88)))
+                            .shadow(color: isHole ? holeTitleEdge : .clear, radius: 0, x: 0, y: 1)
                     }
                     // Without the time label the title drops to the row's middle; the slot
                     // below keeps its height so rows don't change size when playback starts.
@@ -607,12 +629,11 @@ struct MeditationListView: View {
                 Spacer()
 
                 LastPlayedLabel(filename: filename, history: player.listeningHistory, helpedToday: hasLogToday)
-                    .opacity(hasUpdate ? 0 : 1)
+                    .opacity(hasUpdate ? 0 : isHole ? 0.55 : 1)
                 // Room for the edit button, which sits over the row (see below).
                 Color.clear
                     .frame(width: Self.editButtonWidth - 8, height: 1)
             }
-            .opacity(isHole ? 0.55 : 1)
             .padding(.horizontal, 14 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
             // The hole: no card at all, just the page showing through, with the dimmed name
