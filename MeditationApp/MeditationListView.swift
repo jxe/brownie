@@ -1008,11 +1008,11 @@ private struct FeelingsHeader: View {
                     .buttonStyle(.plain)
                 }
             }
-            // With no check-in, a line under the faded suggestions (or alone, with none)
-            // says how to start one.
+            // With no check-in, a plain link under the faded suggestions (or alone, with none)
+            // that opens Feelings with nothing tapped.
             if !inSession {
                 Button { openFeelings() } label: {
-                    Text(shown.isEmpty ? "Tap to check in." : "Tap a feeling to check in.")
+                    Text(shown.isEmpty ? "Check in…" : "Other feelings…")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
