@@ -1008,9 +1008,9 @@ private struct FeelingsHeader: View {
                 HStack(spacing: 6) {
                     Text(linkTitle(session: session, shown: shown))
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.medium))
+                        .font(.caption.weight(.regular))
                 }
-                // The header's size and grey, a weight lighter, chevron and all.
+                // The header's size and grey at regular weight, chevron and all.
                 .homeSectionDetailText()
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .contentShape(Rectangle())
@@ -1621,8 +1621,8 @@ extension View {
     }
 
     /// What sits with a section header (the check-in time, the link under the feeling
-    /// chips): the header's size and grey, one weight lighter.
+    /// chips): the header's size and grey, at regular weight.
     func homeSectionDetailText() -> some View {
-        font(.headline.weight(.medium)).foregroundStyle(Color(uiColor: .secondaryLabel))
+        font(.headline.weight(.regular)).foregroundStyle(Color(uiColor: .secondaryLabel))
     }
 }
