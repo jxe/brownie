@@ -1008,10 +1008,10 @@ private struct FeelingsHeader: View {
                 HStack(spacing: 6) {
                     Text(linkTitle(session: session, shown: shown))
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
+                        .font(.caption.weight(.medium))
                 }
-                // The same text as the section header above it, chevron and all.
-                .homeSectionHeaderText()
+                // The header's size and grey, a weight lighter, chevron and all.
+                .homeSectionDetailText()
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .contentShape(Rectangle())
             }
@@ -1066,6 +1066,7 @@ private struct FeelingsSectionTitle: View {
                 if inSession {
                     LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
                         .monospacedDigit()
+                        .homeSectionDetailText()
                 }
             }
             .homeSectionHeaderText()
@@ -1617,5 +1618,11 @@ extension View {
     /// already secondary, resolves a tier lighter than the same style in a row.
     func homeSectionHeaderText() -> some View {
         font(.headline).foregroundStyle(Color(uiColor: .secondaryLabel))
+    }
+
+    /// What sits with a section header (the check-in time, the link under the feeling
+    /// chips): the header's size and grey, one weight lighter.
+    func homeSectionDetailText() -> some View {
+        font(.headline.weight(.medium)).foregroundStyle(Color(uiColor: .secondaryLabel))
     }
 }
