@@ -139,10 +139,16 @@ struct MeditationListView: View {
             List {
                 switch shelf {
                 case .home:
-                    feelingsHeader
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 10, trailing: 20))
+                    // Feelings is one section among the others, under the same kind of
+                    // header, not a title for the whole page.
+                    Section {
+                        feelingsHeader
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 10, trailing: 20))
+                    } header: {
+                        FeelingsSectionTitle(tappableFrames: tappableFrames) { showingFeelings = true }
+                    }
                     if !files.isEmpty || hasOpenTodos {
                         // Current comes first: it's what's pressing right now.
                         Section {
@@ -984,29 +990,15 @@ private struct FeelingsHeader: View {
         let inSession = !session.isEmpty
         let shown = inSession ? Array(session.prefix(Self.maxChips)) : suggestions
         VStack(alignment: .leading, spacing: 10) {
-            Button { openFeelings() } label: {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Feelings")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    if inSession {
-                        LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
-                            .font(.subheadline.weight(.semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+            if shown.isEmpty {
+                Button { openFeelings() } label: {
+                    Text("Tap to check in.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if !inSession {
-                Text(shown.isEmpty ? "How are you feeling? Tap to check in." : "How are you feeling?")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
             }
             if !shown.isEmpty {
                 LazyVGrid(columns: columns, spacing: 8) {
@@ -1048,6 +1040,36 @@ private struct FeelingsHeader: View {
         // tap-to-stop lets it be, even if this view's frame went stale.
         tappableFrames.noteRowTap()
         open()
+    }
+}
+
+/// The Feelings section's header on the main screen, styled like the era and Evergreen
+/// headers so it doesn't read as the page's title. A tap opens Feelings; during a
+/// check-in its time sits at the right.
+private struct FeelingsSectionTitle: View {
+    let tappableFrames: TappableFrames
+    let open: () -> Void
+    @Environment(EmotionStore.self) private var store
+
+    var body: some View {
+        let inSession = !store.selectedEmotionsRankedForCheckIn().isEmpty
+        Button {
+            tappableFrames.noteRowTap()
+            open()
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("How are you feeling?")
+                Spacer()
+                if inSession {
+                    LiveTimeText(isLive: store.accruingEmotionID != nil) { store.sessionTime(asOf: $0) }
+                        .monospacedDigit()
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Not a tap on empty space, so it never stops a playing meditation.
+        .tracksTappableFrame("header|Feelings", in: tappableFrames)
     }
 }
 
