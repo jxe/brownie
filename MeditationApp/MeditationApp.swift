@@ -59,10 +59,6 @@ extension EnvironmentValues {
     /// Whether the now-playing bar takes the bottom of the screen, so pages' own bottom
     /// controls can keep a gap above it rather than sitting tight on it.
     @Entry var nowPlayingBarShown = false
-    /// The bar is sinking away after a stop (animated), and how tall it is above the home
-    /// indicator: pages' bottom controls move down with it instead of jumping once it's gone.
-    @Entry var nowPlayingBarSinking = false
-    @Entry var nowPlayingBarHeight: CGFloat = 0
 }
 
 /// The main screen's request to open a meditation's editor, from outside the list that
@@ -255,14 +251,19 @@ struct ContentView: View {
                             // reached the main screen but not pages pushed over it (Feelings' Negative
                             // and Positive sat under the bar).
                             .background(
-                                NavigationBottomInset(height: nowPlayingBarShown ? nowPlayingBarHeight : 0)
+                                // A sink gives the space back gradually, on the sink's own curve
+                                // and timing, so pages glide down as the bar goes (and up as it
+                                // comes), rather than jumping once it's gone.
+                                NavigationBottomInset(
+                                    height: nowPlayingBarShown && !nowPlayingBarSinking ? nowPlayingBarHeight : 0,
+                                    instant: rowFlight != nil
+                                )
                                     .frame(width: 0, height: 0)
                             )
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
-                    .environment(\.nowPlayingBarShown, nowPlayingBarShown)
-                    .environment(\.nowPlayingBarSinking, nowPlayingBarSinking)
-                    .environment(\.nowPlayingBarHeight, nowPlayingBarHeight)
+                    // Up and not sinking: a sink hands its space back as it goes.
+                    .environment(\.nowPlayingBarShown, nowPlayingBarShown && !nowPlayingBarSinking)
                     if nowPlayingBarShown {
                         // A flying row stands in for the bar: the real one comes in only as it
                         // lands, unseen under it (no slide of its own), and its contents fade in
@@ -672,6 +673,8 @@ struct PanelEdgePan: UIViewRepresentable {
 /// it to each page it pushes.
 struct NavigationBottomInset: UIViewRepresentable {
     var height: CGFloat
+    /// Apply at once rather than gliding (the bar slipping in under a landed row).
+    var instant = false
 
     func makeUIView(context: Context) -> InsetView {
         let view = InsetView(frame: .zero)
@@ -680,12 +683,63 @@ struct NavigationBottomInset: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: InsetView, context: Context) {
-        uiView.height = height
+        uiView.setHeight(height, instant: instant)
     }
 
+    /// Drives the navigation controller's bottom inset frame by frame (SwiftUI doesn't
+    /// animate a UIKit safe-area change): down on the bar's sink curve (ease-in, 0.25s),
+    /// up on an ease-out as long as its spring (0.3s), from wherever it is now.
     final class InsetView: UIView {
-        var height: CGFloat = 0 { didSet { apply() } }
+        private var height: CGFloat = 0
+        private var current: CGFloat = 0
+        private var from: CGFloat = 0
+        private var start: CFTimeInterval = 0
+        private var link: CADisplayLink?
         private weak var navigationController: UINavigationController?
+
+        func setHeight(_ target: CGFloat, instant: Bool) {
+            guard target != height else { return }
+            height = target
+            if instant || window == nil {
+                link?.invalidate(); link = nil
+                current = target
+                apply()
+                return
+            }
+            from = current
+            start = CACurrentMediaTime()
+            if link == nil {
+                let link = CADisplayLink(target: self, selector: #selector(step))
+                link.add(to: .main, forMode: .common)
+                self.link = link
+            }
+        }
+
+        @objc private func step() {
+            let sinking = height < from
+            let duration: CFTimeInterval = sinking ? 0.25 : 0.3
+            let t = min(1, (CACurrentMediaTime() - start) / duration)
+            // SwiftUI's .easeIn and .easeOut curves.
+            let eased = sinking ? Self.bezier(t, 0.42, 0, 1, 1) : Self.bezier(t, 0, 0, 0.58, 1)
+            current = from + (height - from) * eased
+            apply()
+            if t >= 1 {
+                link?.invalidate(); link = nil
+            }
+        }
+
+        /// y at x on a cubic bezier from (0,0) to (1,1) through (x1,y1), (x2,y2).
+        private static func bezier(_ x: Double, _ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) -> Double {
+            func coord(_ u: Double, _ a: Double, _ b: Double) -> Double {
+                3 * (1 - u) * (1 - u) * u * a + 3 * (1 - u) * u * u * b + u * u * u
+            }
+            var lo = 0.0, hi = 1.0
+            for _ in 0..<24 {
+                let mid = (lo + hi) / 2
+                if coord(mid, x1, x2) < x { lo = mid } else { hi = mid }
+            }
+            return coord((lo + hi) / 2, y1, y2)
+        }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -705,8 +759,8 @@ struct NavigationBottomInset: UIViewRepresentable {
                 }
             }
             guard let nav = navigationController,
-                  nav.additionalSafeAreaInsets.bottom != height else { return }
-            nav.additionalSafeAreaInsets.bottom = height
+                  nav.additionalSafeAreaInsets.bottom != current else { return }
+            nav.additionalSafeAreaInsets.bottom = current
         }
     }
 }
