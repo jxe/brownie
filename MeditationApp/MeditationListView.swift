@@ -990,16 +990,6 @@ private struct FeelingsHeader: View {
         let inSession = !session.isEmpty
         let shown = inSession ? Array(session.prefix(Self.maxChips)) : suggestions
         VStack(alignment: .leading, spacing: 10) {
-            if shown.isEmpty {
-                Button { openFeelings() } label: {
-                    Text("Tap to check in.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
             if !shown.isEmpty {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(shown) { emotion in
@@ -1017,6 +1007,18 @@ private struct FeelingsHeader: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+            // With no check-in, a line under the faded suggestions (or alone, with none)
+            // says how to start one.
+            if !inSession {
+                Button { openFeelings() } label: {
+                    Text(shown.isEmpty ? "Tap to check in." : "Tap a feeling to check in.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
     }
