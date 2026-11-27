@@ -621,10 +621,10 @@ private struct PastRowLine: View {
         .padding(.vertical, 2)
     }
 
+    /// A row's words sit on a tile too, like the feelings' emoji, so every kind of row
+    /// reads as the same kind of thing.
     private func title(_ text: String) -> some View {
-        Text(text)
-            .lineLimit(1)
-            .truncationMode(.tail)
+        TitleTile(text: text)
     }
 
     private func time(_ seconds: TimeInterval) -> some View {
@@ -633,6 +633,35 @@ private struct PastRowLine: View {
             .foregroundStyle(.secondary)
             .monospacedDigit()
             .lineLimit(1)
+    }
+}
+
+/// A row's title on a rounded tile the height and corner of an `EmotionTile`, filled with
+/// the main screen's meditation card colour lightened the way the emotion tiles are.
+private struct TitleTile: View {
+    let text: String
+    @Environment(\.appPalette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let base = palette.card.mix(
+            with: .white,
+            by: colorScheme == .dark ? EmotionTile.darkLightening : EmotionTile.lightLightening
+        )
+        Text(text)
+            .font(.subheadline)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 9)
+            .frame(height: EmotionTile.height)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: [base.mix(with: .white, by: colorScheme == .dark ? 0.10 : 0.22), base],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ))
+            }
     }
 }
 
