@@ -58,23 +58,30 @@ struct JournalView: View {
         closePanel { player.play(meditation, sourceURL: url) }
     }
 
-    /// One line per past row; a tap opens its details on the main screen.
+    /// One line per past row; a tap opens its details on the main screen. Every row ends in
+    /// the same slot (a chevron, a play glyph, or nothing), so all the times share one edge.
     @ViewBuilder
     private func historyRow(_ row: PastRow) -> some View {
         if case .listened(_, _, let url?) = row {
             // A meditation listened to a lot plays again, and the panel closes onto its bar.
-            Button { play(url) } label: { PastRowLine(row: row) }
-                .tint(.primary)
+            Button { play(url) } label: {
+                PanelRowLabel(accessory: .play) { PastRowLine(row: row) }
+            }
+            .tint(.primary)
         } else if let page = row.page {
             Button { openFromPanel(page) } label: {
-                PanelLinkLabel { PastRowLine(row: row) }
+                PanelRowLabel(accessory: .chevron) { PastRowLine(row: row) }
             }
             // A list tints button text with the accent color; these read as plain rows.
             .tint(.primary)
         } else {
-            PastRowLine(row: row)
+            PanelRowLabel(accessory: .none) { PastRowLine(row: row) }
         }
     }
+
+    /// The panel's rows: no separators (days are set apart by space instead) and the
+    /// same insets everywhere.
+    static let rowInsets = EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20)
 
     private var sidebarColor: Color {
         colorScheme == .dark
@@ -101,31 +108,48 @@ struct JournalView: View {
             }
 
             // Which feelings have taken the most time, over every check-in
+            // The panel's links to its own pages, together on one card so they read as
+            // navigation rather than history.
             Section {
-                Button { openFromPanel(.leaderboard) } label: {
-                    PanelLinkLabel { Text("Emotion Leaderboard") }
+                VStack(spacing: 0) {
+                    Button { openFromPanel(.leaderboard) } label: {
+                        PanelNavLabel(title: "Emotion Leaderboard", systemImage: "chart.bar")
+                    }
+                    // Earlier eras, on a page of their own
+                    if !pastEras.isEmpty {
+                        Divider().padding(.leading, 44)
+                        Button { openFromPanel(.pastEras) } label: {
+                            PanelNavLabel(title: "Past Eras", systemImage: "clock.arrow.circlepath")
+                        }
+                    }
                 }
                 // A list tints button text with the accent color; these read as plain rows.
                 .tint(.primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.045))
+                )
                 .listRowBackground(Color.clear)
-
-                // Earlier eras, on a page of their own
-                if !pastEras.isEmpty {
-                    Button { openFromPanel(.pastEras) } label: {
-                        PanelLinkLabel { Text("Past Eras") }
-                    }
-                    .tint(.primary)
-                    .listRowBackground(Color.clear)
-                }
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             }
 
             // Past entries, under a header for each day
             ForEach(pastDays, id: \.day) { day in
-                Section(dayHeader(day.day)) {
+                Section {
                     ForEach(day.rows) { row in
                         historyRow(row)
                             .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(Self.rowInsets)
                     }
+                } header: {
+                    Text(dayHeader(day.day))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+                        .padding(.top, 14)
+                        .padding(.bottom, 2)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
                 }
             }
 
@@ -141,6 +165,8 @@ struct JournalView: View {
             }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListHeaderHeight, 0)
+        .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
         .background(sidebarColor)
         .navigationTitle("History")
@@ -603,6 +629,7 @@ private struct PastRowLine: View {
 
     private func time(_ seconds: TimeInterval) -> some View {
         Text(JournalTimeFormatter.string(from: seconds))
+            .font(.subheadline)
             .foregroundStyle(.secondary)
             .monospacedDigit()
             .lineLimit(1)
@@ -865,17 +892,50 @@ enum JournalExport {
 }
 
 /// A panel row that opens a page on the main screen: a button drawn like a NavigationLink row.
-private struct PanelLinkLabel<Content: View>: View {
+/// A History row with its trailing slot: the same width whether it holds a chevron (opens
+/// a page), a play glyph (plays the meditation) or nothing, so times line up.
+private struct PanelRowLabel<Content: View>: View {
+    enum Accessory { case chevron, play, none }
+    let accessory: Accessory
     @ViewBuilder var content: Content
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             content
+            Group {
+                switch accessory {
+                case .chevron: Image(systemName: "chevron.right")
+                case .play: Image(systemName: "play.fill").imageScale(.small)
+                case .none: Color.clear
+                }
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .frame(width: 12)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// A link on the panel's navigation card: an icon, a title and a chevron.
+private struct PanelNavLabel: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 20)
+            Text(title)
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
         .contentShape(Rectangle())
     }
 }
