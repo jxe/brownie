@@ -1613,8 +1613,9 @@ extension View {
     /// The main screen's section headers ("How are you feeling?", the era and Evergreen
     /// headers) and the text that sits with them (the check-in time, the link under the
     /// feeling chips), set explicitly so they all match instead of relying on the list's
-    /// header defaults.
+    /// header defaults. The colour is concrete: `.secondary` inside a list header, which is
+    /// already secondary, resolves a tier lighter than the same style in a row.
     func homeSectionHeaderText() -> some View {
-        font(.headline).foregroundStyle(.secondary)
+        font(.headline).foregroundStyle(Color(uiColor: .secondaryLabel))
     }
 }
