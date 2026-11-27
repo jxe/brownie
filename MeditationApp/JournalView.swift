@@ -636,7 +636,8 @@ private struct PastRowLine: View {
     }
 }
 
-/// A row's title on a rounded tile the height and corner of an `EmotionTile`, filled with
+/// A row's title on a rounded tile the height and corner of an `EmotionTile`, as wide as the
+/// row allows, filled with
 /// the main screen's meditation card colour lightened the way the emotion tiles are.
 private struct TitleTile: View {
     let text: String
@@ -653,7 +654,8 @@ private struct TitleTile: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.horizontal, 9)
-            .frame(height: EmotionTile.height)
+            // The tile runs the row's width up to the time, not just under the words.
+            .frame(maxWidth: .infinity, minHeight: EmotionTile.height, maxHeight: EmotionTile.height, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(LinearGradient(
