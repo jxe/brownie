@@ -127,7 +127,7 @@ struct JournalView: View {
                 .tint(.primary)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.045))
+                        .fill(panelTileFill(colorScheme))
                 )
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -636,17 +636,18 @@ private struct PastRowLine: View {
     }
 }
 
+/// The panel's one neutral fill, shared by the link card at the top and the rows' title
+/// tiles: a little darker than the panel (a little lighter in dark mode).
+private func panelTileFill(_ colorScheme: ColorScheme) -> Color {
+    Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.045)
+}
+
 /// A row's title on a rounded tile the height and corner of an `EmotionTile`, as wide as the
-/// row allows, in a plain neutral grey.
+/// row allows, in the same plain grey as the panel's link card.
 private struct TitleTile: View {
     let text: String
     @Environment(\.colorScheme) private var colorScheme
 
-    /// A plain neutral grey a little darker than the panel (a little lighter in dark mode),
-    /// light enough that the title reads clearly on it.
-    private var fill: Color {
-        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.09)
-    }
 
     var body: some View {
         Text(text)
@@ -657,7 +658,7 @@ private struct TitleTile: View {
             // The tile runs the row's width up to the time, not just under the words.
             .frame(maxWidth: .infinity, minHeight: EmotionTile.height, maxHeight: EmotionTile.height, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(fill)
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(panelTileFill(colorScheme))
             }
     }
 }
