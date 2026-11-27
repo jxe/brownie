@@ -637,18 +637,18 @@ private struct PastRowLine: View {
 }
 
 /// A row's title on a rounded tile the height and corner of an `EmotionTile`, as wide as the
-/// row allows, filled with
-/// the main screen's meditation card colour lightened the way the emotion tiles are.
+/// row allows, in a plain neutral grey.
 private struct TitleTile: View {
     let text: String
-    @Environment(\.appPalette) private var palette
     @Environment(\.colorScheme) private var colorScheme
 
+    /// A plain neutral grey a little darker than the panel (a little lighter in dark mode),
+    /// light enough that the title reads clearly on it.
+    private var fill: Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.09)
+    }
+
     var body: some View {
-        let base = palette.card.mix(
-            with: .white,
-            by: colorScheme == .dark ? EmotionTile.darkLightening : EmotionTile.lightLightening
-        )
         Text(text)
             .font(.subheadline)
             .lineLimit(1)
@@ -657,12 +657,7 @@ private struct TitleTile: View {
             // The tile runs the row's width up to the time, not just under the words.
             .frame(maxWidth: .infinity, minHeight: EmotionTile.height, maxHeight: EmotionTile.height, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [base.mix(with: .white, by: colorScheme == .dark ? 0.10 : 0.22), base],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ))
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(fill)
             }
     }
 }
