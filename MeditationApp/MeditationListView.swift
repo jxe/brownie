@@ -546,17 +546,10 @@ struct MeditationListView: View {
 
     private static let timeSlotHeight: CGFloat = 17
 
-    /// The title left in a playing row's gap: a muted shade of the bar's colour, darker than
-    /// the page in light mode and dimmer than the other titles in dark.
+    /// The title left in a playing row's gap: the bar's colour faded well toward the page,
+    /// so it's quieter than the other titles rather than louder.
     private var holeTitleColor: Color {
-        colorScheme == .dark
-            ? palette.tint.mix(with: .black, by: 0.45)
-            : palette.tint.mix(with: palette.canvas, by: 0.25).mix(with: .black, by: 0.1)
-    }
-
-    /// The lit lower lip of the pressed-in title.
-    private var holeTitleEdge: Color {
-        colorScheme == .dark ? .white.opacity(0.12) : .white.opacity(0.9)
+        palette.tint.mix(with: palette.canvas, by: colorScheme == .dark ? 0.55 : 0.5)
     }
 
     static let editButtonWidth: CGFloat = 36
@@ -605,14 +598,9 @@ struct MeditationListView: View {
                         Text(titleFor(url))
                             .font(.body)
                             .fontWeight(.medium)
-                            // In the gap, the title is pressed into the page like a label left
-                            // behind, in a muted shade of the bar's colour: shadowed inside along
-                            // the top of each letter, with a lit lip just under it.
-                            .foregroundStyle(isHole
-                                ? AnyShapeStyle(holeTitleColor.shadow(.inner(
-                                    color: .black.opacity(colorScheme == .dark ? 0.7 : 0.4), radius: 0.6, y: 1)))
-                                : AnyShapeStyle(Color.primary.opacity(0.88)))
-                            .shadow(color: isHole ? holeTitleEdge : .clear, radius: 0, x: 0, y: 1)
+                            // In the gap, the title stays in a quiet, faded shade of the bar's
+                            // colour: quieter than the other titles, but tied to the bar.
+                            .foregroundStyle(isHole ? holeTitleColor : Color.primary.opacity(0.88))
                     }
                     // Without the time label the title drops to the row's middle; the slot
                     // below keeps its height so rows don't change size when playback starts.
