@@ -999,28 +999,24 @@ private struct FeelingsHeader: View {
                         }
                     }
                 }
-                if inSession, session.count > Self.maxChips {
-                    Button { openFeelings() } label: {
-                        Text("\(session.count - Self.maxChips) more")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
             }
-            // With no check-in, a plain link under the faded suggestions (or alone, with none)
-            // that opens Feelings with nothing tapped.
-            if !inSession {
-                Button { openFeelings() } label: {
-                    Text(shown.isEmpty ? "Check in…" : "Other feelings…")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+            // Always one plain link under the chips, opening Feelings with nothing tapped:
+            // the hidden ones' count when the check-in has more than fit, otherwise a way
+            // to start from a feeling not shown.
+            Button { openFeelings() } label: {
+                Text(linkTitle(session: session, shown: shown))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
+    }
+
+    private func linkTitle(session: [Emotion], shown: [Emotion]) -> String {
+        if session.count > Self.maxChips { return "\(session.count - Self.maxChips) more" }
+        return shown.isEmpty ? "Check in…" : "Other feelings…"
     }
 
     /// The feelings you've spent the most time with in past check-ins.
