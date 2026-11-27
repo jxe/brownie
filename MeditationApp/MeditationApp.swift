@@ -56,6 +56,9 @@ extension EnvironmentValues {
     @Entry var closePanel: (_ then: @escaping () -> Void) -> Void = { then in then() }
     /// Opens the playing meditation's editor on the main screen (a tap on the now-playing bar).
     @Entry var openNowPlaying: () -> Void = {}
+    /// Whether the now-playing bar takes the bottom of the screen, so pages' own bottom
+    /// controls can keep a gap above it rather than sitting tight on it.
+    @Entry var nowPlayingBarShown = false
 }
 
 /// The main screen's request to open a meditation's editor, from outside the list that
@@ -253,6 +256,7 @@ struct ContentView: View {
                             )
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
+                    .environment(\.nowPlayingBarShown, nowPlayingBarShown)
                     if nowPlayingBarShown {
                         // A flying row stands in for the bar: the real one comes in only as it
                         // lands, unseen under it (no slide of its own), and its contents fade in

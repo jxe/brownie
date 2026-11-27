@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct CheckInView: View {
+    @Environment(\.nowPlayingBarShown) private var nowPlayingBarShown
     @Environment(\.appPalette) private var palette
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
@@ -112,7 +113,9 @@ struct CheckInView: View {
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
                 .frame(height: 104)
-                .padding(.bottom, 4)
+                // Over the home indicator a small gap is enough; over the now-playing bar
+                // the capsules need more room so they don't sit on it.
+                .padding(.bottom, nowPlayingBarShown ? 16 : 4)
             }
         }
         // The same background as the main screen it opens from.
