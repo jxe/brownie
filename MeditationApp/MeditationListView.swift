@@ -511,6 +511,7 @@ struct MeditationListView: View {
                     .rotationEffect(.degrees(isExpanded.wrappedValue ? 90 : 0))
                 Spacer()
             }
+            .homeSectionHeaderText()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1004,13 +1005,13 @@ private struct FeelingsHeader: View {
             // the hidden ones' count when the check-in has more than fit, otherwise a way
             // to start from a feeling not shown.
             Button { openFeelings() } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Text(linkTitle(session: session, shown: shown))
                     Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                 }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+                // The same text as the section header above it, chevron and all.
+                .homeSectionHeaderText()
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .contentShape(Rectangle())
             }
@@ -1067,6 +1068,7 @@ private struct FeelingsSectionTitle: View {
                         .monospacedDigit()
                 }
             }
+            .homeSectionHeaderText()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1223,7 +1225,7 @@ private struct LastPlayedLabel: View {
                     let units: Set<Duration.UnitsFormatStyle.Unit> = seconds < 60 ? [.seconds] : [.hours, .minutes]
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Image(systemName: "headphones")
-                            .font(.caption2)
+                            .font(.caption)
                             .imageScale(.small)
                             .foregroundStyle(.tertiary)
                         Text(duration.formatted(.units(allowed: units, width: .narrow)))
@@ -1235,7 +1237,7 @@ private struct LastPlayedLabel: View {
                 }
             }
         }
-        .font(.caption)
+        .font(.footnote)
         .foregroundStyle(.secondary)
         .monospacedDigit()
         .accessibilityElement(children: .combine)
@@ -1604,5 +1606,15 @@ enum PerfLog {
                 try? Data(line.utf8).write(to: url)
             }
         }
+    }
+}
+
+extension View {
+    /// The main screen's section headers ("How are you feeling?", the era and Evergreen
+    /// headers) and the text that sits with them (the check-in time, the link under the
+    /// feeling chips), set explicitly so they all match instead of relying on the list's
+    /// header defaults.
+    func homeSectionHeaderText() -> some View {
+        font(.headline).foregroundStyle(.secondary)
     }
 }
