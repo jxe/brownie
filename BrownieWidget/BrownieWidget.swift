@@ -55,7 +55,7 @@ struct SnapshotProvider: TimelineProvider {
 // MARK: - Look
 
 /// The app's palette tints (AppPalette in MeditationApp.swift), by its raw value.
-private func tint(for palette: String?) -> Color {
+private func paletteTint(for palette: String?) -> Color {
     let (light, dark): (UInt32, UInt32) = switch palette {
     case "Eucalyptus & Sage": (0x356456, 0xA3D5BF)
     case "Indigo & Lavender": (0x4B5E8F, 0xB9C8F2)
@@ -97,7 +97,7 @@ struct QuickPlayView: View {
     private var items: [WidgetSnapshot.Item] {
         Array(entry.snapshot.recent.prefix(family == .systemSmall ? 1 : 4))
     }
-    private var accent: Color { tint(for: entry.snapshot.palette) }
+    private var accent: Color { paletteTint(for: entry.snapshot.palette) }
 
     var body: some View {
         if items.isEmpty {
@@ -190,7 +190,7 @@ struct TodayView: View {
         let today = snapshot.isToday(at: entry.date)
         let seconds = today ? snapshot.secondsToday : 0
         let checkedIn = today && snapshot.checkedInToday
-        let accent = tint(for: snapshot.palette)
+        let accent = paletteTint(for: snapshot.palette)
 
         VStack(alignment: .leading, spacing: 0) {
             Text("\(streak)")
