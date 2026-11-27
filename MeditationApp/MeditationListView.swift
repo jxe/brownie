@@ -18,7 +18,6 @@ struct MeditationListView: View {
     @Environment(\.panelIsOpen) private var panelIsOpen
     @Environment(\.setHomePagePushed) private var setHomePagePushed
     @Environment(\.rowInFlight) private var rowInFlight
-    @Environment(\.colorScheme) private var colorScheme
     @State private var files: [URL] = []
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
@@ -549,8 +548,8 @@ struct MeditationListView: View {
         let inactiveFill = palette.card
         // Its stand-in is on its way into the now-playing bar.
         let isAway = rowInFlight == url
-        // The playing row's card has fallen into the now-playing bar: what's left is the hole
-        // it came out of, sunk into the page, with its name and listening time still in it.
+        // The playing row's card has fallen into the now-playing bar: what's left is the gap
+        // it came out of, with its name and listening time still in it.
         let isHole = isEngaged || isAway
         Button {
             tappableFrames.noteRowTap()
@@ -593,31 +592,12 @@ struct MeditationListView: View {
             .opacity(isHole ? 0.55 : 1)
             .padding(.horizontal, 14 + RowFillShape.margin.width)
             .padding(.vertical, 12 + RowFillShape.margin.height)
+            // The hole: no card at all, just the page showing through, with the dimmed name
+            // and listening time left floating where the card was.
             .background {
-                ZStack {
-                    RowFillShape()
-                        .fill(inactiveFill)
-                        .opacity(isHole ? 0 : 1)
-                    // The hole: a floor a little darker than the page, shadowed along its top edge
-                    // as if the page's surface overhangs it, with a faint lit rim along the bottom.
-                    // In dark mode the page is already black, so nothing can be darker than it:
-                    // there the floor is a dim shade of the card instead, which the shadow can
-                    // fall across, and the rim is barely there.
-                    RowFillShape()
-                        .fill((colorScheme == .dark
-                               ? inactiveFill.mix(with: .black, by: 0.45)
-                               : palette.canvas.mix(with: .black, by: 0.06))
-                            .shadow(.inner(color: .black.opacity(colorScheme == .dark ? 0.95 : 0.22),
-                                           radius: colorScheme == .dark ? 7 : 5,
-                                           y: colorScheme == .dark ? 5 : 3)))
-                        .overlay(
-                            RowFillShape().stroke(
-                                LinearGradient(colors: [.clear, .clear, .white.opacity(colorScheme == .dark ? 0.05 : 0.7)],
-                                               startPoint: .top, endPoint: .bottom),
-                                lineWidth: 1)
-                        )
-                        .opacity(isHole ? 1 : 0)
-                }
+                RowFillShape()
+                    .fill(inactiveFill)
+                    .opacity(isHole ? 0 : 1)
             }
             // Opens at once as the card lifts out; fills back in gently when it's put back.
             .animation(isHole ? nil : .easeOut(duration: 0.3), value: isHole)

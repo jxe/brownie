@@ -231,11 +231,17 @@ struct ContentView: View {
                                 }
                                 .frame(width: 0, height: 0)
                             )
+                            // The pages keep the bar's space until it has sunk away, then take it
+                            // back at once. Set on the navigation controller itself, so every page it
+                            // pushes gets it as real safe area: SwiftUI's safeAreaPadding on the stack
+                            // reached the main screen but not pages pushed over it (Feelings' Negative
+                            // and Positive sat under the bar).
+                            .background(
+                                NavigationBottomInset(height: nowPlayingBarShown ? nowPlayingBarHeight : 0)
+                                    .frame(width: 0, height: 0)
+                            )
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
-                    // The pages keep the bar's space until it has sunk away, then take it
-                    // back at once.
-                    .safeAreaPadding(.bottom, nowPlayingBarShown ? nowPlayingBarHeight : 0)
                     if nowPlayingBarShown {
                         // A flying row stands in for the bar: the real one comes in only as it
                         // lands, unseen under it (no slide of its own), and its contents fade in
@@ -630,6 +636,50 @@ struct PanelEdgePan: UIViewRepresentable {
             default:
                 break
             }
+        }
+    }
+}
+
+/// Extra bottom safe area for every page of the navigation stack it sits in: the now-playing
+/// bar's height, set as the navigation controller's additionalSafeAreaInsets so UIKit hands
+/// it to each page it pushes.
+struct NavigationBottomInset: UIViewRepresentable {
+    var height: CGFloat
+
+    func makeUIView(context: Context) -> InsetView {
+        let view = InsetView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: InsetView, context: Context) {
+        uiView.height = height
+    }
+
+    final class InsetView: UIView {
+        var height: CGFloat = 0 { didSet { apply() } }
+        private weak var navigationController: UINavigationController?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            DispatchQueue.main.async { [weak self] in self?.apply() }
+        }
+
+        private func apply() {
+            if navigationController == nil {
+                var responder: UIResponder? = self
+                while let current = responder {
+                    if let vc = current as? UIViewController, let nav = vc.navigationController {
+                        navigationController = nav
+                        break
+                    }
+                    responder = current.next
+                }
+            }
+            guard let nav = navigationController,
+                  nav.additionalSafeAreaInsets.bottom != height else { return }
+            nav.additionalSafeAreaInsets.bottom = height
         }
     }
 }
