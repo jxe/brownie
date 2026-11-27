@@ -3,6 +3,10 @@ import UIKit
 
 struct CheckInView: View {
     @Environment(\.nowPlayingBarShown) private var nowPlayingBarShown
+    @Environment(\.nowPlayingBarSinking) private var nowPlayingBarSinking
+    @Environment(\.nowPlayingBarHeight) private var nowPlayingBarHeight
+    /// While the bar comes up, how far the capsules still sit below where they're going.
+    @State private var barRiseOffset: CGFloat = 0
     @Environment(\.appPalette) private var palette
     @Environment(EmotionStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
@@ -116,6 +120,21 @@ struct CheckInView: View {
                 // Over the home indicator a small gap is enough; over the now-playing bar
                 // the capsules need more room so they don't sit on it.
                 .padding(.bottom, nowPlayingBarShown ? 16 : 4)
+                // The gap and the bar's safe area both switch at once; the offset below
+                // carries the move, so the capsules ride with the bar.
+                .animation(nil, value: nowPlayingBarShown)
+                // Sinking with the bar after a stop (same animation as its sink), from where
+                // they sit over it down to where they'll sit without it: once it's gone the
+                // safe area and gap change under them to the same place.
+                .offset(y: nowPlayingBarSinking ? nowPlayingBarHeight + 12 : barRiseOffset)
+                .onChange(of: nowPlayingBarShown) { _, shown in
+                    guard shown else { return }
+                    // Coming up: start where they were and rise with the bar's spring.
+                    var instant = Transaction()
+                    instant.disablesAnimations = true
+                    withTransaction(instant) { barRiseOffset = nowPlayingBarHeight + 12 }
+                    withAnimation(.spring(duration: 0.3, bounce: 0.15)) { barRiseOffset = 0 }
+                }
             }
         }
         // The same background as the main screen it opens from.

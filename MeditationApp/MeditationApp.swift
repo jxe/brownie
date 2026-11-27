@@ -59,6 +59,10 @@ extension EnvironmentValues {
     /// Whether the now-playing bar takes the bottom of the screen, so pages' own bottom
     /// controls can keep a gap above it rather than sitting tight on it.
     @Entry var nowPlayingBarShown = false
+    /// The bar is sinking away after a stop (animated), and how tall it is above the home
+    /// indicator: pages' bottom controls move down with it instead of jumping once it's gone.
+    @Entry var nowPlayingBarSinking = false
+    @Entry var nowPlayingBarHeight: CGFloat = 0
 }
 
 /// The main screen's request to open a meditation's editor, from outside the list that
@@ -257,6 +261,8 @@ struct ContentView: View {
                     }
                     .environment(\.setHomePagePushed, { homePagePushed = $0 })
                     .environment(\.nowPlayingBarShown, nowPlayingBarShown)
+                    .environment(\.nowPlayingBarSinking, nowPlayingBarSinking)
+                    .environment(\.nowPlayingBarHeight, nowPlayingBarHeight)
                     if nowPlayingBarShown {
                         // A flying row stands in for the bar: the real one comes in only as it
                         // lands, unseen under it (no slide of its own), and its contents fade in
