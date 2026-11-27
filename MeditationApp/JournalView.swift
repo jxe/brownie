@@ -79,9 +79,6 @@ struct JournalView: View {
         }
     }
 
-    /// The panel's rows: no separators (days are set apart by space instead) and the
-    /// same insets everywhere.
-    static let rowInsets = EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20)
 
     private var sidebarColor: Color {
         colorScheme == .dark
@@ -115,41 +112,47 @@ struct JournalView: View {
                     Button { openFromPanel(.leaderboard) } label: {
                         PanelNavLabel(title: "Emotion Leaderboard", systemImage: "chart.bar")
                     }
+                    // Plain, so the card's two buttons don't both fire on a tap in one row.
+                    .buttonStyle(.plain)
                     // Earlier eras, on a page of their own
                     if !pastEras.isEmpty {
                         Divider().padding(.leading, 44)
                         Button { openFromPanel(.pastEras) } label: {
                             PanelNavLabel(title: "Past Eras", systemImage: "clock.arrow.circlepath")
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 // A list tints button text with the accent color; these read as plain rows.
                 .tint(.primary)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(panelTileFill(colorScheme))
-                )
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                .panelCard(colorScheme)
             }
 
             // Past entries, under a header for each day
             ForEach(pastDays, id: \.day) { day in
+                // Each day's rows together on one card, in the link card's grey, with thin
+                // dividers between them like the link card's; the headings stay on the page.
                 Section {
-                    ForEach(day.rows) { row in
-                        historyRow(row)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(Self.rowInsets)
+                    VStack(spacing: 0) {
+                        ForEach(Array(day.rows.enumerated()), id: \.element.id) { index, row in
+                            if index > 0 {
+                                Divider().padding(.leading, 12)
+                            }
+                            historyRow(row)
+                                // Plain, so the card's buttons don't all fire on a tap in one row.
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                        }
                     }
+                    .panelCard(colorScheme)
                 } header: {
                     Text(dayHeader(day.day))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color(uiColor: .secondaryLabel))
                         .padding(.top, 14)
                         .padding(.bottom, 2)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+                        .listRowInsets(EdgeInsets(top: 0, leading: 24, bottom: 0, trailing: 24))
                 }
             }
 
@@ -621,10 +624,10 @@ private struct PastRowLine: View {
         .padding(.vertical, 2)
     }
 
-    /// A row's words sit on a tile too, like the feelings' emoji, so every kind of row
-    /// reads as the same kind of thing.
     private func title(_ text: String) -> some View {
-        TitleTile(text: text)
+        Text(text)
+            .lineLimit(1)
+            .truncationMode(.tail)
     }
 
     private func time(_ seconds: TimeInterval) -> some View {
@@ -636,32 +639,25 @@ private struct PastRowLine: View {
     }
 }
 
-/// The panel's one neutral fill, shared by the link card at the top and the rows' title
-/// tiles: a little darker than the panel (a little lighter in dark mode).
+/// The panel's one neutral fill, shared by the link card at the top and the days' cards:
+/// a little darker than the panel (a little lighter in dark mode).
 private func panelTileFill(_ colorScheme: ColorScheme) -> Color {
     Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.045)
 }
 
-/// A row's title on a rounded tile the height and corner of an `EmotionTile`, as wide as the
-/// row allows, in the same plain grey as the panel's link card.
-private struct TitleTile: View {
-    let text: String
-    @Environment(\.colorScheme) private var colorScheme
-
-
-    var body: some View {
-        Text(text)
-            .font(.subheadline)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.horizontal, 9)
-            // The tile runs the row's width up to the time, not just under the words.
-            .frame(maxWidth: .infinity, minHeight: EmotionTile.height, maxHeight: EmotionTile.height, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(panelTileFill(colorScheme))
-            }
+private extension View {
+    /// One of the panel's rounded cards, as a list row of its own.
+    func panelCard(_ colorScheme: ColorScheme) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(panelTileFill(colorScheme))
+        )
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
     }
 }
+
 
 /// A feeling's emoji on a small rounded tile in a lighter shade of that feeling's chip colour
 /// (`Emotion.chipColor`, as on the Feelings page and the home header), lighter still at the top.
