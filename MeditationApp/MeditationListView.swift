@@ -1000,15 +1000,19 @@ private struct FeelingsHeader: View {
                     }
                 }
             }
-            // Always one plain link under the chips, opening Feelings with nothing tapped:
+            // Always one plain link under the chips, at the right with a chevron, opening Feelings with nothing tapped:
             // the hidden ones' count when the check-in has more than fit, otherwise a way
             // to start from a feeling not shown.
             Button { openFeelings() } label: {
-                Text(linkTitle(session: session, shown: shown))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                HStack(spacing: 4) {
+                    Text(linkTitle(session: session, shown: shown))
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -1016,7 +1020,7 @@ private struct FeelingsHeader: View {
 
     private func linkTitle(session: [Emotion], shown: [Emotion]) -> String {
         if session.count > Self.maxChips { return "\(session.count - Self.maxChips) more" }
-        return shown.isEmpty ? "Check in…" : "Other feelings…"
+        return shown.isEmpty ? "Check in" : "Other feelings"
     }
 
     /// The feelings you've spent the most time with in past check-ins.
