@@ -565,7 +565,15 @@ struct MeditationListView: View {
         let isAway = rowInFlight == url
         // The playing row's card has fallen into the now-playing bar: what's left is the gap
         // it came out of, with its name and listening time still in it.
-        let isHole = isEngaged || isAway
+        // Paused too: whenever the bar is up with this meditation, its card is down there.
+        let barHoldsIt: Bool = {
+            guard isCurrent else { return false }
+            switch player.state {
+            case .preparing, .playing, .paused: return true
+            case .idle, .finished: return false
+            }
+        }()
+        let isHole = isEngaged || barHoldsIt || isAway
         Button {
             tappableFrames.noteRowTap()
             if isPreparing {
