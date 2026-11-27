@@ -31,33 +31,64 @@ enum WidgetSync {
             return WidgetSnapshot.Item(filename: name, title: title.isEmpty ? name : title)
         }
 
-        let streak = store.currentMeditationStreak
-        let workedToday = store.journalEntries.contains { entry in
-            guard case .meditation(let m) = entry.content, m.worked else { return false }
-            return cal.isDateInToday(entry.timestamp)
+        let listening = player.listeningHistory.days(atLeast: 0, at: now)
+        let secondsToday = listening.filter { cal.isDateInToday($0.day) }.reduce(0) { $0 + $1.seconds }
+
+        // This era: listening on or after the day it started, and the meditation most listened to.
+        let era = EraIndex.load().current
+        let eraStart = era.flatMap { Self.dayFormatter.date(from: $0.started) }.map { cal.startOfDay(for: $0) }
+        let eraDays = listening.filter { day in eraStart.map { day.day >= $0 } ?? true }
+        let eraSeconds = eraDays.reduce(0) { $0 + $1.seconds }
+        let byFile = Dictionary(grouping: eraDays, by: \.filename).mapValues { $0.reduce(0) { $0 + $1.seconds } }
+        let eraTopTitle: String? = byFile.max { $0.value < $1.value }.map { top in
+            let name = top.key
+            let text = byName[name].flatMap { FileManager.default.readMeditation(at: $0) } ?? ""
+            let title = MeditationParser.parseMetadata(text).title
+            return title.isEmpty ? name : title
         }
-        let streakLastDay = streak == 0 ? nil
-            : (workedToday ? now : cal.date(byAdding: .day, value: -1, to: now))
 
-        let secondsToday = player.listeningHistory.days(atLeast: 0, at: now)
-            .filter { cal.isDateInToday($0.day) }
-            .reduce(0) { $0 + $1.seconds }
-
-        let checkedInToday = store.journalEntries.contains { entry in
-            guard case .checkInSession = entry.content else { return false }
-            return cal.isDateInToday(entry.timestamp)
-        } || store.sessionStartTime.map { cal.isDateInToday($0) } == true
+        let todayFeelings = Self.todayFeelings(store: store, calendar: cal)
 
         let playing = player.state == .idle ? nil
             : player.currentSourceURL?.deletingPathExtension().lastPathComponent
 
         let snapshot = WidgetSnapshot(
             updatedAt: now, recent: Array(recent), playingFilename: playing,
-            streak: streak, streakLastDay: streakLastDay,
-            secondsToday: secondsToday, checkedInToday: checkedInToday,
+            secondsToday: secondsToday, todayFeelings: todayFeelings,
+            eraSeconds: eraSeconds, eraTopTitle: eraTopTitle, hasEra: era != nil,
             palette: UserDefaults.standard.string(forKey: AppPalette.preferenceKey))
         snapshot.save()
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// The check-in under way, if it started today, else today's last logged check-in.
+    private static func todayFeelings(store: EmotionStore, calendar cal: Calendar) -> [WidgetSnapshot.Feeling] {
+        if let started = store.sessionStartTime, cal.isDateInToday(started), !store.emotionCounts.isEmpty {
+            return Emotion.all
+                .filter { store.emotionCounts[$0.name, default: 0] > 0 }
+                .sorted {
+                    let l = store.emotionTimeContributions[$0.name, default: 0]
+                    let r = store.emotionTimeContributions[$1.name, default: 0]
+                    if l != r { return l > r }
+                    return store.emotionCounts[$0.name, default: 0] > store.emotionCounts[$1.name, default: 0]
+                }
+                .map { WidgetSnapshot.Feeling(emoji: $0.emoji, name: $0.name) }
+        }
+        for entry in store.journalEntries.sorted(by: { $0.timestamp > $1.timestamp })
+            where cal.isDateInToday(entry.timestamp) {
+            if case .checkInSession(let session) = entry.content {
+                return session.emotions.map { WidgetSnapshot.Feeling(emoji: $0.emoji, name: $0.name) }
+            }
+        }
+        return []
     }
 }
 

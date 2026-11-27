@@ -39,11 +39,8 @@ struct SnapshotProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SnapshotEntry>) -> Void) {
         let now = Date()
-        let snapshot = WidgetSnapshot.load() ?? WidgetSnapshot(
-            updatedAt: .distantPast, recent: [], playingFilename: nil, streak: 0, streakLastDay: nil,
-            secondsToday: 0, checkedInToday: false, palette: nil)
-        // Redraw just after midnight, so today's minutes and check-in reset and a lapsed
-        // streak goes. The app reloads the timeline whenever something changes.
+        let snapshot = WidgetSnapshot.load() ?? .empty
+        // Redraw just after midnight, so today's feelings and minutes reset. The app reloads the timeline whenever something changes.
         let midnight = Calendar.current.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0, second: 5),
                                                  matchingPolicy: .nextTime) ?? now.addingTimeInterval(86400)
         completion(Timeline(entries: [SnapshotEntry(date: now, snapshot: snapshot),
@@ -176,40 +173,104 @@ struct TodayWidget: Widget {
                 .widgetURL(WidgetShared.feelingsURL)
         }
         .configurationDisplayName("Today")
-        .description("Your meditation streak, today's listening, and whether you've checked in.")
-        .supportedFamilies([.systemSmall])
+        .description("Today's feelings, today's listening, and this era so far.")
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
 struct TodayView: View {
+    @Environment(\.widgetFamily) private var family
     let entry: SnapshotEntry
 
     var body: some View {
         let snapshot = entry.snapshot
-        let streak = snapshot.streak(at: entry.date)
         let today = snapshot.isToday(at: entry.date)
+        let feelings = today ? (snapshot.todayFeelings ?? []) : []
         let seconds = today ? snapshot.secondsToday : 0
-        let checkedIn = today && snapshot.checkedInToday
         let accent = paletteTint(for: snapshot.palette)
 
-        VStack(alignment: .leading, spacing: 0) {
-            Text("\(streak)")
-                .font(.system(size: 44, weight: .semibold, design: .rounded))
-                .foregroundStyle(streak > 0 ? accent : .secondary)
-                .contentTransition(.numericText())
-            Text("day streak")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 6)
-            Label(seconds >= 60 ? minutesText(seconds) : "Not yet", systemImage: "headphones")
-                .font(.footnote)
-                .foregroundStyle(seconds >= 60 ? .primary : .secondary)
-            Label(checkedIn ? "Checked in" : "Check in", systemImage: checkedIn ? "checkmark.circle.fill" : "heart")
-                .font(.footnote)
-                .foregroundStyle(checkedIn ? .primary : accent)
-                .padding(.top, 2)
+        Group {
+            if family == .systemMedium {
+                HStack(alignment: .top, spacing: 16) {
+                    feelingsBlock(feelings, accent: accent, withNames: true)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        todayLine(seconds)
+                        Spacer(minLength: 6)
+                        eraBlock(snapshot, showTop: true)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    feelingsBlock(feelings, accent: accent, withNames: false)
+                    Spacer(minLength: 6)
+                    todayLine(seconds)
+                    eraBlock(snapshot, showTop: false)
+                        .padding(.top, 4)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .redacted(reason: entry.isPlaceholder ? .placeholder : [])
+    }
+
+    /// Today's check-in feelings, or an invitation to check in.
+    @ViewBuilder
+    private func feelingsBlock(_ feelings: [WidgetSnapshot.Feeling], accent: Color, withNames: Bool) -> some View {
+        if feelings.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: "heart")
+                    .font(.title3)
+                    .foregroundStyle(accent)
+                Text("How are you feeling?")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+        } else if withNames {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(feelings.prefix(4), id: \.self) { feeling in
+                    HStack(spacing: 6) {
+                        Text(feeling.emoji)
+                        Text(feeling.name)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                    }
+                }
+                if feelings.count > 4 {
+                    Text("\(feelings.count - 4) more")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Text(feelings.prefix(4).map(\.emoji).joined(separator: " "))
+                .font(.title2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+    }
+
+    private func todayLine(_ seconds: TimeInterval) -> some View {
+        Label(seconds >= 60 ? "\(minutesText(seconds)) today" : "Nothing yet today", systemImage: "headphones")
+            .font(.footnote)
+            .foregroundStyle(seconds >= 60 ? .primary : .secondary)
+    }
+
+    @ViewBuilder
+    private func eraBlock(_ snapshot: WidgetSnapshot, showTop: Bool) -> some View {
+        if let eraSeconds = snapshot.eraSeconds, eraSeconds >= 60 {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(snapshot.hasEra == true ? "This era" : "All time") · \(minutesText(eraSeconds))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if showTop, let top = snapshot.eraTopTitle {
+                    Text("Most: \(top)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        }
     }
 }

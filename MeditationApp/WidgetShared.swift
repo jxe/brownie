@@ -21,6 +21,11 @@ enum WidgetShared {
 
 /// What the widgets show, as of `updatedAt`.
 struct WidgetSnapshot: Codable {
+    struct Feeling: Codable, Hashable {
+        let emoji: String
+        let name: String
+    }
+
     struct Item: Codable, Hashable {
         /// The file's name without `.med`, which the play intent looks up.
         let filename: String
@@ -31,11 +36,15 @@ struct WidgetSnapshot: Codable {
     /// Latest first: what was played most recently, then the newest of this era.
     var recent: [Item]
     var playingFilename: String?
-    /// Consecutive days with a meditation that worked, ending on `streakLastDay`.
-    var streak: Int
-    var streakLastDay: Date?
     var secondsToday: TimeInterval
-    var checkedInToday: Bool
+    /// Today's check-in feelings (the one under way, else today's last), most engaged first.
+    /// Empty when there was no check-in today.
+    var todayFeelings: [Feeling]?
+    /// Listening since the current era started (all listening when there are no eras).
+    var eraSeconds: TimeInterval?
+    /// The meditation listened to most this era.
+    var eraTopTitle: String?
+    var hasEra: Bool?
     /// `AppPalette` raw value, so the widget's tint matches the app's.
     var palette: String?
 
@@ -47,8 +56,13 @@ struct WidgetSnapshot: Codable {
             Item(filename: "", title: "Loving kindness"),
             Item(filename: "", title: "Breath count"),
         ],
-        playingFilename: nil, streak: 3, streakLastDay: Date(),
-        secondsToday: 12 * 60, checkedInToday: true, palette: nil)
+        playingFilename: nil, secondsToday: 12 * 60,
+        todayFeelings: [Feeling(emoji: "😌", name: "Calm"), Feeling(emoji: "🙏", name: "Grateful")],
+        eraSeconds: 3 * 3600 + 20 * 60, eraTopTitle: "Body scan", hasEra: true, palette: nil)
+
+    static let empty = WidgetSnapshot(
+        updatedAt: .distantPast, recent: [], playingFilename: nil, secondsToday: 0,
+        todayFeelings: nil, eraSeconds: nil, eraTopTitle: nil, hasEra: nil, palette: nil)
 
     static func load() -> WidgetSnapshot? {
         guard let url = WidgetShared.snapshotURL, let data = try? Data(contentsOf: url) else { return nil }
@@ -61,13 +75,6 @@ struct WidgetSnapshot: Codable {
     }
 
     // The widget may show a snapshot from an earlier day; these read it as of `now`.
-
-    func streak(at now: Date) -> Int {
-        guard let last = streakLastDay else { return 0 }
-        let cal = Calendar.current
-        return cal.isDateInToday(last) || cal.isDateInYesterday(last) || cal.isDate(last, inSameDayAs: now)
-            ? streak : 0
-    }
 
     func isToday(at now: Date) -> Bool {
         Calendar.current.isDate(updatedAt, inSameDayAs: now)
