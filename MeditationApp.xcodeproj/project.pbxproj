@@ -39,7 +39,36 @@
 		A10000220000000000000022 /* MeditationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000220000000000000022 /* MeditationStore.swift */; };
 		A10000230000000000000023 /* MeditationStoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000230000000000000023 /* MeditationStoreView.swift */; };
 		A10000240000000000000024 /* MedQuickEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000240000000000000024 /* MedQuickEdit.swift */; };
+		A10000250000000000000025 /* WidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000250000000000000025 /* WidgetShared.swift */; };
+		A10000260000000000000026 /* WidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000250000000000000025 /* WidgetShared.swift */; };
+		A10000270000000000000027 /* WidgetSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000270000000000000027 /* WidgetSync.swift */; };
+		A10000280000000000000028 /* BrownieWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000280000000000000028 /* BrownieWidget.swift */; };
+		A10000290000000000000029 /* BrownieWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A30000020000000000000002 /* BrownieWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AE0000010000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A90000010000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A60000020000000000000002;
+			remoteInfo = BrownieWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AC0000010000000000000001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A10000290000000000000029 /* BrownieWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A20000010000000000000001 /* MeditationApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationApp.swift; sourceTree = "<group>"; };
@@ -77,10 +106,23 @@
 		A20000230000000000000023 /* MeditationStoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeditationStoreView.swift; sourceTree = "<group>"; };
 		A20000240000000000000024 /* MedQuickEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedQuickEdit.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Brownie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Brownie.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000250000000000000025 /* WidgetShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetShared.swift; sourceTree = "<group>"; };
+		A20000270000000000000027 /* WidgetSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSync.swift; sourceTree = "<group>"; };
+		A20000280000000000000028 /* BrownieWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrownieWidget.swift; sourceTree = "<group>"; };
+		A20000290000000000000029 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A200002A000000000000002A /* BrownieWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BrownieWidget.entitlements; sourceTree = "<group>"; };
+		A30000020000000000000002 /* BrownieWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BrownieWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A40000010000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A40000030000000000000003 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -94,6 +136,7 @@
 			isa = PBXGroup;
 			children = (
 				A50000020000000000000002 /* MeditationApp */,
+				A50000040000000000000004 /* BrownieWidget */,
 				A50000030000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -129,6 +172,8 @@
 				A20000220000000000000022 /* MeditationStore.swift */,
 				A20000230000000000000023 /* MeditationStoreView.swift */,
 				A20000240000000000000024 /* MedQuickEdit.swift */,
+				A20000250000000000000025 /* WidgetShared.swift */,
+				A20000270000000000000027 /* WidgetSync.swift */,
 				A200000A000000000000000A /* Info.plist */,
 				A200000D000000000000000D /* MeditationApp.entitlements */,
 				A200000E000000000000000E /* Assets.xcassets */,
@@ -143,8 +188,19 @@
 			isa = PBXGroup;
 			children = (
 				A30000010000000000000001 /* Brownie.app */,
+				A30000020000000000000002 /* BrownieWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A50000040000000000000004 /* BrownieWidget */ = {
+			isa = PBXGroup;
+			children = (
+				A20000280000000000000028 /* BrownieWidget.swift */,
+				A20000290000000000000029 /* Info.plist */,
+				A200002A000000000000002A /* BrownieWidget.entitlements */,
+			);
+			path = BrownieWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -157,15 +213,34 @@
 				A70000010000000000000001 /* Sources */,
 				A40000010000000000000001 /* Frameworks */,
 				A40000020000000000000002 /* Resources */,
+				AC0000010000000000000001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AD0000010000000000000001 /* PBXTargetDependency */,
 			);
 			name = Brownie;
 			productName = Brownie;
 			productReference = A30000010000000000000001 /* Brownie.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A60000020000000000000002 /* BrownieWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A80000030000000000000003 /* Build configuration list for PBXNativeTarget "BrownieWidgetExtension" */;
+			buildPhases = (
+				A70000020000000000000002 /* Sources */,
+				A40000030000000000000003 /* Frameworks */,
+				A40000040000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BrownieWidgetExtension;
+			productName = BrownieWidgetExtension;
+			productReference = A30000020000000000000002 /* BrownieWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -191,6 +266,7 @@
 			projectRoot = "";
 			targets = (
 				A60000010000000000000001 /* Brownie */,
+				A60000020000000000000002 /* BrownieWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -204,6 +280,13 @@
 				A100001A000000000000001A /* brownie-bell.mp3 in Resources */,
 				A100001E000000000000001E /* brownie-chime.mp3 in Resources */,
 				A100001F000000000000001F /* brownie-gong.mp3 in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A40000040000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,10 +325,29 @@
 				A10000220000000000000022 /* MeditationStore.swift in Sources */,
 				A10000230000000000000023 /* MeditationStoreView.swift in Sources */,
 				A10000240000000000000024 /* MedQuickEdit.swift in Sources */,
+				A10000250000000000000025 /* WidgetShared.swift in Sources */,
+				A10000270000000000000027 /* WidgetSync.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000020000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000280000000000000028 /* BrownieWidget.swift in Sources */,
+				A10000260000000000000026 /* WidgetShared.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AD0000010000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A60000020000000000000002 /* BrownieWidgetExtension */;
+			targetProxy = AE0000010000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000010000000000000001 /* Debug */ = {
@@ -421,6 +523,60 @@
 			};
 			name = Release;
 		};
+		AA0000030000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = BrownieWidget/BrownieWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B7P78ULCXS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BrownieWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Brownie;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joeedelman.meditations.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA0000040000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = BrownieWidget/BrownieWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B7P78ULCXS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BrownieWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Brownie;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joeedelman.meditations.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -438,6 +594,15 @@
 			buildConfigurations = (
 				AB0000010000000000000001 /* Debug */,
 				AB0000020000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A80000030000000000000003 /* Build configuration list for PBXNativeTarget "BrownieWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000030000000000000003 /* Debug */,
+				AA0000040000000000000004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

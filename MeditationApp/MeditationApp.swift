@@ -63,6 +63,8 @@ extension EnvironmentValues {
 @Observable final class EditorRequest {
     static let shared = EditorRequest()
     var url: URL?
+    /// Set by the Today widget's link: the home list opens Feelings and clears it.
+    var openFeelings = false
 }
 
 /// A page the left panel opens. It opens on the main screen, not inside the panel.
@@ -117,9 +119,10 @@ private struct PanelPageView: View {
 @main
 struct BrownieApp: App {
     @AppStorage(AppPalette.preferenceKey) private var palette = AppPalette.defaultPalette
-    @State private var player = MeditationPlayer()
+    @State private var player = MeditationPlayer.shared
     @State private var emotionStore = EmotionStore()
     private let icloudWatcher = iCloudMeditationWatcher()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         FileManager.default.configureInitialMeditationStorageIfNeeded()
@@ -135,6 +138,14 @@ struct BrownieApp: App {
                 .tint(palette.tint)
                 .environment(player)
                 .environment(emotionStore)
+                // Keep the home screen widgets current: on coming and going, and as
+                // playback starts and stops.
+                .onChange(of: scenePhase, initial: true) { _, _ in
+                    WidgetSync.update(player: player, store: emotionStore)
+                }
+                .onChange(of: player.state) { _, _ in
+                    WidgetSync.update(player: player, store: emotionStore)
+                }
         }
     }
 }
@@ -312,6 +323,12 @@ struct ContentView: View {
         .overlay { rowFlightLayer }
         // med.nxhx.org/m/<id> universal links and brownie://m/<id> open the store item.
         .onOpenURL { url in
+            if url == WidgetShared.feelingsURL {
+                setPanel(open: false)
+                mainPath = []
+                EditorRequest.shared.openFeelings = true
+                return
+            }
             guard let id = MeditationStore.recordName(from: url) else { return }
             setPanel(open: false)
             MeditationStore.shared.openedLinkID = id

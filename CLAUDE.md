@@ -34,6 +34,11 @@ IDs follow a sequential pattern: build file IDs start with `A1000012...`, file r
 - **SettingsView.swift** - App settings (voice selection, speaking rate, iCloud), and Export Journal (a ShareLink of `JournalExport.markdown`, the whole journal as Markdown; shown once there is a past entry)
 - **EraIndex.swift** - Eras: unnamed stretches of time in `eras.json` (start date, plus meditations brought along by filename). A meditation belongs to the era it was made in and any era it was brought along to; nothing about eras is in the scripts (old `#era` tags are migrated out on load). Start a New Era is in the + menu; the previous era's leftovers sit folded at the bottom of the main screen with Bring Along in the long-press menu, and past eras open from History
 
+### Widgets
+- **BrownieWidget/** - The widget extension target (`BrownieWidgetExtension`, bundle id `com.joeedelman.meditations.widget`): Quick Play (small: the last played meditation; medium: four recent ones; a tap plays through `PlayMeditationIntent`) and Today (small: meditation streak, today's listening, checked in or not; a tap opens Feelings through `brownie://feelings`). Its Swift files go in the widget target's own Sources phase
+- **WidgetShared.swift** - In both targets: the App Group (`group.com.joeedelman.meditations`), `WidgetSnapshot` (JSON the app writes there, the widget only reads), and `PlayMeditationIntent`, an `AudioPlaybackIntent`, so the system runs it in the app's process and plays on `MeditationPlayer.shared`. `WidgetPlayHandler` is defined twice: for real in WidgetSync.swift (app), as a no-op in BrownieWidget.swift
+- **WidgetSync.swift** - App only: builds the snapshot (recently played from `ListeningHistory.recentlyPlayed`, filled with this era's newest; streak; today's listening; check-in today) and reloads the widgets, on scene phase changes and when playback starts or stops
+
 ### Colors
 - `BackgroundColor` is plain white/black for the main screen and everything pushed from it; the left panel and its pages (History, Settings, past eras, Archived, Leaderboard) use the warmer `PanelBackgroundColor`
 - **SampleMeditations.swift** - Installs the store's featured meditations for brand-new local libraries

@@ -333,6 +333,14 @@ struct MeditationListView: View {
                     editFile(url)
                 }
             }
+            // The Today widget's tap: open Feelings, over nothing else.
+            .onChange(of: EditorRequest.shared.openFeelings, initial: true) { _, open in
+                guard shelf == .home, open else { return }
+                EditorRequest.shared.openFeelings = false
+                showingEditor = false
+                showingTodos = false
+                showingFeelings = true
+            }
             .navigationDestination(isPresented: $showingEditor) {
                 MeditationEditorView(
                     content: $editorContent,

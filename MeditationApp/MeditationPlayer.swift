@@ -113,6 +113,10 @@ class MeditationPlayer: NSObject {
     @ObservationIgnored private var playbackGeneration = 0
     @ObservationIgnored private var isAppInForeground = true
 
+    /// The app's one player. Shared so a widget's play intent, which can run before any
+    /// view exists, reaches the same player the now-playing bar shows.
+    static let shared = MeditationPlayer()
+
     override init() {
         if let saved = UserDefaults.standard.string(forKey: "selectedVoiceID"),
            saved == Self.autoVoiceID || AVSpeechSynthesisVoice(identifier: saved) != nil {
@@ -795,6 +799,13 @@ final class ListeningHistory {
         checkpoint = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.save()
         }
+    }
+
+    /// Filenames by when they were last played, latest first, the playing one included.
+    func recentlyPlayed(at now: Date = Date()) -> [String] {
+        var last = records.mapValues(\.lastPlayed)
+        if let activeFile { last[activeFile] = now }
+        return last.sorted { $0.value > $1.value }.map(\.key)
     }
 
     func end() {
