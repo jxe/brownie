@@ -103,7 +103,7 @@ struct QuickPlayView: View {
                     .font(.title2)
                     .foregroundStyle(accent)
                 Text("Play a meditation in Brownie and it shows up here.")
-                    .font(.caption)
+                    .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
             }
@@ -127,7 +127,7 @@ struct QuickPlayView: View {
                     .symbolEffect(.variableColor.iterative, isActive: isPlaying(item))
                 Spacer(minLength: 4)
                 Text(item.title)
-                    .font(.headline)
+                    .font(.subheadline)
                     .lineLimit(3)
                     .foregroundStyle(.primary)
             }
@@ -148,7 +148,7 @@ struct QuickPlayView: View {
                             .foregroundStyle(accent)
                             .frame(width: 20)
                         Text(item.title)
-                            .font(.subheadline.weight(isPlaying(item) ? .semibold : .regular))
+                            .font(.subheadline)
                             .lineLimit(1)
                             .foregroundStyle(.primary)
                         Spacer(minLength: 0)
@@ -221,10 +221,10 @@ struct TodayView: View {
         if feelings.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 Image(systemName: "heart")
-                    .font(.title3)
+                    .font(.title2)
                     .foregroundStyle(accent)
                 Text("How are you feeling?")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline)
                     .foregroundStyle(.primary)
             }
         } else if withNames {
@@ -233,13 +233,13 @@ struct TodayView: View {
                     HStack(spacing: 6) {
                         Text(feeling.emoji)
                         Text(feeling.name)
-                            .font(.subheadline)
                             .lineLimit(1)
                     }
+                    .font(.subheadline)
                 }
                 if feelings.count > 4 {
                     Text("\(feelings.count - 4) more")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -253,7 +253,7 @@ struct TodayView: View {
 
     private func todayLine(_ seconds: TimeInterval) -> some View {
         Label(seconds >= 60 ? "\(minutesText(seconds)) today" : "Nothing yet today", systemImage: "headphones")
-            .font(.footnote)
+            .font(.subheadline)
             .foregroundStyle(seconds >= 60 ? .primary : .secondary)
     }
 
@@ -262,11 +262,11 @@ struct TodayView: View {
         if let eraSeconds = snapshot.eraSeconds, eraSeconds >= 60 {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(snapshot.hasEra == true ? "This era" : "All time") · \(minutesText(eraSeconds))")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if showTop, let top = snapshot.eraTopTitle {
                     Text("Most: \(top)")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
