@@ -72,26 +72,36 @@ struct MeditationListView: View {
         return byRecentListening(base.filter { eraIndex.belongs($0, to: current) })
     }
 
-    /// Meditations played in the last week come first, most listened to this week first; the
-    /// rest keep the order they came in.
+    /// Meditations played in the last 24 hours come first, by their last 24 hours' listening;
+    /// then the rest played in the last week, by the week's listening; then the rest in the
+    /// order they came in. Ties keep that order too.
     private func byRecentListening(_ urls: [URL]) -> [URL] {
         let now = Date()
         let weekAgo = now.addingTimeInterval(-7 * 86400)
         let history = player.listeningHistory
-        var recent: [(url: URL, seconds: TimeInterval)] = []
+        var today: [(url: URL, seconds: TimeInterval)] = []
+        var week: [(url: URL, seconds: TimeInterval)] = []
         var rest: [URL] = []
         for url in urls {
-            if let record = history.record(for: EraIndex.name(of: url), at: now), record.lastPlayed >= weekAgo {
-                recent.append((url, record.seconds(inLastDays: 7, at: now)))
+            guard let record = history.record(for: EraIndex.name(of: url), at: now) else {
+                rest.append(url)
+                continue
+            }
+            let day = record.seconds(inLastDayAt: now)
+            if day > 0 {
+                today.append((url, day))
+            } else if record.lastPlayed >= weekAgo {
+                week.append((url, record.seconds(inLastDays: 7, at: now)))
             } else {
                 rest.append(url)
             }
         }
-        // Stable: equal times keep their existing order.
-        let sorted = recent.enumerated().sorted {
-            $0.element.seconds != $1.element.seconds ? $0.element.seconds > $1.element.seconds : $0.offset < $1.offset
+        func byMost(_ list: [(url: URL, seconds: TimeInterval)]) -> [URL] {
+            list.enumerated().sorted {
+                $0.element.seconds != $1.element.seconds ? $0.element.seconds > $1.element.seconds : $0.offset < $1.offset
+            }.map(\.element.url)
         }
-        return sorted.map(\.element.url) + rest
+        return byMost(today) + byMost(week) + rest
     }
 
     /// Rarely played meditations past their first few days are hidden from the main screen
