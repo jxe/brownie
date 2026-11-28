@@ -68,8 +68,30 @@ struct MeditationListView: View {
     /// once, under Evergreen.
     private var currentFiles: [URL] {
         let base = files.filter { !isTimeless($0) }
-        guard let current = eraIndex.current else { return base }
-        return base.filter { eraIndex.belongs($0, to: current) }
+        guard let current = eraIndex.current else { return byRecentListening(base) }
+        return byRecentListening(base.filter { eraIndex.belongs($0, to: current) })
+    }
+
+    /// Meditations played in the last week come first, most listened to (all time) first; the
+    /// rest keep the order they came in.
+    private func byRecentListening(_ urls: [URL]) -> [URL] {
+        let now = Date()
+        let weekAgo = now.addingTimeInterval(-7 * 86400)
+        let history = player.listeningHistory
+        var recent: [(url: URL, seconds: TimeInterval)] = []
+        var rest: [URL] = []
+        for url in urls {
+            if let record = history.record(for: EraIndex.name(of: url), at: now), record.lastPlayed >= weekAgo {
+                recent.append((url, record.totalSeconds))
+            } else {
+                rest.append(url)
+            }
+        }
+        // Stable: equal times keep their existing order.
+        let sorted = recent.enumerated().sorted {
+            $0.element.seconds != $1.element.seconds ? $0.element.seconds > $1.element.seconds : $0.offset < $1.offset
+        }
+        return sorted.map(\.element.url) + rest
     }
 
     /// Rarely played meditations past their first few days are hidden from the main screen
@@ -90,12 +112,12 @@ struct MeditationListView: View {
     }
 
     private var timelessFiles: [URL] {
-        files.filter(isTimeless)
+        byRecentListening(files.filter(isTimeless))
     }
 
     /// Meditations from a past era, minus ones already brought along to this one.
     private func pastFiles(_ selection: EraSelection) -> [URL] {
-        eraIndex.pastFiles(selection, from: files, isTimeless: isTimeless)
+        byRecentListening(eraIndex.pastFiles(selection, from: files, isTimeless: isTimeless))
     }
 
     /// The era before this one, whose leftovers wait at the bottom of the main screen.
