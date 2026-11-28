@@ -89,6 +89,31 @@ struct MedValueEdit {
         }
     }
 
+    /// What Remove takes out for a token at `hit`: the token, and the spaces before it (or,
+    /// at the start of a line's text, after it), so no double space or stray indent is left.
+    static func removalRange(for hit: NSRange, in ns: NSString) -> NSRange {
+        func isSpace(_ i: Int) -> Bool { ns.character(at: i) == 0x20 || ns.character(at: i) == 0x09 }
+        var start = hit.location
+        var end = NSMaxRange(hit)
+        while start > 0, isSpace(start - 1) { start -= 1 }
+        if start > 0, ns.character(at: start - 1) != 10 {
+            return NSRange(location: start, length: end - start)
+        }
+        // Nothing before it on the line: keep the indent, take the spaces after it instead.
+        start = hit.location
+        while end < ns.length, isSpace(end) { end += 1 }
+        return NSRange(location: start, length: end - start)
+    }
+
+    var removeTitle: String {
+        switch kind {
+        case .pause, .dots: return "Remove Pause"
+        case .countdown: return "Remove Countdown"
+        case .breakRest: return "Remove Break"
+        case .repeatCount: return "Remove Repeat"
+        }
+    }
+
     static func durationText(_ seconds: Int, ascii: Bool) -> String {
         if seconds >= 60 && seconds % 60 == 0 {
             return "\(seconds / 60)\(ascii ? "'" : "\u{2032}")"
@@ -465,11 +490,14 @@ struct MedPoolBlock {
 struct MedValuePopover: View {
     let edit: MedValueEdit
     let onChange: (Int) -> Void
+    /// Takes the token out of the text (and closes the popover).
+    var onRemove: (() -> Void)? = nil
     @State private var value: Int
 
-    init(edit: MedValueEdit, onChange: @escaping (Int) -> Void) {
+    init(edit: MedValueEdit, onChange: @escaping (Int) -> Void, onRemove: (() -> Void)? = nil) {
         self.edit = edit
         self.onChange = onChange
+        self.onRemove = onRemove
         _value = State(initialValue: edit.value)
     }
 
@@ -499,6 +527,16 @@ struct MedValuePopover: View {
                     }
                 }
             }
+
+            if let onRemove {
+                Button(role: .destructive, action: onRemove) {
+                    Label(edit.removeTitle, systemImage: "trash")
+                        .font(.callout.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+            }
         }
         .padding(16)
         .frame(width: 320)
@@ -522,6 +560,66 @@ struct MedValuePopover: View {
         guard clamped != value else { return }
         withAnimation(.snappy) { value = clamped }
         onChange(clamped)
+    }
+}
+
+// MARK: - Adding a timing
+
+/// What the keyboard bar's timing menu adds: a pause, countdown or break at the caret, or a
+/// repeat count at the end of the line.
+enum MedTimingKind: CaseIterable {
+    case pause, countdown, breakRest, repeatLine
+
+    var title: String {
+        switch self {
+        case .pause: return "Pause"
+        case .countdown: return "Countdown"
+        case .breakRest: return "Break Between Repeats"
+        case .repeatLine: return "Repeat Line"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .pause: return "pause"
+        case .countdown: return "hourglass"
+        case .breakRest: return "pause.rectangle"
+        case .repeatLine: return "repeat"
+        }
+    }
+
+    var token: String {
+        switch self {
+        case .pause: return "10\u{2033}"
+        case .countdown: return "\u{23F3}1\u{2032}"
+        case .breakRest: return "\u{2016}28\u{2033}"
+        case .repeatLine: return "\u{00D7}3"
+        }
+    }
+
+    /// Puts the token into `textView` (undoably) with a space on each side where it needs one,
+    /// and returns where the token itself starts, or nil if nothing was inserted.
+    func insert(into textView: UITextView) -> Int? {
+        let ns = (textView.text ?? "") as NSString
+        let selection = textView.selectedRange
+        guard NSMaxRange(selection) <= ns.length else { return nil }
+        func isSpace(_ i: Int) -> Bool { ns.character(at: i) == 0x20 || ns.character(at: i) == 0x09 }
+        var at = NSMaxRange(selection)
+        if self == .repeatLine {
+            // After everything on the line, trailing spaces aside.
+            var lineStart = 0, lineEnd = 0, contentsEnd = 0
+            ns.getLineStart(&lineStart, end: &lineEnd, contentsEnd: &contentsEnd,
+                            for: NSRange(location: at, length: 0))
+            at = contentsEnd
+            while at > lineStart, isSpace(at - 1) { at -= 1 }
+        }
+        let before = at > 0 && !isSpace(at - 1) && ns.character(at: at - 1) != 10
+        let after = at < ns.length && !isSpace(at) && ns.character(at: at) != 10
+        let text = (before ? " " : "") + token + (after ? " " : "")
+        guard let start = textView.position(from: textView.beginningOfDocument, offset: at),
+              let range = textView.textRange(from: start, to: start) else { return nil }
+        textView.replace(range, withText: text)
+        return at + (before ? 1 : 0)
     }
 }
 

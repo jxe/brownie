@@ -92,7 +92,13 @@ struct MedTextEditor: UIViewRepresentable {
         let outsideChanged = medView.map { $0.outsideText != outside } ?? false
         if outsideChanged { medView?.outsideText = outside }
         if textView.text != text {
+            // Keep the caret where it was rather than letting the new text throw it to the end.
+            let selection = textView.selectedRange
             textView.text = text
+            let length = (text as NSString).length
+            let location = min(selection.location, length)
+            textView.selectedRange = NSRange(location: location,
+                                             length: min(selection.length, length - location))
             applyMedHighlights(to: textView)
         } else if outsideChanged {
             // A pool added or removed outside changes which references are chips.
@@ -190,6 +196,10 @@ struct MedTextEditor: UIViewRepresentable {
                 stack.addArrangedSubview(AccessoryGap(width: 12))
             }
             if groupIndex == 0 {
+                stack.addArrangedSubview(makeTimingMenuButton { [weak textView] kind in
+                    guard let textView else { return }
+                    (textView.delegate as? Coordinator)?.addTiming(kind, in: textView)
+                })
                 stack.addArrangedSubview(makePoolMenuButton(textView: textView))
             }
             for symbol in group {
@@ -442,15 +452,30 @@ struct MedTextEditor: UIViewRepresentable {
             case .value(let edit):
                 var range = edit.valueRange
                 var current = (textView.text as NSString).substring(with: range)
-                let popover = MedValuePopover(edit: edit) { [weak self, weak textView] value in
+                // The whole token, which grows or shrinks with its value.
+                var hit = edit.hitRange
+                weak var shown: UIViewController?
+                let popover = MedValuePopover(edit: edit, onChange: { [weak self, weak textView] value in
                     guard let self, let textView else { return }
                     let replacement = edit.text(for: value)
                     if self.replace(range, expecting: current, with: replacement, in: textView) {
-                        range.length = (replacement as NSString).length
+                        let newLength = (replacement as NSString).length
+                        hit.length += newLength - range.length
+                        range.length = newLength
                         current = replacement
                     }
-                }
+                }, onRemove: { [weak self, weak textView] in
+                    if let self, let textView {
+                        let ns = textView.text as NSString
+                        if NSMaxRange(hit) <= ns.length {
+                            let removal = MedValueEdit.removalRange(for: hit, in: ns)
+                            self.replace(removal, expecting: ns.substring(with: removal), with: "", in: textView)
+                        }
+                    }
+                    shown?.dismiss(animated: true)
+                })
                 let host = UIHostingController(rootView: popover)
+                shown = host
                 host.sizingOptions = .preferredContentSize
                 host.modalPresentationStyle = .popover
                 if let pop = host.popoverPresentationController {
@@ -526,6 +551,22 @@ struct MedTextEditor: UIViewRepresentable {
                 }
                 presenter.present(host, animated: true)
             }
+        }
+
+        // MARK: Adding a timing
+
+        /// The keyboard bar's timing menu: puts the timing in, then opens its popover so its
+        /// value can be set (or the timing taken out again).
+        func addTiming(_ kind: MedTimingKind, in textView: UITextView) {
+            guard let start = kind.insert(into: textView) else { return }
+            textViewDidChange(textView)
+            textView.layoutIfNeeded()
+            let outside = (textView as? MedTextView)?.outsideText ?? ""
+            let target = MedQuickEdit.targets(onLineAt: start, in: textView.text, outside: outside).first {
+                if case .value(let edit) = $0 { return edit.hitRange.location == start }
+                return false
+            }
+            if let target { present(target, from: textView) }
         }
 
         // MARK: New pool
@@ -839,6 +880,22 @@ final class MedTextView: UITextView {
             chipLayers.append(layer)
         }
     }
+}
+
+/// The keyboard bar's timing button: a menu of what to add (pause, countdown, break, repeat).
+private func makeTimingMenuButton(onAdd: @escaping (MedTimingKind) -> Void) -> UIButton {
+    let button = AccessoryIconButton(systemName: "timer")
+    button.accessibilityLabel = "Add a pause, countdown or repeat"
+    button.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(equalToConstant: 40),
+        button.heightAnchor.constraint(equalToConstant: 36),
+    ])
+    button.showsMenuAsPrimaryAction = true
+    button.menu = UIMenu(children: MedTimingKind.allCases.map { kind in
+        UIAction(title: kind.title, image: UIImage(systemName: kind.systemImage)) { _ in onAdd(kind) }
+    })
+    return button
 }
 
 private class SymbolButton: UIButton {
@@ -1235,7 +1292,9 @@ struct MedItemField: UIViewRepresentable {
         field.returnKeyType = .next
         field.delegate = context.coordinator
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        field.inputAccessoryView = makeItemToolbar(for: field, references: references)
+        field.inputAccessoryView = makeItemToolbar(
+            for: field, references: references,
+            onAddTiming: { [weak coordinator = context.coordinator] kind in coordinator?.addTiming(kind) })
         field.text = text
         context.coordinator.recolor(field)
         // A tap on a `~name` reference jumps to that well rather than placing the cursor.
@@ -1314,17 +1373,31 @@ struct MedItemField: UIViewRepresentable {
             field.resignFirstResponder()
             var range = edit.valueRange
             var current = ((field.text ?? "") as NSString).substring(with: range)
-            let popover = MedValuePopover(edit: edit) { [weak self, weak field] value in
+            var hit = edit.hitRange
+            weak var shown: UIViewController?
+            let popover = MedValuePopover(edit: edit, onChange: { [weak self, weak field] value in
                 guard let self, let field else { return }
                 let ns = (field.text ?? "") as NSString
                 guard NSMaxRange(range) <= ns.length, ns.substring(with: range) == current else { return }
                 let replacement = edit.text(for: value)
                 field.text = ns.replacingCharacters(in: range, with: replacement)
-                range.length = (replacement as NSString).length
+                let newLength = (replacement as NSString).length
+                hit.length += newLength - range.length
+                range.length = newLength
                 current = replacement
                 self.textViewDidChange(field)
-            }
+            }, onRemove: { [weak self, weak field] in
+                if let self, let field {
+                    let ns = (field.text ?? "") as NSString
+                    if NSMaxRange(hit) <= ns.length {
+                        field.text = ns.replacingCharacters(in: MedValueEdit.removalRange(for: hit, in: ns), with: "")
+                        self.textViewDidChange(field)
+                    }
+                }
+                shown?.dismiss(animated: true)
+            })
             let host = UIHostingController(rootView: popover)
+            shown = host
             host.sizingOptions = .preferredContentSize
             host.modalPresentationStyle = .popover
             if let pop = host.popoverPresentationController {
@@ -1383,6 +1456,18 @@ struct MedItemField: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
             recolor(textView)
+        }
+
+        /// The keyboard bar's timing menu: puts the timing in, then opens its popover.
+        func addTiming(_ kind: MedTimingKind) {
+            guard let field, !parent.dimmed, let start = kind.insert(into: field) else { return }
+            textViewDidChange(field)
+            field.layoutIfNeeded()
+            let edit = MedItemTextView.valueTargets(in: field.text ?? "").lazy.compactMap { target -> MedValueEdit? in
+                if case .value(let edit) = target, edit.hitRange.location == start { return edit }
+                return nil
+            }.first
+            if let edit { presentValue(edit, from: field) }
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) { parent.onFocus() }
@@ -1525,7 +1610,8 @@ final class MedItemTextView: UITextView {
     }
 }
 
-private func makeItemToolbar(for field: UITextView, references: (pools: [String], picks: [String])) -> UIView {
+private func makeItemToolbar(for field: UITextView, references: (pools: [String], picks: [String]),
+                             onAddTiming: @escaping (MedTimingKind) -> Void) -> UIView {
     let bar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     bar.backgroundColor = .systemBackground.withAlphaComponent(0.55)
     bar.clipsToBounds = true
@@ -1553,6 +1639,7 @@ private func makeItemToolbar(for field: UITextView, references: (pools: [String]
         sections.append(UIAction(title: "No pools defined yet", attributes: .disabled) { _ in })
     }
     pools.menu = UIMenu(children: sections)
+    stack.addArrangedSubview(makeTimingMenuButton(onAdd: onAddTiming))
     stack.addArrangedSubview(pools)
     stack.addArrangedSubview(AccessoryGap(width: 12))
     for (label, char, name) in [("·", "·", "One second pause"), ("″", "\u{2033}", "Seconds marker")] {

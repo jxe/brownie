@@ -45,6 +45,11 @@ struct MeditationEditorView: View {
     @State private var namingNewPool = false
     @State private var newPoolName = ""
     @State private var editingTags = false
+    /// The title as typed. Written into the header as it changes, but read back from it only
+    /// while the field isn't being typed in: the header keeps one space between words, so
+    /// reading it back mid-word would reset the field and throw the caret to the end.
+    @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
 
     /// Where this page's file is now, so a play counts for (and lights up) the right row after
     /// a new meditation's first autosave or a rename.
@@ -217,6 +222,7 @@ struct MeditationEditorView: View {
         }
         .onAppear {
             syncDocument()
+            titleDraft = meta.title
             if saved == nil {
                 if !isNew { diskName = filename.trimmingCharacters(in: .whitespaces) }
                 let derived = MedFilename.derived(from: meta.title, keepingDateOf: filename)
@@ -295,13 +301,21 @@ struct MeditationEditorView: View {
 
     /// The title as a plain field. Evergreen and tags are in the title bar's ⋯ menu.
     private var headerFields: some View {
-        TextField("Title", text: Binding(
-            get: { meta.title },
-            set: { setHeader(title: $0, tags: meta.tags) }
-        ))
+        TextField("Title", text: $titleDraft)
+        .focused($titleFocused)
         .font(.title2.weight(.semibold))
         .submitLabel(.done)
         .onSubmit { dismissKeyboard() }
+        .onChange(of: titleDraft) { _, typed in
+            if typed != meta.title { setHeader(title: typed, tags: meta.tags) }
+        }
+        // Changed some other way (or typing is done): show the title as the file has it.
+        .onChange(of: meta.title) { _, title in
+            if !titleFocused, titleDraft != title { titleDraft = title }
+        }
+        .onChange(of: titleFocused) { _, focused in
+            if !focused, titleDraft != meta.title { titleDraft = meta.title }
+        }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 10)
