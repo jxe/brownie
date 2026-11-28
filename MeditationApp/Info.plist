@@ -23,6 +23,18 @@
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.joeedelman.meditations</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>Brownie</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
