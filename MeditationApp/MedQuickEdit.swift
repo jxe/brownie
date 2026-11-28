@@ -46,12 +46,18 @@ struct MedValueEdit {
     var smallStep: Int { isDuration && minutes ? 60 : 1 }
     var bigStep: Int? { isDuration ? (minutes ? 300 : 10) : nil }
 
-    var quickPicks: [Int] {
+    /// The values the slider steps through: fine where small values differ a lot, coarser
+    /// further up, so one slider covers seconds to minutes.
+    var sliderStops: [Int] {
         switch kind {
-        case .countdown: return [60, 120, 180, 240, 300, 600]
-        case .pause, .breakRest: return [5, 10, 15, 20, 30, 45, 60, 120]
-        case .dots: return []
-        case .repeatCount: return [2, 3, 4, 5, 6, 8, 10]
+        case .pause, .countdown, .breakRest:
+            return Array(1...20) + Array(stride(from: 25, through: 60, by: 5))
+                + Array(stride(from: 75, through: 180, by: 15)) + Array(stride(from: 210, through: 600, by: 30))
+                + Array(stride(from: 660, through: 1800, by: 60)) + Array(stride(from: 2100, through: 3600, by: 300))
+        case .dots:
+            return Array(1...20)
+        case .repeatCount:
+            return Array(1...20) + [25, 30, 40, 50]
         }
     }
 
@@ -497,44 +503,50 @@ struct MedValuePopover: View {
     }
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text(edit.title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        VStack(spacing: 12) {
+            // The kind on the left, Remove as a small trash on the right.
+            HStack {
+                Text(edit.title)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let onRemove {
+                    Button(role: .destructive, action: onRemove) {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .frame(width: 32, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .tint(.red)
+                    .accessibilityLabel(edit.removeTitle)
+                }
+            }
+
+            Text(edit.display(value))
+                .font(.title2.monospacedDigit().weight(.semibold))
+                .contentTransition(.numericText())
 
             HStack(spacing: 6) {
                 if let big = edit.bigStep { stepButton(-big) }
                 stepButton(-edit.smallStep)
-                Text(edit.display(value))
-                    .font(.title3.monospacedDigit().weight(.semibold))
-                    .frame(minWidth: 104)
-                    .contentTransition(.numericText())
+                Spacer(minLength: 4)
                 stepButton(edit.smallStep)
                 if let big = edit.bigStep { stepButton(big) }
             }
 
-            if !edit.quickPicks.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 8)], spacing: 8) {
-                    ForEach(edit.quickPicks, id: \.self) { pick in
-                        Button(edit.shortLabel(pick)) { set(pick) }
-                            .buttonStyle(.bordered)
-                            .tint(pick == value ? .accentColor : .secondary)
-                    }
-                }
-            }
-
-            if let onRemove {
-                Button(role: .destructive, action: onRemove) {
-                    Label(edit.removeTitle, systemImage: "trash")
-                        .font(.callout.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(.red)
-            }
+            let stops = edit.sliderStops
+            Slider(value: Binding(
+                get: { Double(Self.nearestIndex(of: value, in: stops)) },
+                set: { set(stops[min(max(Int($0.rounded()), 0), stops.count - 1)]) }
+            ), in: 0...Double(stops.count - 1), step: 1)
         }
         .padding(16)
-        .frame(width: 320)
+        .frame(width: 300)
+    }
+
+    private static func nearestIndex(of value: Int, in stops: [Int]) -> Int {
+        stops.indices.min { abs(stops[$0] - value) < abs(stops[$1] - value) } ?? 0
     }
 
     private func stepButton(_ delta: Int) -> some View {
@@ -543,9 +555,12 @@ struct MedValuePopover: View {
         } label: {
             Text((delta < 0 ? "−" : "+") + edit.shortLabel(abs(delta)).replacingOccurrences(of: "×", with: ""))
                 .font(.callout.monospacedDigit().weight(.medium))
-                .frame(minWidth: 30)
+                .lineLimit(1)
+                .fixedSize()
         }
         .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
         .buttonRepeatBehavior(.enabled)
         .disabled(delta < 0 ? value <= edit.bounds.lowerBound : value >= edit.bounds.upperBound)
     }

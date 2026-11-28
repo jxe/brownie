@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Pushed from the meditation list. The title sits at the top as a field (Evergreen and the
-/// file's name are in the options sheet, from the icon by the title), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
+/// Pushed from the meditation list. The title sits at the top as a field (Evergreen is in a
+/// small menu on the leaf by the title), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
 /// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
 /// pause and stop are on the now-playing bar, and it keeps playing after you go back. Opening
 /// another meditation's editor stops what's playing. Any edit stops playback, so the
@@ -21,11 +21,8 @@ struct MeditationEditorView: View {
     /// The script and filename as last written to disk (or as opened).
     @State private var saved: (content: String, filename: String)?
     /// The file's name follows the title (`date-slug`) while this is set: for a new
-    /// meditation, or one whose name still is what its title gives. Renaming it by hand
-    /// from the Tags & Eras sheet stops that.
+    /// meditation, or one whose name still is what its title gives.
     @State private var followsTitle = false
-    @State private var renamingFile = false
-    @State private var newFilename = ""
     /// The name this page's file has on disk: the opened file's, or what autosave last wrote.
     /// A rename removes it; a name that belongs to some other meditation is never written over.
     @State private var diskName: String?
@@ -44,7 +41,6 @@ struct MeditationEditorView: View {
     @State private var focusedWell: String?
     @State private var namingNewPool = false
     @State private var newPoolName = ""
-    @State private var editingOptions = false
     /// Whether it's in the Evergreen folder.
     @State private var evergreen = false
     /// The title as typed. Written into the header as it changes, but read back from it only
@@ -184,34 +180,6 @@ struct MeditationEditorView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $editingOptions) {
-            MeditationOptionsView(title: "Options", evergreen: evergreen, fileName: diskName ?? filename,
-                                  onRename: {
-                                      newFilename = diskName ?? filename
-                                      // Once the sheet is down, so the alert has somewhere to show.
-                                      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { renamingFile = true }
-                                  }) { _, on in
-                if let on, on != evergreen { setEvergreen(on) }
-            }
-            .presentationDetents([.medium, .large])
-        }
-        .alert("Rename File", isPresented: $renamingFile) {
-            TextField("filename", text: $newFilename)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") {
-                let name = newFilename.trimmingCharacters(in: .whitespaces)
-                    .replacingOccurrences(of: "/", with: "-")
-                guard !name.isEmpty, name != filename else { return }
-                followsTitle = false
-                filename = name
-            }
-        } message: {
-            Text(followsTitle
-                 ? "The file is named after the title. Renaming it stops that."
-                 : "The file's name in your Meditations folder.")
-        }
         .alert("New Pool", isPresented: $namingNewPool) {
             TextField("name", text: $newPoolName)
                 .textInputAutocapitalization(.never)
@@ -343,18 +311,21 @@ struct MeditationEditorView: View {
                 .onChange(of: titleFocused) { _, focused in
                     if !focused, titleDraft != meta.title { titleDraft = meta.title }
                 }
-            Button {
-                dismissKeyboard()
-                editingOptions = true
+            // Evergreen is the one thing about a meditation set here: a small menu, not a sheet.
+            Menu {
+                Toggle(isOn: Binding(get: { evergreen }, set: { setEvergreen($0) })) {
+                    Label("Evergreen", systemImage: "leaf")
+                }
+                Text("Evergreen meditations show in every era.")
             } label: {
-                Image(systemName: evergreen ? "leaf" : "info.circle")
+                Image(systemName: evergreen ? "leaf.fill" : "leaf")
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(evergreen ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Options")
+            .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+            .accessibilityLabel(evergreen ? "Evergreen" : "Not evergreen")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
