@@ -687,6 +687,12 @@ final class ListeningHistory {
             beforeDaily + days.values.reduce(0, +)
         }
 
+        /// Listening on the last `days` local days, today included.
+        func seconds(inLastDays days: Int, at now: Date) -> TimeInterval {
+            let first = ListeningHistory.dayKey(now.addingTimeInterval(-Double(days - 1) * 86400))
+            return self.days.filter { $0.key >= first }.values.reduce(0, +)
+        }
+
         func seconds(inLastDayAt now: Date) -> TimeInterval {
             let cutoff = now.addingTimeInterval(-86400)
             return intervals.reduce(0) { sum, interval in

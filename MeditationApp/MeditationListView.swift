@@ -72,7 +72,7 @@ struct MeditationListView: View {
         return byRecentListening(base.filter { eraIndex.belongs($0, to: current) })
     }
 
-    /// Meditations played in the last week come first, most listened to (all time) first; the
+    /// Meditations played in the last week come first, most listened to this week first; the
     /// rest keep the order they came in.
     private func byRecentListening(_ urls: [URL]) -> [URL] {
         let now = Date()
@@ -82,7 +82,7 @@ struct MeditationListView: View {
         var rest: [URL] = []
         for url in urls {
             if let record = history.record(for: EraIndex.name(of: url), at: now), record.lastPlayed >= weekAgo {
-                recent.append((url, record.totalSeconds))
+                recent.append((url, record.seconds(inLastDays: 7, at: now)))
             } else {
                 rest.append(url)
             }
