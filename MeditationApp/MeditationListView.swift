@@ -72,17 +72,24 @@ struct MeditationListView: View {
         return byRecentListening(base.filter { eraIndex.belongs($0, to: current) })
     }
 
-    /// Meditations played in the last 24 hours come first, by their last 24 hours' listening;
-    /// then the rest played in the last week, by the week's listening; then the rest in the
-    /// order they came in. Ties keep that order too.
+    /// Meditations made in the last 24 hours come first, newest first: a new one (an edited
+    /// copy, say) is what you're working on. Then those played in the last 24 hours, by their
+    /// last 24 hours' listening; then the rest played in the last week, by the week's
+    /// listening; then the rest in the order they came in. Ties keep that order too.
     private func byRecentListening(_ urls: [URL]) -> [URL] {
         let now = Date()
+        let dayAgo = now.addingTimeInterval(-86400)
         let weekAgo = now.addingTimeInterval(-7 * 86400)
         let history = player.listeningHistory
+        var new: [(url: URL, made: Date)] = []
         var today: [(url: URL, seconds: TimeInterval)] = []
         var week: [(url: URL, seconds: TimeInterval)] = []
         var rest: [URL] = []
         for url in urls {
+            if let made = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate, made >= dayAgo {
+                new.append((url, made))
+                continue
+            }
             guard let record = history.record(for: EraIndex.name(of: url), at: now) else {
                 rest.append(url)
                 continue
@@ -101,7 +108,10 @@ struct MeditationListView: View {
                 $0.element.seconds != $1.element.seconds ? $0.element.seconds > $1.element.seconds : $0.offset < $1.offset
             }.map(\.element.url)
         }
-        return byMost(today) + byMost(week) + rest
+        let newest = new.enumerated().sorted {
+            $0.element.made != $1.element.made ? $0.element.made > $1.element.made : $0.offset < $1.offset
+        }.map(\.element.url)
+        return newest + byMost(today) + byMost(week) + rest
     }
 
     /// Rarely played meditations past their first few days are hidden from the main screen
