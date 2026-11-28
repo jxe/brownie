@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Pushed from the meditation list. The title sits at the top as a field (Evergreen and tags
-/// are in the title bar's ⋯ menu), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
+/// are in the Tags & Eras sheet, from the icon by the title), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
 /// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
 /// pause and stop are on the now-playing bar, and it keeps playing after you go back. Opening
 /// another meditation's editor stops what's playing. Any edit stops playback, so the
@@ -22,7 +22,7 @@ struct MeditationEditorView: View {
     @State private var saved: (content: String, filename: String)?
     /// The file's name follows the title (`date-slug`) while this is set: for a new
     /// meditation, or one whose name still is what its title gives. Renaming it by hand
-    /// from the ⋯ menu stops that.
+    /// from the Tags & Eras sheet stops that.
     @State private var followsTitle = false
     @State private var renamingFile = false
     @State private var newFilename = ""
@@ -72,7 +72,6 @@ struct MeditationEditorView: View {
                     // Long lines are hard to follow on iPad, so cap the measure and center it.
                     VStack(alignment: .leading, spacing: 0) {
                         headerFields
-                        Divider().padding(.horizontal, 20)
                         MedTextEditor(
                             text: scriptBinding,
                             outside: doc.prefix,
@@ -183,13 +182,14 @@ struct MeditationEditorView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                moreMenu
-            }
-        }
         .sheet(isPresented: $editingTags) {
-            TagEditorView(title: "Tags", initialTags: meta.tags, suggestions: MedHeader.suggestedTags()) { _, tags in
+            TagEditorView(title: "Tags & Eras", initialTags: meta.tags, suggestions: MedHeader.suggestedTags(),
+                          evergreenTag: EraIndex.timelessTag, fileName: diskName ?? filename,
+                          onRename: {
+                              newFilename = diskName ?? filename
+                              // Once the sheet is down, so the alert has somewhere to show.
+                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { renamingFile = true }
+                          }) { _, tags in
                 setHeader(title: meta.title, tags: tags)
             }
             .presentationDetents([.medium, .large])
@@ -313,73 +313,41 @@ struct MeditationEditorView: View {
 
     private var isFoundation: Bool { meta.tags.contains(EraIndex.timelessTag) }
 
-    /// The title as a plain field. Evergreen and tags are in the title bar's ⋯ menu.
+    /// The title, centered, with the Tags & Eras button just to its right.
     private var headerFields: some View {
-        TextField("Title", text: $titleDraft)
-        .focused($titleFocused)
-        .font(.title2.weight(.semibold))
-        .submitLabel(.done)
-        .onSubmit { dismissKeyboard() }
-        .onChange(of: titleDraft) { _, typed in
-            if typed != meta.title { setHeader(title: typed, tags: meta.tags) }
-        }
-        // Changed some other way (or typing is done): show the title as the file has it.
-        .onChange(of: meta.title) { _, title in
-            if !titleFocused, titleDraft != title { titleDraft = title }
-        }
-        .onChange(of: titleFocused) { _, focused in
-            if !focused, titleDraft != meta.title { titleDraft = meta.title }
+        TitleWithTrailingIcon {
+            TextField("Title", text: $titleDraft)
+                .focused($titleFocused)
+                .font(.title2.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .submitLabel(.done)
+                .onSubmit { dismissKeyboard() }
+                .onChange(of: titleDraft) { _, typed in
+                    if typed != meta.title { setHeader(title: typed, tags: meta.tags) }
+                }
+                // Changed some other way (or typing is done): show the title as the file has it.
+                .onChange(of: meta.title) { _, title in
+                    if !titleFocused, titleDraft != title { titleDraft = title }
+                }
+                .onChange(of: titleFocused) { _, focused in
+                    if !focused, titleDraft != meta.title { titleDraft = meta.title }
+                }
+            Button {
+                dismissKeyboard()
+                editingTags = true
+            } label: {
+                Image(systemName: isFoundation ? "leaf" : "tag")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Tags and eras")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
-        .padding(.bottom, 10)
-    }
-
-    /// The title bar's ⋯ menu: things about the whole meditation rather than its script.
-    private var moreMenu: some View {
-        Menu {
-            Button {
-                let tags = isFoundation
-                    ? meta.tags.filter { $0 != EraIndex.timelessTag }
-                    : meta.tags + [EraIndex.timelessTag]
-                setHeader(title: meta.title, tags: tags)
-            } label: {
-                if isFoundation {
-                    Label("Evergreen", systemImage: "checkmark")
-                } else {
-                    Label("Evergreen", systemImage: "leaf")
-                }
-            }
-            let others = meta.tags.filter { $0 != EraIndex.timelessTag }
-            Button {
-                editingTags = true
-            } label: {
-                if others.isEmpty {
-                    Label("Tags…", systemImage: "number")
-                } else {
-                    Label {
-                        Text("Tags…")
-                        Text(others.map { "#\($0)" }.joined(separator: " "))
-                    } icon: {
-                        Image(systemName: "number")
-                    }
-                }
-            }
-            Button {
-                newFilename = diskName ?? filename
-                renamingFile = true
-            } label: {
-                Label {
-                    Text("Rename File…")
-                    Text(diskName ?? filename)
-                } icon: {
-                    Image(systemName: "doc")
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-        }
-        .accessibilityLabel("More")
+        .padding(.bottom, 6)
     }
 
     // MARK: Wells
@@ -1061,4 +1029,39 @@ enum MedFilename {
 @MainActor
 func dismissKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
+/// The title centered on the page, with an icon hanging just to the right of its text; a long
+/// title takes the width the icon leaves.
+private struct TitleWithTrailingIcon: Layout {
+    var spacing: CGFloat = 4
+    var minTitleWidth: CGFloat = 80
+
+    private func widths(_ available: CGFloat, _ subviews: Subviews) -> (title: CGFloat, icon: CGSize) {
+        let icon = subviews[1].sizeThatFits(.unspecified)
+        let ideal = subviews[0].sizeThatFits(.unspecified).width
+        let title = min(max(ideal, minTitleWidth), max(0, available - icon.width - spacing))
+        return (title, icon)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        let width = proposal.width ?? 320
+        let (title, icon) = widths(width, subviews)
+        let titleHeight = subviews[0].sizeThatFits(ProposedViewSize(width: title, height: nil)).height
+        return CGSize(width: width, height: max(titleHeight, icon.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let (title, icon) = widths(bounds.width, subviews)
+        // The title's own middle on the page's middle, nudged left only if the icon wouldn't fit.
+        var x = bounds.midX - title / 2
+        x = min(x, bounds.maxX - icon.width - spacing - title)
+        x = max(bounds.minX, x)
+        subviews[0].place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: title, height: nil))
+        subviews[1].place(at: CGPoint(x: x + title + spacing, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(icon))
+    }
 }

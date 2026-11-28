@@ -7,6 +7,11 @@ struct TagEditorView: View {
     let onSave: (_ name: String?, _ tags: [String]) -> Void
     /// Closes the editor when it's hosted from UIKit; otherwise the environment's dismiss does.
     var onClose: (() -> Void)?
+    /// The tag that marks a meditation Evergreen: shown as a toggle rather than a chip. Nil hides it.
+    var evergreenTag: String?
+    /// The file's name, and what renames it (after the sheet closes). Nil hides the File section.
+    var fileName: String?
+    var onRename: (() -> Void)?
 
     @State private var name: String?
     @State private var tags: [String]
@@ -14,9 +19,13 @@ struct TagEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     init(title: String, initialName: String? = nil, initialTags: [String], suggestions: [String],
+         evergreenTag: String? = nil, fileName: String? = nil, onRename: (() -> Void)? = nil,
          onSave: @escaping (_ name: String?, _ tags: [String]) -> Void, onClose: (() -> Void)? = nil) {
         self.title = title
         self.suggestions = suggestions
+        self.evergreenTag = evergreenTag
+        self.fileName = fileName
+        self.onRename = onRename
         self.onSave = onSave
         self.onClose = onClose
         _name = State(initialValue: initialName)
@@ -24,7 +33,17 @@ struct TagEditorView: View {
     }
 
     private var availableSuggestions: [String] {
-        suggestions.filter { !tags.contains($0) }
+        suggestions.filter { !tags.contains($0) && $0 != evergreenTag }
+    }
+
+    /// The tags shown as chips: all but the Evergreen one, which has its toggle.
+    private var chipTags: [String] {
+        tags.filter { $0 != evergreenTag }
+    }
+
+    private func evergreenBinding(_ tag: String) -> Binding<Bool> {
+        Binding(get: { tags.contains(tag) },
+                set: { on in if on { addTag(tag) } else { removeTag(tag) } })
     }
 
     var body: some View {
@@ -36,13 +55,23 @@ struct TagEditorView: View {
                     }
                 }
 
+                if let evergreenTag {
+                    Section {
+                        Toggle(isOn: evergreenBinding(evergreenTag)) {
+                            Label("Evergreen", systemImage: "leaf")
+                        }
+                    } footer: {
+                        Text("Shown in every era, not just the one it was made in.")
+                    }
+                }
+
                 Section("Tags") {
-                    if tags.isEmpty {
+                    if chipTags.isEmpty {
                         Text("No tags")
                             .foregroundStyle(.secondary)
                             .font(.callout)
                     } else {
-                        TagChipFlow(tags: tags) { tag in
+                        TagChipFlow(tags: chipTags) { tag in
                             removeTag(tag)
                         }
                     }
@@ -63,6 +92,23 @@ struct TagEditorView: View {
                     Section("Suggestions") {
                         TagSuggestionFlow(tags: availableSuggestions) { tag in
                             addTag(tag)
+                        }
+                    }
+                }
+
+                if let fileName, let onRename {
+                    Section("File") {
+                        Button {
+                            commitNewTag()
+                            onSave(name, tags)
+                            close()
+                            onRename()
+                        } label: {
+                            LabeledContent {
+                                Text(fileName).lineLimit(1).truncationMode(.middle)
+                            } label: {
+                                Label("Rename File…", systemImage: "doc")
+                            }
                         }
                     }
                 }
