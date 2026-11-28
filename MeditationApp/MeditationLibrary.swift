@@ -180,6 +180,9 @@ final class MeditationLibrary {
             guard let root else { return }
             let eras = EraIndex.load(in: root)
             let found = scan(root, eras: eras)
+            // A handful at the top were dropped there (from the Mac, say). More than that is
+            // another device's moves into folders not having arrived yet: leave them for iCloud.
+            let fileTop = found.files.filter { $0.folder.isEmpty }.count <= Self.mostToFile
             var seen = Set<String>()
             // Where a name turns up twice, an era folder's copy keeps it over the archive's.
             for file in found.files.sorted(by: { Self.rank($0.folder) < Self.rank($1.folder) }) {
@@ -193,12 +196,15 @@ final class MeditationLibrary {
                 }
                 seen.insert(Self.name(of: url))
                 // At the top only while there are no eras; then it joins the current one.
-                if file.folder.isEmpty, let current = eras.current, let folder = eras.folder(for: current.id) {
+                if file.folder.isEmpty, fileTop, let current = eras.current, let folder = eras.folder(for: current.id) {
                     _ = moveFile(url, to: Self.fileURL(root, folder, Self.name(of: url)))
                 }
             }
         }
     }
+
+    /// The most scripts at the top that a sync files into the current era at once.
+    static let mostToFile = 5
 
     private static func rank(_ folder: String) -> Int {
         switch folder {
