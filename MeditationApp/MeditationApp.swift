@@ -181,6 +181,13 @@ struct ContentView: View {
     /// A row flying into the bar, and how far along it is (0 at the row, 1 at the bar).
     @State private var rowFlight: RowFlight?
     @State private var rowFlightProgress: CGFloat = 0
+    /// The editor's Play button growing into the bar, or the bar shrinking back into it, and
+    /// how far along (0 the button, 1 the bar).
+    @State private var buttonMorph: ButtonMorph?
+    @State private var buttonMorphProgress: CGFloat = 0
+    /// What the bar last showed, for the stand-in when a stop shrinks it into the button
+    /// (the player has forgotten it by then).
+    @State private var lastBarTitle = ""
 
     /// The bar's own height (above the home indicator), which the pages get as bottom safe area.
     private var nowPlayingBarHeight: CGFloat {
@@ -256,7 +263,7 @@ struct ContentView: View {
                                 // comes), rather than jumping once it's gone.
                                 NavigationBottomInset(
                                     height: nowPlayingBarShown && !nowPlayingBarSinking ? nowPlayingBarHeight : 0,
-                                    instant: rowFlight != nil
+                                    instant: rowFlight != nil || buttonMorph != nil
                                 )
                                     .frame(width: 0, height: 0)
                             )
@@ -279,13 +286,16 @@ struct ContentView: View {
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                                 if !nowPlayingBarSinking { nowPlayingBarFrame = frame }
                             }
-                            .transition(rowFlight == nil
+                            .transition(rowFlight == nil && buttonMorph == nil
                                 ? AnyTransition.asymmetric(insertion: .move(edge: .bottom), removal: .identity)
                                 : .identity)
                             .zIndex(1)
                     }
                 }
                 .environment(\.rowInFlight, rowFlight?.url)
+                .onChange(of: player.currentTitle) { _, title in
+                    if !title.isEmpty { lastBarTitle = title }
+                }
                 .environment(\.openNowPlaying, { openNowPlaying() })
                 .onChange(of: geo.safeAreaInsets.bottom, initial: true) { _, inset in bottomSafeInset = inset }
                 .onChange(of: wantsNowPlayingBar, initial: true) { _, wants in
@@ -295,6 +305,11 @@ struct ContentView: View {
                         return
                     }
                     guard wants != nowPlayingBarShown else { return }
+                    // In an editor, the bar shrinks back into its Play button rather than sinking.
+                    if !wants, let button = buttonToCollapseInto() {
+                        collapseIntoButton(button)
+                        return
+                    }
                     if !wants {
                         withAnimation(.easeIn(duration: 0.25)) {
                             nowPlayingBarSinking = true
@@ -303,6 +318,11 @@ struct ContentView: View {
                             if !wantsNowPlayingBar { nowPlayingBarShown = false }
                             nowPlayingBarSinking = false
                         }
+                        return
+                    }
+                    // Started from an editor's Play button: the button grows into the bar.
+                    if wants, let button = takeButtonPlay() {
+                        expandFromButton(button)
                         return
                     }
                     // From the main screen, the row that started flies down into the bar,
@@ -407,6 +427,73 @@ struct ContentView: View {
         }
     }
 
+    /// The editor's Play button, if it was just pressed: where the bar grows from.
+    private func takeButtonPlay() -> CGRect? {
+        let morph = PlayButtonMorph.shared
+        defer { morph.requestedAt = nil }
+        guard !UIAccessibility.isReduceMotionEnabled,
+              let pressed = morph.requestedAt, Date().timeIntervalSince(pressed) < 2,
+              !morph.restFrame.isEmpty else { return nil }
+        return morph.restFrame
+    }
+
+    /// The Play button of the editor on screen, if there is one: where a stop shrinks the bar.
+    private func buttonToCollapseInto() -> CGRect? {
+        let morph = PlayButtonMorph.shared
+        guard !UIAccessibility.isReduceMotionEnabled, morph.editorsShown > 0, !panelOpen,
+              !morph.restFrame.isEmpty, !nowPlayingBarFrame.isEmpty else { return nil }
+        return morph.restFrame
+    }
+
+    /// The button stretches into the bar: its circle widens to the bar's width and squares
+    /// off, the play glyph goes and the bar's live contents come up on it. Then, as with a
+    /// landed row, the real bar slips in under it unseen and the stand-in goes.
+    private func expandFromButton(_ button: CGRect) {
+        let morph = ButtonMorph(button: button, expanding: true, title: "")
+        buttonMorph = morph
+        buttonMorphProgress = 0
+        DispatchQueue.main.async {
+            withAnimation(.spring(duration: 0.45, bounce: 0.12)) {
+                buttonMorphProgress = 1
+            } completion: {
+                guard buttonMorph?.id == morph.id else { return }
+                if !nowPlayingBarShown && wantsNowPlayingBar {
+                    var instant = Transaction()
+                    instant.disablesAnimations = true
+                    withTransaction(instant) { nowPlayingBarShown = true }
+                }
+                DispatchQueue.main.async {
+                    if buttonMorph?.id == morph.id { buttonMorph = nil }
+                }
+            }
+        }
+    }
+
+    /// The reverse: the real bar goes at once under a stand-in of it, which narrows back into
+    /// the round button; then the real button shows under it and the stand-in goes.
+    private func collapseIntoButton(_ button: CGRect) {
+        let morph = ButtonMorph(button: button, expanding: false, title: lastBarTitle)
+        PlayButtonMorph.shared.held = true
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            buttonMorph = morph
+            buttonMorphProgress = 1
+            nowPlayingBarShown = false
+        }
+        DispatchQueue.main.async {
+            withAnimation(.spring(duration: 0.4, bounce: 0.15)) {
+                buttonMorphProgress = 0
+            } completion: {
+                guard buttonMorph?.id == morph.id else { return }
+                PlayButtonMorph.shared.held = false
+                DispatchQueue.main.async {
+                    if buttonMorph?.id == morph.id { buttonMorph = nil }
+                }
+            }
+        }
+    }
+
     /// Where a flight lands: the bar's frame, run down under the home indicator. The bar isn't
     /// up yet, so this is where it last was (it always sits in the same place), or a guess
     /// the first time.
@@ -430,6 +517,19 @@ struct ContentView: View {
                     from: flight.from.offsetBy(dx: -screen.minX, dy: -screen.minY),
                     to: rowFlightTarget(screen: screen).offsetBy(dx: -screen.minX, dy: -screen.minY),
                     barHeight: nowPlayingBarFrame.isEmpty ? 56 : nowPlayingBarFrame.height,
+                    palette: palette
+                )
+                .transition(.identity)
+            }
+            if let morph = buttonMorph {
+                let screen = layer.frame(in: .global)
+                ButtonMorphView(
+                    progress: buttonMorphProgress,
+                    button: morph.button.offsetBy(dx: -screen.minX, dy: -screen.minY),
+                    bar: rowFlightTarget(screen: screen).offsetBy(dx: -screen.minX, dy: -screen.minY),
+                    barHeight: nowPlayingBarFrame.isEmpty ? 56 : nowPlayingBarFrame.height,
+                    expanding: morph.expanding,
+                    title: morph.title,
                     palette: palette
                 )
                 .transition(.identity)
@@ -459,6 +559,86 @@ struct ContentView: View {
             .onEnded { value in
                 setPanel(open: value.predictedEndTranslation.width > -panelWidth / 3)
             }
+    }
+}
+
+/// The editor's Play button and the bar morphing into each other.
+private struct ButtonMorph {
+    let id = UUID()
+    /// The button's frame, in global coordinates.
+    let button: CGRect
+    /// Growing into the bar (a play), or shrinking back into the button (a stop).
+    let expanding: Bool
+    /// What the bar showed, for a shrink, whose stand-in can't read it from the player.
+    let title: String
+}
+
+/// The Play button stretched into the now-playing bar, or back. `progress` is 0 at the
+/// button (a circle in the bar's colour with the play glyph) and 1 at the bar (full width,
+/// square corners, run down under the home indicator, the bar's contents on it); a spring
+/// drives it, so it may overshoot a little either way.
+private struct ButtonMorphView: View, Animatable {
+    var progress: CGFloat
+    let button: CGRect
+    let bar: CGRect
+    let barHeight: CGFloat
+    let expanding: Bool
+    let title: String
+    let palette: AppPalette
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    private static func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+    private static func smoothstep(_ t: CGFloat) -> CGFloat {
+        let t = min(max(t, 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    var body: some View {
+        let t = progress
+        let s = min(max(t, 0), 1)
+        let width = max(button.width * 0.85, Self.lerp(button.width, bar.width, t))
+        let height = max(button.height * 0.85, Self.lerp(button.height, bar.height, t))
+        let center = CGPoint(x: Self.lerp(button.midX, bar.midX, t), y: Self.lerp(button.midY, bar.midY, t))
+        let corner = min(height / 2, max(0, Self.lerp(button.height / 2, 0, s)))
+        // The top part, where the glyph and then the bar's line sit.
+        let lineHeight = Self.lerp(button.height, barHeight, s)
+        let glyph = 1 - Self.smoothstep(s / 0.35)
+        let contents = Self.smoothstep((s - 0.45) / 0.45)
+
+        ZStack(alignment: .top) {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(palette.highlight)
+            Divider().opacity(Double(s))
+            Image(systemName: "play.fill")
+                .font(.title2)
+                .foregroundStyle(palette.tint)
+                .frame(width: width, height: lineHeight)
+                .opacity(glyph)
+            Group {
+                if expanding {
+                    NowPlayingBarContent()
+                } else {
+                    // A stop has already reset the player, so just the title it had.
+                    Text(title)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .padding(.leading, 42)
+                        .padding(.trailing, 110)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(width: width, height: barHeight)
+            .opacity(contents)
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        .shadow(color: .black.opacity(0.18 * (1 - s)), radius: 8, y: 3)
+        .position(center)
     }
 }
 

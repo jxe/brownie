@@ -17,6 +17,8 @@ struct MeditationEditorView: View {
     let onSave: (_ filename: String, _ content: String) -> Void
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appPalette) private var palette
+    @Environment(\.nowPlayingBarShown) private var nowPlayingBarShown
     @Environment(MeditationPlayer.self) private var player
     @State private var pendingFix: MeditationFix? = nil
     /// The script and filename as last written to disk (or as opened).
@@ -46,8 +48,6 @@ struct MeditationEditorView: View {
     @State private var evergreen = false
     /// Share to Store is open.
     @State private var sharing = false
-    /// Play has dropped into the now-playing bar (see `playButton`).
-    @State private var playDropped = false
     /// Archived from the ⋯ menu: the page is on its way out and saves nothing more.
     @State private var archived = false
     /// The title as typed. Written into the header as it changes, but read back from it only
@@ -334,8 +334,8 @@ struct MeditationEditorView: View {
     private var optionsMenu: some View {
         let link = MeditationStore.shared.link(for: storeID)
         return Menu {
-            Toggle(isOn: Binding(get: { evergreen }, set: { setEvergreen($0) })) {
-                Label("Evergreen", systemImage: "leaf")
+            Button { setEvergreen(!evergreen) } label: {
+                Label(evergreen ? "Unmark as Evergreen" : "Mark as Evergreen", systemImage: "leaf")
             }
             // Downloads stay with their author.
             if link?.role != .downloaded {
@@ -409,7 +409,10 @@ struct MeditationEditorView: View {
                     let parts = [
                         day > 0 ? "\(JournalTimeFormatter.string(from: day)) last 24h" : nil,
                         week > day ? "\(JournalTimeFormatter.string(from: week)) this week" : nil,
-                        "\(JournalTimeFormatter.string(from: record.totalSeconds)) total",
+                        // Each only when it adds something: this week beyond the last 24h,
+                        // the total beyond both.
+                        record.totalSeconds > max(day, week)
+                            ? "\(JournalTimeFormatter.string(from: record.totalSeconds)) total" : nil,
                     ].compactMap { $0 }
                     Text(parts.joined(separator: " · "))
                         .monospacedDigit()
@@ -581,43 +584,43 @@ struct MeditationEditorView: View {
     }
 
     /// A round play button floating at the bottom corner: plays the script as it stands. Pause
-    /// and stop are on the now-playing bar, so it shows only while that bar is down.
-    @ViewBuilder
+    /// and stop are on the now-playing bar, so it shows only while that bar is down. It's the
+    /// bar's colour, and it becomes the bar: on Play a stand-in drawn over everything
+    /// (`ButtonMorphView`, in MeditationApp.swift) stretches from it into the bar, and a stop
+    /// shrinks the bar back into it. Meanwhile the real one stays hidden.
     private var playButton: some View {
-        Button {
-                dismissKeyboard()
-                // Write any pending edit first, so a new meditation has a file (and a row)
-                // and the play is counted under the name it has now.
-                saveIfNeeded()
-                startedHere = true
-                // The player records listening time under the file it is given, so pass where the
-                // script is now (after any rename the save just did).
-                player.play(MeditationParser.parse(content), sourceURL: fileURL)
-            } label: {
-                Image(systemName: "play.fill")
-                    .font(.title2)
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Circle().fill(Color.accentColor))
-                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Play")
-            // On Play it drops into the bar's place as the bar rises (same spring), fading as
-            // it goes; on Stop it rises back to its corner as the bar sinks (same 0.25s).
-            .offset(y: playDropped ? 96 : 0)
-            .opacity(playDropped ? 0 : 1)
-            .allowsHitTesting(!playDropped)
-            .accessibilityHidden(playDropped)
-            .onAppear { playDropped = !showsPlay }
-            .onChange(of: showsPlay) { _, shows in
-                if shows {
-                    withAnimation(.easeOut(duration: 0.25)) { playDropped = false }
-                } else {
-                    withAnimation(.spring(duration: 0.3, bounce: 0.15)) { playDropped = true }
-                }
-            }
+        let morph = PlayButtonMorph.shared
+        let shown = showsPlay && !nowPlayingBarShown && !morph.held
+        return Button {
+            dismissKeyboard()
+            // Write any pending edit first, so a new meditation has a file (and a row)
+            // and the play is counted under the name it has now.
+            saveIfNeeded()
+            startedHere = true
+            morph.requestedAt = Date()
+            // The player records listening time under the file it is given, so pass where the
+            // script is now (after any rename the save just did).
+            player.play(MeditationParser.parse(content), sourceURL: fileURL)
+        } label: {
+            Image(systemName: "play.fill")
+                .font(.title2)
+                .foregroundStyle(palette.tint)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(palette.highlight))
+                .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Play")
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
+        .accessibilityHidden(!shown)
+        // Where it rests with the bar down: where a morph starts and ends.
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+            if !nowPlayingBarShown { morph.restFrame = frame }
+        }
+        .onAppear { morph.editorsShown += 1 }
+        .onDisappear { morph.editorsShown -= 1 }
     }
 
     /// Play shows while nothing plays; once something does, pause and stop are on the bar.
@@ -1155,4 +1158,19 @@ private struct TitleWithTrailingIcon: Layout {
         subviews[1].place(at: CGPoint(x: x + title + spacing, y: bounds.midY), anchor: .leading,
                           proposal: ProposedViewSize(icon))
     }
+}
+
+/// The editor's Play button and the now-playing bar morph into each other (see
+/// `ContentView.expandFromButton` and `collapseIntoButton`). The editor says where its button
+/// rests and that a play came from it; while a stand-in draws the button, the real one hides.
+@MainActor @Observable final class PlayButtonMorph {
+    static let shared = PlayButtonMorph()
+    /// The button's frame on screen with the bar down, in global coordinates.
+    @ObservationIgnored var restFrame: CGRect = .zero
+    /// When the button was last pressed, so the bar coming up knows to grow out of it.
+    @ObservationIgnored var requestedAt: Date?
+    /// Editors on screen; a stop shrinks the bar into the button only while one is.
+    @ObservationIgnored var editorsShown = 0
+    /// A stand-in is drawing the button (a stop shrinking into it): the real one stays hidden.
+    var held = false
 }
