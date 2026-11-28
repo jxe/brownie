@@ -56,6 +56,12 @@ struct MedTextEditor: UIViewRepresentable {
         textView.autocapitalizationType = .none
         textView.smartQuotesType = .no
         textView.smartDashesType = .no
+        // Inline predictions are provisional text the keyboard keeps changing; restyling
+        // around them moves the caret.
+        if #available(iOS 17.0, *) { textView.inlinePredictionType = .no }
+        // With the pools edited outside, the script has none to fold, and folding a line that
+        // only looks like a pool for a moment while typing would hide it and move the caret.
+        textView.foldsPools = onNewPool == nil
         textView.delegate = context.coordinator
         textView.textContainerInset = UIEdgeInsets(top: 16, left: 20, bottom: 20, right: 20)
         textView.textContainer.lineFragmentPadding = 0
@@ -91,7 +97,7 @@ struct MedTextEditor: UIViewRepresentable {
         let medView = textView as? MedTextView
         let outsideChanged = medView.map { $0.outsideText != outside } ?? false
         if outsideChanged { medView?.outsideText = outside }
-        if textView.text != text {
+        if textView.text != text, textView.markedTextRange == nil {
             // Keep the caret where it was rather than letting the new text throw it to the end.
             let selection = textView.selectedRange
             textView.text = text
@@ -277,6 +283,9 @@ struct MedTextEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             text.wrappedValue = textView.text
+            // Mid-composition (dictation, a multi-key character), restyling the text would
+            // move the caret; it's done once the text is committed.
+            guard textView.markedTextRange == nil else { return }
             applyMedHighlights(to: textView)
             if !textView.isScrollEnabled { textView.invalidateIntrinsicContentSize() }
             revealCaret(in: textView)
@@ -723,6 +732,9 @@ final class MedTextView: UITextView {
     var foldedText: String?
     /// Set while the caret is being moved on purpose, so the move isn't corrected again.
     var isAdjustingSelection = false
+    /// Pool definitions in the text are folded into one row. Off when the pools are edited
+    /// outside this view.
+    var foldsPools = true
     private let chipView = UIView()
     private var chipLayers: [CALayer] = []
     private var chipsNeedUpdate = true
@@ -1125,7 +1137,8 @@ private func applyMedHighlights(to textView: UITextView) {
         ], range: diagnostic.range)
     }
     // Fold pools into one-line rows, last, so nothing above draws into the folded lines.
-    let folds = MedFold.folds(in: text, caret: savedSelection.location)
+    let folds = (textView as? MedTextView)?.foldsPools == false
+        ? [] : MedFold.folds(in: text, caret: savedSelection.location)
     for fold in folds {
         if fold.itemsRange.length > 0 { storage.setAttributes(medFoldedAttributes, range: fold.itemsRange) }
         if let blanks = fold.blanks { storage.setAttributes(medFoldedAttributes, range: blanks) }
@@ -1289,6 +1302,7 @@ struct MedItemField: UIViewRepresentable {
         field.autocapitalizationType = .none
         field.smartQuotesType = .no
         field.smartDashesType = .no
+        if #available(iOS 17.0, *) { field.inlinePredictionType = .no }
         field.returnKeyType = .next
         field.delegate = context.coordinator
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -1313,7 +1327,7 @@ struct MedItemField: UIViewRepresentable {
         if field.text != text, !field.isFirstResponder {
             field.text = text
         }
-        context.coordinator.recolor(field)
+        if field.markedTextRange == nil { context.coordinator.recolor(field) }
         if focused, !field.isFirstResponder {
             DispatchQueue.main.async { field.becomeFirstResponder() }
         }
@@ -1455,6 +1469,7 @@ struct MedItemField: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
+            guard textView.markedTextRange == nil else { return }
             recolor(textView)
         }
 
