@@ -232,7 +232,7 @@ struct MeditationEditorView: View {
                 let derived = MedFilename.derived(from: meta.title, keepingDateOf: filename)
                 followsTitle = isNew
                     || (filename == derived
-                        && MeditationStore.shared.link(for: MeditationLibrary.shared.id(forName: filename)) == nil)
+                        && MeditationStore.shared.link(for: filename) == nil)
                 // Before `saved`, so naming a new meditation isn't an edit to save.
                 if followsTitle { filename = derived }
                 // Lines with several repeats show as boxes in boxes, written out in brackets.
@@ -545,7 +545,9 @@ struct MeditationEditorView: View {
     private var isPlayingThisScript: Bool {
         switch player.state {
         case .playing, .paused, .preparing:
-            if let url = player.currentSourceURL, url == sourceURL || url == fileURL { return true }
+            // By name: it may have moved folders (Evergreen, say) since the page opened.
+            if let url = player.currentSourceURL,
+               url == sourceURL || (diskName != nil && MeditationLibrary.name(of: url) == diskName) { return true }
             return startedHere && player.currentSourceURL == nil
         case .idle, .finished:
             return false
@@ -560,10 +562,12 @@ struct MeditationEditorView: View {
         // Autosave runs mid-typing, so the name may match another meditation (two new ones on
         // the same day both start as the date). Never write over it: use the next free name.
         let target = freeName(for: name)
-        // Renamed: the file moves to its new name where it is, then takes the new text. Its id
-        // stays, so its era, listening stats and store link come along.
+        // Renamed: the file moves to its new name where it is, then takes the new text. Its
+        // eras, listening stats and store link know it by name, so they move along.
         if let diskName, diskName != target, let old = MeditationLibrary.shared.url(forName: diskName) {
             MeditationLibrary.shared.rename(old, to: target)
+            player.listeningHistory.rename(diskName, to: target)
+            MeditationStore.shared.renameLink(diskName, to: target)
         }
         onSave(target, content)
         diskName = target

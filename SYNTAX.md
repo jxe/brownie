@@ -21,7 +21,6 @@ Older scripts may have `#tags` on the title line (`# Morning Prayer #prayer`) or
 Scripts live in folders that say where they show up:
 
 ```
-library.json        the index (below)
 eras.json           the eras, newest first
 2026-11-21/         an era's folder, named by the day it started: what belongs to that era,
                     when it's the latest era it belongs to
@@ -31,21 +30,16 @@ Older/              made before the first era and never brought along
 Archive/            put away
 ```
 
-Files are named `yyyy-MM-dd-title-slug.med`, from the day it was made and its title, with `-2` (etc.) when another script in any folder has the name. Names don't matter to the app beyond that; rename or move files freely.
+Files are named `yyyy-MM-dd-title-slug.med`, from the day it was made and its title, with `-2` (etc.) when another script in any folder has the name. The filename is how the app keeps a meditation's listening stats and store link (on each device), so renaming one in Finder or Files starts its stats over; renaming it in the app carries them along. Moving a file between folders is fine.
 
-**Eras** are stretches of time, from the day one is started until the next one. A meditation belongs to the era it was made in, and to any later era it was brought along to; its file sits in the folder of the latest one, so the newest era's folder holds what that era shows. Bringing one along moves its file there.
-
-`library.json` keeps what folders can't: a stable `id` for each meditation (listening stats, store links and the journal know it by this, so renaming or moving the file loses nothing), the day it was `made`, and every era it belongs to (`eras`, by era id):
+**Eras** are stretches of time, from the day one is started until the next one. A meditation belongs to the era it was made in (by its filename's date), and to any later era it was brought along to; its file sits in the folder of the latest one, so the newest era's folder holds what that era shows. Bringing one along moves its file there. When a meditation belongs to an era that neither its date nor its folder says (brought along twice, or Evergreen or archived after being brought along), that era's `kept` lists it:
 
 ```json
-{"version": 1, "meditations": [
-  {"id": "2026-10-02-morning", "name": "2026-10-02-morning", "folder": "2026-11-21",
-   "made": "2026-10-02", "eras": ["…the September era's id…", "…the November era's id…"]}]}
+[{"id": "…", "started": "2026-11-21", "kept": []},
+ {"id": "🎸", "started": "2026-09-19", "kept": ["2026-06-30-morning"]}]
 ```
 
-A `.med` the app hasn't seen (added on the Mac, say) gets an id and joins the era of the folder it's in; one dropped at the top of the folder joins the current era. Move a file between folders on the Mac and the app takes that as where it is now (into an era's folder: that era becomes its latest). If two files share a name, the newcomer gets `-2`.
-
-The first time this version opens a library from before folders (scripts at the top, `#timeless` for Evergreen, brought-along lists in `eras.json`), it copies everything to `Before Folders/`, then sorts it into folders.
+A `.med` dropped at the top of the folder (from the Mac, say) joins the current era. Move a file into an era's folder and that becomes its latest era.
 
 ## Spoken Text
 

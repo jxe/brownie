@@ -244,7 +244,7 @@ extension FileManager {
     }
 
     /// Writes the meditation with this filename wherever it is, or, for a new one, into the
-    /// current era's folder (and the library).
+    /// current era's folder.
     func saveMeditation(_ content: String, filename: String) -> URL? {
         guard meditationStorageIsAvailable else { return nil }
         let name = filename.hasSuffix(".med") ? String(filename.dropLast(4)) : filename
@@ -253,7 +253,6 @@ extension FileManager {
             return writeMeditation(content, to: url) ? url : nil
         }
         guard let url = library.newFileURL(named: name), writeMeditation(content, to: url) else { return nil }
-        library.registerNew(url)
         return url
     }
 
@@ -340,8 +339,8 @@ extension FileManager {
         notifyMeditationStorageChanged()
     }
 
-    /// Every script in its folder, plus the library index and the eras, so a copy keeps
-    /// which era each meditation is in and its listening stats.
+    /// Every script in its folder, plus the eras, so a copy keeps which era each meditation
+    /// is in.
     private func meditationLibrarySnapshot() throws -> [MeditationLibrarySnapshotItem] {
         MeditationLibrary.shared.sync()
         let root = meditationsDirectory
@@ -358,10 +357,8 @@ extension FileManager {
                 )
             )
         }
-        for name in [MeditationLibrary.filename, EraIndex.filename] {
-            if let contents = readMeditation(at: root.appendingPathComponent(name)) {
-                snapshot.append(MeditationLibrarySnapshotItem(relativePath: name, contents: contents))
-            }
+        if let contents = readMeditation(at: root.appendingPathComponent(EraIndex.filename)) {
+            snapshot.append(MeditationLibrarySnapshotItem(relativePath: EraIndex.filename, contents: contents))
         }
         return snapshot
     }
@@ -371,9 +368,8 @@ extension FileManager {
         to destinationDirectory: URL
     ) throws {
         for item in snapshot {
-            // An index or eras already there belong to that folder's own meditations.
-            let isIndex = item.relativePath == MeditationLibrary.filename || item.relativePath == EraIndex.filename
-            if isIndex, fileExists(atPath: destinationDirectory.appendingPathComponent(item.relativePath).path) {
+            // Eras already there belong to that folder's own meditations.
+            if item.relativePath == EraIndex.filename, fileExists(atPath: destinationDirectory.appendingPathComponent(item.relativePath).path) {
                 continue
             }
             let proposedURL = destinationDirectory.appendingPathComponent(item.relativePath)
@@ -405,7 +401,6 @@ extension FileManager {
     }
 
     private func notifyMeditationStorageChanged() {
-        MeditationLibrary.shared.forget()
         NotificationCenter.default.post(name: .meditationStorageDidChange, object: nil)
         NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
     }

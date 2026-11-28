@@ -63,11 +63,9 @@ final class MeditationStore {
     private(set) var meditations: [SharedMeditation] = []
     private(set) var isLoading = false
     private(set) var loadError: String?
-    /// Keyed by the local meditation's id (`MeditationLibrary`): downloads whose author shared
-    /// a newer version. (Where a `filename` parameter appears below, it's that id: the
-    /// filename it had when the library was first indexed, for one that was here by then.)
+    /// Keyed by local filename (without extension): downloads whose author shared a newer version.
     private(set) var updates: [String: SharedMeditation] = [:]
-    /// Keyed by the local meditation's id.
+    /// Keyed by local filename (without extension).
     private(set) var links: [String: StoreLink]
     private(set) var hiddenAuthors: Set<String>
     private(set) var reported: Set<String>
@@ -106,6 +104,14 @@ final class MeditationStore {
         let localNames = Set((FileManager.default.meditationFiles() + FileManager.default.archivedMeditationFiles())
             .map { MeditationLibrary.shared.id(for: $0) })
         return Set(links.filter { localNames.contains($0.key) }.map(\.value.recordName))
+    }
+
+    /// Keeps a renamed file linked to its store record.
+    func renameLink(_ old: String, to new: String) {
+        guard old != new, let link = links.removeValue(forKey: old) else { return }
+        links[new] = link
+        if let update = updates.removeValue(forKey: old) { updates[new] = update }
+        saveLinks()
     }
 
     // MARK: Links
@@ -210,14 +216,13 @@ final class MeditationStore {
     // MARK: Sharing
 
     /// Shares a library file, or updates this person's earlier share of it.
-    /// The sharer's era tags stay home; they mean nothing in someone else's library.
+    /// Old `#tags` left in the header stay home: the app doesn't use tags any more.
     func publish(content: String, filename: String, authorName: String) async throws {
-        let eras = EraIndex.load()
         let meta = MeditationParser.parseMetadata(content)
-        let tags = meta.tags.filter { !eras.isEraTag($0) }
-        let body = tags == meta.tags
+        let tags: [String] = []
+        let body = meta.tags.isEmpty
             ? content
-            : MeditationMetadataWriter.rewrite(source: content, title: meta.title, tags: tags)
+            : MeditationMetadataWriter.rewrite(source: content, title: meta.title, tags: [])
 
         var record = CKRecord(recordType: Self.meditationType)
         if let link = links[filename], link.role == .shared {
