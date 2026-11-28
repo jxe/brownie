@@ -88,22 +88,6 @@ struct JournalView: View {
 
     var body: some View {
         List {
-            // Streak banner
-            let streak = store.currentMeditationStreak
-            if streak >= 2 {
-                Section {
-                    HStack {
-                        Text("🔥")
-                        Text("\(streak)-day meditation streak")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                    }
-                    .padding(.vertical, 4)
-                    .listRowBackground(Color.clear)
-                }
-            }
-
             // Which feelings have taken the most time, over every check-in
             // The panel's links to its own pages, together on one card so they read as
             // navigation rather than history.
@@ -161,7 +145,7 @@ struct JournalView: View {
                 ContentUnavailableView(
                     "Nothing Here Yet",
                     systemImage: "clock",
-                    description: Text("Finished to-dos, check-ins, and meditations that helped show up here.")
+                    description: Text("Finished to-dos, check-ins, and long listens show up here.")
                 )
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
@@ -455,7 +439,7 @@ private extension JournalEntry.Content.CheckInSession.EmotionTally {
 }
 
 /// "45s", "38m", "1h 38m", "2h".
-private enum JournalTimeFormatter {
+enum JournalTimeFormatter {
     static func string(from seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds))
         if total < 60 { return "\(total)s" }
@@ -482,7 +466,12 @@ private enum PastRow: Identifiable {
             let file = meditationFile(day.filename)
             return PastRow.listened(day, title: file?.title ?? day.filename, url: file?.url)
         }
-        return (store.journalEntries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo) + listens)
+        // Old "It Helped Today" marks still decode, but no longer show.
+        let entries = store.journalEntries.filter {
+            if case .meditation = $0.content { return false }
+            return true
+        }
+        return (entries.map(PastRow.entry) + store.doneTodos.map(PastRow.todo) + listens)
             .sorted { $0.date > $1.date }
     }
 
@@ -495,8 +484,7 @@ private enum PastRow: Identifiable {
         return (url, title.isEmpty ? MeditationLibrary.name(of: url) : title)
     }
 
-    /// The page its tap opens on the main screen. A meditation that helped has nothing more
-    /// to show; one listened to a lot plays instead (see `JournalView.historyRow`).
+    /// The page its tap opens on the main screen. One listened to a lot plays instead (see `JournalView.historyRow`).
     var page: PanelPage? {
         switch self {
         case .listened: return nil

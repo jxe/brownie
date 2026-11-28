@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Pushed from the meditation list. The title sits at the top as a field (Evergreen is in a
-/// small menu on the leaf by the title), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
+/// Pushed from the meditation list. The title sits at the top as a field (Evergreen, Share and Archive
+/// are in a small ⋯ menu by the title, listening stats in a line over it), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
 /// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
 /// pause and stop are on the now-playing bar, and it keeps playing after you go back. Opening
 /// another meditation's editor stops what's playing. Any edit stops playback, so the
@@ -16,6 +16,7 @@ struct MeditationEditorView: View {
     let sourceURL: URL?
     let onSave: (_ filename: String, _ content: String) -> Void
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
     @Environment(MeditationPlayer.self) private var player
     @State private var pendingFix: MeditationFix? = nil
     /// The script and filename as last written to disk (or as opened).
@@ -43,6 +44,12 @@ struct MeditationEditorView: View {
     @State private var newPoolName = ""
     /// Whether it's in the Evergreen folder.
     @State private var evergreen = false
+    /// Share to Store is open.
+    @State private var sharing = false
+    /// Play has dropped into the now-playing bar (see `playButton`).
+    @State private var playDropped = false
+    /// Archived from the ⋯ menu: the page is on its way out and saves nothing more.
+    @State private var archived = false
     /// The title as typed. Written into the header as it changes, but read back from it only
     /// while the field isn't being typed in: the header keeps one space between words, so
     /// reading it back mid-word would reset the field and throw the caret to the end.
@@ -69,6 +76,7 @@ struct MeditationEditorView: View {
                 ScrollView {
                     // Long lines are hard to follow on iPad, so cap the measure and center it.
                     VStack(alignment: .leading, spacing: 0) {
+                        statsBanner
                         headerFields
                         MedTextEditor(
                             text: scriptBinding,
@@ -242,6 +250,9 @@ struct MeditationEditorView: View {
             stopIfPlaying()
         }
         .onChange(of: filename) { stopIfPlaying() }
+        .sheet(isPresented: $sharing) {
+            ShareToStoreView(filename: storeID, title: meta.title, content: content)
+        }
     }
 
     // MARK: Title, tags and pools
@@ -292,7 +303,7 @@ struct MeditationEditorView: View {
         NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
     }
 
-    /// The title, centered, with the Tags & Eras button just to its right.
+    /// The title, centered, with the ⋯ menu just to its right.
     private var headerFields: some View {
         TitleWithTrailingIcon {
             TextField("Title", text: $titleDraft)
@@ -311,25 +322,111 @@ struct MeditationEditorView: View {
                 .onChange(of: titleFocused) { _, focused in
                     if !focused, titleDraft != meta.title { titleDraft = meta.title }
                 }
-            // Evergreen is the one thing about a meditation set here: a small menu, not a sheet.
-            Menu {
-                Toggle(isOn: Binding(get: { evergreen }, set: { setEvergreen($0) })) {
-                    Label("Evergreen", systemImage: "leaf")
-                }
-                Text("Evergreen meditations show in every era.")
-            } label: {
-                Image(systemName: evergreen ? "leaf.fill" : "leaf")
-                    .font(.body)
-                    .foregroundStyle(evergreen ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
-            .accessibilityLabel(evergreen ? "Evergreen" : "Not evergreen")
+            optionsMenu
         }
         .padding(.horizontal, 20)
-        .padding(.top, 12)
+        .padding(.top, 4)
         .padding(.bottom, 6)
+    }
+
+    /// The meditation's own options, in a small menu by the title: Evergreen, sharing to the
+    /// store, and Archive.
+    private var optionsMenu: some View {
+        let link = MeditationStore.shared.link(for: storeID)
+        return Menu {
+            Toggle(isOn: Binding(get: { evergreen }, set: { setEvergreen($0) })) {
+                Label("Evergreen", systemImage: "leaf")
+            }
+            // Downloads stay with their author.
+            if link?.role != .downloaded {
+                Button {
+                    saveIfNeeded()
+                    sharing = true
+                } label: {
+                    Label(link?.role == .shared ? "Update in Store…" : "Share to Store…",
+                          systemImage: "square.and.arrow.up")
+                }
+                .disabled(isNew && fileURL == nil)
+            }
+            if let recordName = link?.recordName {
+                ShareLink(item: MeditationStore.shareURL(for: recordName)) {
+                    Label("Share Store Link…", systemImage: "link")
+                }
+            }
+            Divider()
+            Button { archive() } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .disabled(fileURL == nil && !hasChanges)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.body)
+                .foregroundStyle(.tertiary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
+        .accessibilityLabel("Options")
+    }
+
+    /// What its listening, store link and eras are kept under: the file's name, no extension.
+    private var storeID: String {
+        diskName ?? filename.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Saves what's typed, moves the file to the archive and goes back to the list.
+    private func archive() {
+        saveIfNeeded()
+        guard let url = fileURL else { return }
+        if let playing = player.currentSourceURL,
+           MeditationLibrary.shared.id(for: playing) == MeditationLibrary.shared.id(for: url) {
+            player.stop()
+        }
+        archived = true
+        _ = FileManager.default.archiveMeditation(at: url)
+        NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
+        dismiss()
+    }
+
+    /// A quiet line over the title: this meditation's listening (last 24 hours, last 7 days,
+    /// all time) and when it was last played, with a leaf when it's Evergreen. Nothing for
+    /// one never played.
+    private var statsBanner: some View {
+        let id = storeID
+        let active = player.listeningHistory.activeFile == id
+        return TimelineView(.periodic(from: .now, by: active ? 1 : 60)) { context in
+            let now = context.date
+            let record = isNew ? nil : player.listeningHistory.record(for: id, at: now)
+            HStack(spacing: 6) {
+                if evergreen {
+                    Image(systemName: "leaf.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityLabel("Evergreen")
+                }
+                if let record {
+                    let day = record.seconds(inLastDayAt: now)
+                    let week = record.seconds(inLastDays: 7, at: now)
+                    let parts = [
+                        day > 0 ? "\(JournalTimeFormatter.string(from: day)) last 24h" : nil,
+                        week > day ? "\(JournalTimeFormatter.string(from: week)) this week" : nil,
+                        "\(JournalTimeFormatter.string(from: record.totalSeconds)) total",
+                    ].compactMap { $0 }
+                    Text(parts.joined(separator: " · "))
+                        .monospacedDigit()
+                    if !active {
+                        Text("· \(record.lastPlayed.formatted(.relative(presentation: .named)))")
+                    }
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: record == nil && !evergreen ? 0 : 16)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
     }
 
     // MARK: Wells
@@ -487,8 +584,7 @@ struct MeditationEditorView: View {
     /// and stop are on the now-playing bar, so it shows only while that bar is down.
     @ViewBuilder
     private var playButton: some View {
-        if player.state == .idle || player.state == .finished {
-            Button {
+        Button {
                 dismissKeyboard()
                 // Write any pending edit first, so a new meditation has a file (and a row)
                 // and the play is counted under the name it has now.
@@ -508,9 +604,24 @@ struct MeditationEditorView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Play")
-            .transition(.scale.combined(with: .opacity))
-        }
+            // On Play it drops into the bar's place as the bar rises (same spring), fading as
+            // it goes; on Stop it rises back to its corner as the bar sinks (same 0.25s).
+            .offset(y: playDropped ? 96 : 0)
+            .opacity(playDropped ? 0 : 1)
+            .allowsHitTesting(!playDropped)
+            .accessibilityHidden(playDropped)
+            .onAppear { playDropped = !showsPlay }
+            .onChange(of: showsPlay) { _, shows in
+                if shows {
+                    withAnimation(.easeOut(duration: 0.25)) { playDropped = false }
+                } else {
+                    withAnimation(.spring(duration: 0.3, bounce: 0.15)) { playDropped = true }
+                }
+            }
     }
+
+    /// Play shows while nothing plays; once something does, pause and stop are on the bar.
+    private var showsPlay: Bool { player.state == .idle || player.state == .finished }
 
     /// Whether what's playing (or paused, or starting) came from this page's script.
     private var isPlayingThisScript: Bool {
@@ -526,7 +637,7 @@ struct MeditationEditorView: View {
     }
 
     private func saveIfNeeded() {
-        guard hasChanges else { return }
+        guard hasChanges, !archived else { return }
         let name = filename.trimmingCharacters(in: .whitespaces)
         // A new meditation needs a name first; wait until it has one.
         guard !name.isEmpty else { return }

@@ -605,8 +605,6 @@ struct MeditationListView: View {
         let isActive = isCurrent && player.isPlaying
         let isPreparing = isCurrent && player.isPreparing
         let isEngaged = isActive || isPreparing
-        let hasLogToday = store.hasMeditationLogToday(filename: filename)
-        let lastPlayed = player.listeningHistory.record(for: filename, at: Date())?.lastPlayed
         let hasUpdate = meditationStore.updates[filename] != nil
         let storeRole = meditationStore.link(for: filename)?.role
         // Don't read elapsedSeconds here: it ticks every second and would re-render the whole list.
@@ -660,7 +658,7 @@ struct MeditationListView: View {
 
                 Spacer()
 
-                LastPlayedLabel(filename: filename, history: player.listeningHistory, helpedToday: hasLogToday)
+                LastPlayedLabel(filename: filename, history: player.listeningHistory)
                     .opacity(hasUpdate ? 0 : isHole ? 0.55 : 1)
                 // Room for the edit button, which sits over the row (see below).
                 Color.clear
@@ -763,18 +761,6 @@ struct MeditationListView: View {
             if hasUpdate {
                 Button { updateTarget = filename } label: {
                     Label("Update from Store", systemImage: "arrow.down.circle")
-                }
-            }
-            // Only offered for something played today; an existing mark can always be removed.
-            if hasLogToday || lastPlayed.map(Calendar.current.isDateInToday) == true {
-                Button {
-                    store.toggleMeditationLogForToday(title: titleFor(url), sourceURL: url)
-                } label: {
-                    if hasLogToday {
-                        Label("Remove Helpful Mark", systemImage: "heart.slash")
-                    } else {
-                        Label("It Helped Today", systemImage: "heart")
-                    }
                 }
             }
             // Rarely used: sharing and archiving (archive is also a trailing swipe).
@@ -1246,7 +1232,6 @@ private struct LastPlayedLabel: View {
     @Environment(\.appPalette) private var palette
     let filename: String
     let history: ListeningHistory
-    let helpedToday: Bool
 
     var body: some View {
         let active = history.activeFile == filename
@@ -1257,12 +1242,6 @@ private struct LastPlayedLabel: View {
 
     private func label(at now: Date, active: Bool) -> some View {
         HStack(spacing: 4) {
-            if helpedToday {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(palette.tint)
-                    .accessibilityLabel("Helpful today")
-            }
             if let record = history.record(for: filename, at: now) {
                 let seconds = record.seconds(inLastDayAt: now)
                 if seconds > 0 || active {
