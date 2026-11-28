@@ -11,7 +11,9 @@ enum WidgetSync {
         let now = Date()
         let cal = Calendar.current
         let files = FileManager.default.meditationFiles()
-        let byName = Dictionary(files.map { ($0.deletingPathExtension().lastPathComponent, $0) },
+        let library = MeditationLibrary.shared
+        // By id, which is what listening is kept under (and what the widget hands back to play).
+        let byName = Dictionary(files.map { (library.id(for: $0), $0) },
                                 uniquingKeysWith: { first, _ in first })
 
         // Played most recently first, then the newest files of this era to fill up.
@@ -19,7 +21,7 @@ enum WidgetSync {
         if names.count < recentCount {
             let eras = EraIndex.load()
             for url in files where names.count < recentCount {
-                let name = url.deletingPathExtension().lastPathComponent
+                let name = library.id(for: url)
                 guard !names.contains(name) else { continue }
                 if let current = eras.current, !eras.belongs(url, to: current) { continue }
                 names.append(name)
@@ -28,7 +30,7 @@ enum WidgetSync {
         let recent: [WidgetSnapshot.Item] = names.prefix(recentCount).compactMap { name in
             guard let url = byName[name] else { return nil }
             let title = MeditationParser.parseMetadata(FileManager.default.readMeditation(at: url) ?? "").title
-            return WidgetSnapshot.Item(filename: name, title: title.isEmpty ? name : title)
+            return WidgetSnapshot.Item(filename: name, title: title.isEmpty ? MeditationLibrary.name(of: url) : title)
         }
 
         let listening = player.listeningHistory.days(atLeast: 0, at: now)
@@ -50,7 +52,7 @@ enum WidgetSync {
         let todayFeelings = Self.todayFeelings(store: store, calendar: cal)
 
         let playing = player.state == .idle ? nil
-            : player.currentSourceURL?.deletingPathExtension().lastPathComponent
+            : player.currentSourceURL.map(library.id(for:))
 
         let snapshot = WidgetSnapshot(
             updatedAt: now, recent: Array(recent), playingFilename: playing,
@@ -95,9 +97,10 @@ enum WidgetSync {
 /// The app's side of `PlayMeditationIntent`: finds the file and plays it on the shared player.
 enum WidgetPlayHandler {
     @MainActor
+    /// `filename` is the meditation's id, as the snapshot gave it.
     static func play(filename: String) async {
-        guard let url = FileManager.default.meditationFiles()
-                .first(where: { $0.deletingPathExtension().lastPathComponent == filename }),
+        guard let url = MeditationLibrary.shared.url(forID: filename)
+                ?? FileManager.default.meditationFiles().first(where: { MeditationLibrary.name(of: $0) == filename }),
               let content = FileManager.default.readMeditation(at: url) else { return }
         let player = MeditationPlayer.shared
         if player.currentSourceURL == url, player.state != .idle { return }

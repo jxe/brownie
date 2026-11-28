@@ -4,10 +4,13 @@ import Foundation
 /// name, and nothing about it is written into the scripts.
 ///
 /// A meditation belongs to the era it was made in, and to any later era it was brought along
-/// to. Brought-along meditations are listed in `kept`, by filename (no extension).
+/// to. That's kept in `library.json` (`MeditationLibrary`), and each meditation's file sits in
+/// the folder of the latest era it belongs to, named by the day that era started.
 struct Era: Codable, Hashable {
     var id: String
     var started: String  // yyyy-MM-dd
+    /// Brought-along meditations by filename, from before the library had folders. Only read
+    /// when the old flat folder is sorted into folders.
     var kept: [String]
     /// Eras used to be tags in each script's header (`#🌱`). An era from then keeps its old tag
     /// so any script still carrying it (another device, an edit in VS Code) is folded into
@@ -68,6 +71,26 @@ struct EraIndex {
         eras.first { $0.id == id }
     }
 
+    /// Each era's folder: the day it started, with `-2` on a second era started that day.
+    var folders: [String: String] {
+        var result: [String: String] = [:]
+        var used: [String: Int] = [:]
+        for era in eras.reversed() {
+            let n = used[era.started, default: 0] + 1
+            used[era.started] = n
+            result[era.id] = n == 1 ? era.started : "\(era.started)-\(n)"
+        }
+        return result
+    }
+
+    func folder(for eraID: String) -> String? {
+        folders[eraID]
+    }
+
+    func era(inFolder folder: String) -> Era? {
+        folders.first { $0.value == folder }.flatMap { era($0.key) }
+    }
+
     /// The era after this one, which ended it.
     private func next(after era: Era) -> Era? {
         guard let index = eras.firstIndex(where: { $0.id == era.id }), index > 0 else { return nil }
@@ -81,13 +104,13 @@ struct EraIndex {
     }
 
     func belongs(_ url: URL, to era: Era) -> Bool {
-        era.kept.contains(Self.name(of: url)) || eraMade(url)?.id == era.id
+        MeditationLibrary.shared.eras(of: url).contains(era.id)
     }
 
     /// In the current era because it was brought along, not because it was made then.
     func wasBroughtAlong(_ url: URL) -> Bool {
         guard let current else { return false }
-        return current.kept.contains(Self.name(of: url)) && eraMade(url)?.id != current.id
+        return belongs(url, to: current) && Self.dateString(for: url) < current.started
     }
 
     /// A past era's meditations, minus Evergreen ones and ones brought along to the current
@@ -101,8 +124,7 @@ struct EraIndex {
             return candidates.filter { belongs($0, to: era) }
         case .older:
             // Made before the first era and never brought along to any.
-            let kept = Set(eras.flatMap(\.kept))
-            return candidates.filter { eraMade($0) == nil && !kept.contains(Self.name(of: $0)) }
+            return candidates.filter { MeditationLibrary.shared.eras(of: $0).isEmpty }
         }
     }
 
@@ -132,72 +154,21 @@ struct EraIndex {
     }
 
     static func bringAlong(_ url: URL) {
-        var index = load()
-        guard !index.eras.isEmpty else { return }
-        let name = name(of: url)
-        guard !index.eras[0].kept.contains(name) else { return }
-        index.eras[0].kept.append(name)
-        index.save()
+        MeditationLibrary.shared.bringAlong(url)
     }
 
     /// Undoes bringing a meditation along: it goes back to the eras it came from.
     static func sendBack(_ url: URL) {
-        var index = load()
-        guard !index.eras.isEmpty else { return }
-        let name = name(of: url)
-        guard index.eras[0].kept.contains(name) else { return }
-        index.eras[0].kept.removeAll { $0 == name }
-        index.save()
-    }
-
-    /// Keeps a renamed meditation in the eras it was brought along to.
-    static func rename(_ oldName: String, to newName: String) {
-        guard oldName != newName else { return }
-        var index = load()
-        var changed = false
-        for i in index.eras.indices where index.eras[i].kept.contains(oldName) {
-            index.eras[i].kept = index.eras[i].kept.map { $0 == oldName ? newName : $0 }
-            changed = true
-        }
-        if changed { index.save() }
-    }
-
-    /// Moves era tags out of the scripts: any file still tagged with an old era tag is kept in
-    /// that era, and the tag comes out of its header. Returns the files it rewrote, with their
-    /// new contents.
-    static func migrateLegacyTags(files: [URL], contents: [URL: String]) -> [URL: String] {
-        var index = load()
-        let legacy = Set(index.eras.compactMap(\.legacyTag))
-        guard !legacy.isEmpty else { return [:] }
-        var rewritten: [URL: String] = [:]
-        var indexChanged = false
-        for url in files {
-            guard let content = contents[url] else { continue }
-            let meta = MeditationParser.parseMetadata(content)
-            let eraTags = meta.tags.filter(legacy.contains)
-            guard !eraTags.isEmpty else { continue }
-            let name = name(of: url)
-            for i in index.eras.indices {
-                if let tag = index.eras[i].legacyTag, eraTags.contains(tag), !index.eras[i].kept.contains(name) {
-                    index.eras[i].kept.append(name)
-                    indexChanged = true
-                }
-            }
-            rewritten[url] = MeditationMetadataWriter.rewrite(
-                source: content, title: meta.title, tags: meta.tags.filter { !legacy.contains($0) })
-        }
-        // The era record first, so nothing is lost if the rewrites are interrupted.
-        if indexChanged { index.save() }
-        for (url, content) in rewritten {
-            _ = FileManager.default.saveMeditation(content, filename: name(of: url))
-        }
-        return rewritten
+        MeditationLibrary.shared.sendBack(url)
     }
 
     // MARK: Storage
 
     static func load() -> EraIndex {
-        let directory = FileManager.default.meditationsDirectory
+        load(in: FileManager.default.meditationsDirectory)
+    }
+
+    static func load(in directory: URL) -> EraIndex {
         let url = directory.appendingPathComponent(filename)
         guard FileManager.default.fileExists(atPath: url.path) else {
             // Not downloaded yet: iCloud leaves a `.eras.json.icloud` placeholder. Ask for it;
@@ -272,9 +243,11 @@ struct EraIndex {
         return sameYear ? date.formatted(style) : date.formatted(style.year())
     }
 
-    /// The `yyyy-MM-dd` date a meditation was made: its filename prefix, else when the file
-    /// was created (not modified, so an edit doesn't move it into a later era).
+    /// The `yyyy-MM-dd` date a meditation was made: as the library has it, else its filename
+    /// prefix, else when the file was created (not modified, so an edit doesn't move it into a
+    /// later era).
     static func dateString(for url: URL) -> String {
+        if let made = MeditationLibrary.shared.made(of: url) { return made }
         let name = url.lastPathComponent
         if let range = name.range(of: #"^\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
             return String(name[range])

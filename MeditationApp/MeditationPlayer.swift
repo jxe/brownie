@@ -18,7 +18,7 @@ class MeditationPlayer: NSObject {
             if oldValue == .playing && state != .playing {
                 listeningHistory.end()
             } else if state == .playing && oldValue != .playing, let currentSourceURL {
-                listeningHistory.begin(filename: currentSourceURL.deletingPathExtension().lastPathComponent)
+                listeningHistory.begin(filename: MeditationLibrary.shared.id(for: currentSourceURL))
             }
         }
     }
@@ -128,6 +128,14 @@ class MeditationPlayer: NSObject {
         let savedRate = UserDefaults.standard.float(forKey: "speakingRate")
         self.speakingRate = savedRate > 0 ? savedRate : 0.45
         super.init()
+        // Bringing a meditation along, making it Evergreen or renaming it moves its file; the
+        // one playing keeps playing from its new place.
+        MeditationLibrary.shared.onMove = { [weak self] from, to in
+            DispatchQueue.main.async {
+                guard let self, self.currentSourceURL?.standardizedFileURL == from.standardizedFileURL else { return }
+                self.currentSourceURL = to
+            }
+        }
         setupRemoteCommands()
         observeInterruptions()
         observeAppLifecycle()

@@ -208,33 +208,13 @@ extension FileManager {
         return files.contains { $0.pathExtension == "med" }
     }
 
-    var archiveDirectory: URL {
-        let dir = meditationsDirectory.appendingPathComponent("Archive")
-        if !fileExists(atPath: dir.path) {
-            try? createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-        return dir
-    }
-
+    /// Every meditation but the archived ones, from all the library's folders.
     func meditationFiles() -> [URL] {
-        guard let directory = resolvedMeditationsDirectory,
-              let files = try? contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
-            return []
-        }
-        return files
-            .filter { $0.pathExtension == "med" }
-            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }
+        MeditationLibrary.shared.files(archived: false)
     }
 
     func archivedMeditationFiles() -> [URL] {
-        guard let directory = resolvedMeditationsDirectory else { return [] }
-        let archive = directory.appendingPathComponent("Archive", isDirectory: true)
-        guard let files = try? contentsOfDirectory(at: archive, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
-            return []
-        }
-        return files
-            .filter { $0.pathExtension == "med" }
-            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }
+        MeditationLibrary.shared.files(archived: true)
     }
 
     func readMeditation(at url: URL) -> String? {
@@ -263,11 +243,18 @@ extension FileManager {
         return result
     }
 
+    /// Writes the meditation with this filename wherever it is, or, for a new one, into the
+    /// current era's folder (and the library).
     func saveMeditation(_ content: String, filename: String) -> URL? {
         guard meditationStorageIsAvailable else { return nil }
-        let name = filename.hasSuffix(".med") ? filename : "\(filename).med"
-        let url = meditationsDirectory.appendingPathComponent(name)
-        return writeMeditation(content, to: url) ? url : nil
+        let name = filename.hasSuffix(".med") ? String(filename.dropLast(4)) : filename
+        let library = MeditationLibrary.shared
+        if let url = library.url(forName: name) {
+            return writeMeditation(content, to: url) ? url : nil
+        }
+        guard let url = library.newFileURL(named: name), writeMeditation(content, to: url) else { return nil }
+        library.registerNew(url)
+        return url
     }
 
     private func writeMeditation(_ content: String, to url: URL) -> Bool {
@@ -299,41 +286,19 @@ extension FileManager {
 
     func deleteMeditation(at url: URL) {
         guard meditationStorageIsAvailable else { return }
-        try? removeItem(at: url)
+        MeditationLibrary.shared.delete(url)
     }
 
     @discardableResult
     func archiveMeditation(at url: URL) -> URL? {
         guard meditationStorageIsAvailable else { return nil }
-        return moveMeditation(at: url, to: archiveDirectory)
+        return MeditationLibrary.shared.archive(url)
     }
 
     @discardableResult
     func unarchiveMeditation(at url: URL) -> URL? {
         guard meditationStorageIsAvailable else { return nil }
-        return moveMeditation(at: url, to: meditationsDirectory)
-    }
-
-    private func moveMeditation(at url: URL, to destinationDirectory: URL) -> URL? {
-        if !fileExists(atPath: destinationDirectory.path) {
-            try? createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-        }
-        let originalName = url.deletingPathExtension().lastPathComponent
-        let ext = url.pathExtension
-        var candidate = destinationDirectory.appendingPathComponent(url.lastPathComponent)
-        var suffix = 1
-        while fileExists(atPath: candidate.path) {
-            let newName = "\(originalName)-\(suffix).\(ext)"
-            candidate = destinationDirectory.appendingPathComponent(newName)
-            suffix += 1
-        }
-        do {
-            try moveItem(at: url, to: candidate)
-            return candidate
-        } catch {
-            print("Move error: \(error)")
-            return nil
-        }
+        return MeditationLibrary.shared.unarchive(url)
     }
 
     func selectExternalMeditationFolder(
@@ -375,27 +340,28 @@ extension FileManager {
         notifyMeditationStorageChanged()
     }
 
+    /// Every script in its folder, plus the library index and the eras, so a copy keeps
+    /// which era each meditation is in and its listening stats.
     private func meditationLibrarySnapshot() throws -> [MeditationLibrarySnapshotItem] {
+        MeditationLibrary.shared.sync()
+        let root = meditationsDirectory
         var snapshot: [MeditationLibrarySnapshotItem] = []
-        for url in meditationFiles() {
+        for url in meditationFiles() + archivedMeditationFiles() {
             guard let contents = readMeditation(at: url) else {
                 throw CocoaError(.fileReadUnknown)
             }
-            snapshot.append(
-                MeditationLibrarySnapshotItem(relativePath: url.lastPathComponent, contents: contents)
-            )
-        }
-
-        for url in archivedMeditationFiles() {
-            guard let contents = readMeditation(at: url) else {
-                throw CocoaError(.fileReadUnknown)
-            }
+            let folder = MeditationLibrary.folderName(of: url, root: root)
             snapshot.append(
                 MeditationLibrarySnapshotItem(
-                    relativePath: "Archive/\(url.lastPathComponent)",
+                    relativePath: folder.isEmpty ? url.lastPathComponent : "\(folder)/\(url.lastPathComponent)",
                     contents: contents
                 )
             )
+        }
+        for name in [MeditationLibrary.filename, EraIndex.filename] {
+            if let contents = readMeditation(at: root.appendingPathComponent(name)) {
+                snapshot.append(MeditationLibrarySnapshotItem(relativePath: name, contents: contents))
+            }
         }
         return snapshot
     }
@@ -405,6 +371,11 @@ extension FileManager {
         to destinationDirectory: URL
     ) throws {
         for item in snapshot {
+            // An index or eras already there belong to that folder's own meditations.
+            let isIndex = item.relativePath == MeditationLibrary.filename || item.relativePath == EraIndex.filename
+            if isIndex, fileExists(atPath: destinationDirectory.appendingPathComponent(item.relativePath).path) {
+                continue
+            }
             let proposedURL = destinationDirectory.appendingPathComponent(item.relativePath)
             let destinationURL = availableCopyDestination(for: proposedURL, matching: item.contents)
             guard let destinationURL else { continue }
@@ -434,6 +405,7 @@ extension FileManager {
     }
 
     private func notifyMeditationStorageChanged() {
+        MeditationLibrary.shared.forget()
         NotificationCenter.default.post(name: .meditationStorageDidChange, object: nil)
         NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
     }

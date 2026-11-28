@@ -366,7 +366,7 @@ class EmotionStore {
             timestamp: Date(),
             content: .meditation(.init(
                 title: title,
-                filename: sourceURL?.deletingPathExtension().lastPathComponent,
+                filename: sourceURL.map(MeditationLibrary.shared.id(for:)),
                 worked: true
             ))
         )
@@ -377,7 +377,7 @@ class EmotionStore {
     /// If a meditation log for `sourceURL`'s filename exists for today, remove it;
     /// otherwise create one. Used by the row-level toggle button.
     func toggleMeditationLogForToday(title: String, sourceURL: URL?) {
-        let filename = sourceURL?.deletingPathExtension().lastPathComponent
+        let filename = sourceURL.map(MeditationLibrary.shared.id(for:))
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         if let existing = journalEntries.first(where: { entry in

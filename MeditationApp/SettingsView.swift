@@ -351,8 +351,9 @@ struct SettingsView: View {
 
         let query = NSMetadataQuery()
         query.predicate = NSPredicate(
-            format: "(%K LIKE '*.med') OR (%K == %@)",
-            NSMetadataItemFSNameKey, NSMetadataItemFSNameKey, EraIndex.filename
+            format: "(%K LIKE '*.med') OR (%K == %@) OR (%K == %@)",
+            NSMetadataItemFSNameKey, NSMetadataItemFSNameKey, EraIndex.filename,
+            NSMetadataItemFSNameKey, MeditationLibrary.filename
         )
         switch FileManager.default.meditationStorageMode {
         case .local:

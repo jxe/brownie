@@ -22,7 +22,6 @@ struct MeditationListView: View {
     @State private var files: [URL] = []
     @State private var fileContents: [URL: String] = [:]
     @State private var fileTitles: [URL: String] = [:]
-    @State private var fileTags: [URL: [String]] = [:]
     @State private var eraIndex = EraIndex()
     /// The library reload in flight, so a burst of requests (a save, then the iCloud watcher
     /// noticing that same save) becomes one reload instead of several.
@@ -60,8 +59,9 @@ struct MeditationListView: View {
 
     private var hasEras: Bool { !eraIndex.eras.isEmpty }
 
+    /// Evergreen meditations are the ones in the Evergreen folder.
     private func isTimeless(_ url: URL) -> Bool {
-        fileTags[url]?.contains(EraIndex.timelessTag) == true
+        MeditationLibrary.isEvergreen(url)
     }
 
     /// This era's meditations: made in it or brought along to it. Evergreen meditations are listed
@@ -91,7 +91,7 @@ struct MeditationListView: View {
                 new.append((url, (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast))
                 continue
             }
-            guard let record = history.record(for: EraIndex.name(of: url), at: now) else {
+            guard let record = history.record(for: MeditationLibrary.shared.id(for: url), at: now) else {
                 rest.append(url)
                 continue
             }
@@ -128,7 +128,7 @@ struct MeditationListView: View {
               player.currentSourceURL != url,
               !eraIndex.wasBroughtAlong(url)
         else { return false }
-        let listened = player.listeningHistory.record(for: EraIndex.name(of: url), at: Date())?.totalSeconds ?? 0
+        let listened = player.listeningHistory.record(for: MeditationLibrary.shared.id(for: url), at: Date())?.totalSeconds ?? 0
         return listened < Self.quietBelowSeconds
     }
 
@@ -599,7 +599,8 @@ struct MeditationListView: View {
 
     @ViewBuilder
     private func rowView(for url: URL, bringAlong: Bool = false) -> some View {
-        let filename = url.deletingPathExtension().lastPathComponent
+        // Its id, which is what its listening, store link and journal marks are kept under.
+        let filename = MeditationLibrary.shared.id(for: url)
         let isCurrent = player.currentSourceURL == url
         let isActive = isCurrent && player.isPlaying
         let isPreparing = isCurrent && player.isPreparing
@@ -819,7 +820,6 @@ struct MeditationListView: View {
         files = library.files
         fileContents = library.contents
         fileTitles = library.titles
-        fileTags = library.tags
         eraIndex = library.eraIndex
     }
 
@@ -828,18 +828,12 @@ struct MeditationListView: View {
         let meta = MeditationParser.parseMetadata(content)
         fileContents[url] = content
         fileTitles[url] = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
-        fileTags[url] = meta.tags
-    }
-
-    private func metadataFor(_ url: URL) -> (title: String, tags: [String]) {
-        let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) ?? ""
-        let meta = MeditationParser.parseMetadata(content)
-        let title = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
-        return (title, meta.tags)
     }
 
     private func titleFor(_ url: URL) -> String {
-        fileTitles[url] ?? metadataFor(url).title
+        if let title = fileTitles[url] { return title }
+        let meta = MeditationParser.parseMetadata(fileContents[url] ?? FileManager.default.readMeditation(at: url) ?? "")
+        return meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
     }
 
     private func playFile(_ url: URL) {
@@ -877,16 +871,17 @@ struct MeditationListView: View {
             suffix = baseName
         }
 
-        let existingNames = Set(files.map { $0.deletingPathExtension().lastPathComponent })
+        // Names are unique across every folder, archive included.
+        let library = MeditationLibrary.shared
 
         // Try today-suffix first, then today-v2-suffix, today-v3-suffix, ...
         let candidate: String
         let base = "\(today)-\(suffix)"
-        if !existingNames.contains(base) {
+        if !library.isNameTaken(base) {
             candidate = base
         } else {
             var counter = 2
-            while existingNames.contains("\(today)-v\(counter)-\(suffix)") {
+            while library.isNameTaken("\(today)-v\(counter)-\(suffix)") {
                 counter += 1
             }
             candidate = "\(today)-v\(counter)-\(suffix)"
@@ -895,13 +890,13 @@ struct MeditationListView: View {
         // The copy is made today, so it's part of the current era.
         let copyContent = content
 
-        _ = FileManager.default.saveMeditation(copyContent, filename: candidate)
+        let copyURL = FileManager.default.saveMeditation(copyContent, filename: candidate)
         refreshFiles()
 
         // Open the editor on the new copy
         editorContent = copyContent
         editorFilename = candidate
-        editorURL = files.first { $0.deletingPathExtension().lastPathComponent == candidate }
+        editorURL = copyURL
         isNewFile = false
         showingEditor = true
     }
@@ -909,14 +904,15 @@ struct MeditationListView: View {
     private func shareToStore(_ url: URL) {
         guard let content = fileContents[url] ?? FileManager.default.readMeditation(at: url) else { return }
         shareTarget = ShareTarget(
-            filename: url.deletingPathExtension().lastPathComponent,
+            filename: MeditationLibrary.shared.id(for: url),
             title: titleFor(url),
             content: content
         )
     }
 
+    /// `filename` is the meditation's id.
     private func applyStoreUpdate(_ filename: String) {
-        if player.currentSourceURL?.deletingPathExtension().lastPathComponent == filename {
+        if let url = player.currentSourceURL, MeditationLibrary.shared.id(for: url) == filename {
             player.stop()
         }
         meditationStore.applyUpdate(to: filename)
@@ -958,23 +954,11 @@ struct MeditationListView: View {
         refreshFiles(animation: .snappy(duration: 0.25))
     }
 
-    /// Adds or removes the `timeless` tag, keeping the file's other tags in place.
-    /// Doesn't stop playback: only the header changes.
+    /// Moves it into the Evergreen folder, or back out to its latest era. Doesn't stop
+    /// playback: the player follows the file.
     private func toggleFoundation(_ url: URL) {
-        let (_, tags) = metadataFor(url)
-        let newTags = tags.contains(EraIndex.timelessTag)
-            ? tags.filter { $0 != EraIndex.timelessTag }
-            : tags + [EraIndex.timelessTag]
-        writeTags(newTags, for: url)
+        MeditationLibrary.shared.setEvergreen(url, !isTimeless(url))
         refreshFiles(animation: .snappy(duration: 0.25))
-    }
-
-    private func writeTags(_ newTags: [String], for url: URL) {
-        guard let content = FileManager.default.readMeditation(at: url) else { return }
-        let (title, _) = metadataFor(url)
-        let updated = MeditationMetadataWriter.rewrite(source: content, title: title, tags: newTags)
-        let basename = url.deletingPathExtension().lastPathComponent
-        _ = FileManager.default.saveMeditation(updated, filename: basename)
     }
 
     private func startEra() {
@@ -1625,23 +1609,18 @@ private struct LoadedLibrary: Sendable {
     var files: [URL] = []
     var contents: [URL: String] = [:]
     var titles: [URL: String] = [:]
-    var tags: [URL: [String]] = [:]
     var eraIndex = EraIndex()
 
     static func load() -> LoadedLibrary {
         var library = LoadedLibrary()
+        // Files anything new, and the first time sorts the old flat folder into folders.
+        MeditationLibrary.shared.sync()
         library.files = FileManager.default.meditationFiles()
         for url in library.files {
             let loaded = FileManager.default.readMeditation(at: url)
             if let loaded { library.contents[url] = loaded }
             let meta = MeditationParser.parseMetadata(loaded ?? "")
             library.titles[url] = meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title
-            library.tags[url] = meta.tags
-        }
-        // Era tags left in scripts (from before eras were dates, or another device) move out.
-        for (url, content) in EraIndex.migrateLegacyTags(files: library.files, contents: library.contents) {
-            library.contents[url] = content
-            library.tags[url] = MeditationParser.parseMetadata(content).tags
         }
         library.eraIndex = EraIndex.load()
         return library

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Pushed from the meditation list. The title sits at the top as a field (Evergreen and tags
-/// are in the Tags & Eras sheet, from the icon by the title), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
+/// Pushed from the meditation list. The title sits at the top as a field (Evergreen and the
+/// file's name are in the options sheet, from the icon by the title), then the pools as a shelf of chips, then the script; the file is still the same plain text, written
 /// with its pools gathered at the top. Play in the title bar tries out the script as it stands;
 /// pause and stop are on the now-playing bar, and it keeps playing after you go back. Opening
 /// another meditation's editor stops what's playing. Any edit stops playback, so the
@@ -44,7 +44,9 @@ struct MeditationEditorView: View {
     @State private var focusedWell: String?
     @State private var namingNewPool = false
     @State private var newPoolName = ""
-    @State private var editingTags = false
+    @State private var editingOptions = false
+    /// Whether it's in the Evergreen folder.
+    @State private var evergreen = false
     /// The title as typed. Written into the header as it changes, but read back from it only
     /// while the field isn't being typed in: the header keeps one space between words, so
     /// reading it back mid-word would reset the field and throw the caret to the end.
@@ -57,7 +59,7 @@ struct MeditationEditorView: View {
     /// a new meditation's first autosave or a rename.
     private var fileURL: URL? {
         guard let diskName else { return sourceURL }
-        return FileManager.default.meditationsDirectory.appendingPathComponent("\(diskName).med")
+        return MeditationLibrary.shared.url(forName: diskName) ?? sourceURL
     }
 
     private var hasChanges: Bool {
@@ -182,15 +184,14 @@ struct MeditationEditorView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $editingTags) {
-            TagEditorView(title: "Tags & Eras", initialTags: meta.tags, suggestions: MedHeader.suggestedTags(),
-                          evergreenTag: EraIndex.timelessTag, fileName: diskName ?? filename,
-                          onRename: {
-                              newFilename = diskName ?? filename
-                              // Once the sheet is down, so the alert has somewhere to show.
-                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { renamingFile = true }
-                          }) { _, tags in
-                setHeader(title: meta.title, tags: tags)
+        .sheet(isPresented: $editingOptions) {
+            MeditationOptionsView(title: "Options", evergreen: evergreen, fileName: diskName ?? filename,
+                                  onRename: {
+                                      newFilename = diskName ?? filename
+                                      // Once the sheet is down, so the alert has somewhere to show.
+                                      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { renamingFile = true }
+                                  }) { _, on in
+                if let on, on != evergreen { setEvergreen(on) }
             }
             .presentationDetents([.medium, .large])
         }
@@ -226,10 +227,12 @@ struct MeditationEditorView: View {
             syncDocument()
             titleDraft = meta.title
             if saved == nil {
+                evergreen = sourceURL.map(MeditationLibrary.isEvergreen) ?? false
                 if !isNew { diskName = filename.trimmingCharacters(in: .whitespaces) }
                 let derived = MedFilename.derived(from: meta.title, keepingDateOf: filename)
                 followsTitle = isNew
-                    || (filename == derived && MeditationStore.shared.link(for: filename) == nil)
+                    || (filename == derived
+                        && MeditationStore.shared.link(for: MeditationLibrary.shared.id(forName: filename)) == nil)
                 // Before `saved`, so naming a new meditation isn't an edit to save.
                 if followsTitle { filename = derived }
                 // Lines with several repeats show as boxes in boxes, written out in brackets.
@@ -311,7 +314,15 @@ struct MeditationEditorView: View {
         }
     }
 
-    private var isFoundation: Bool { meta.tags.contains(EraIndex.timelessTag) }
+    /// Moves the file into the Evergreen folder or back out to its era. A new meditation is
+    /// saved first, so there's a file to move.
+    private func setEvergreen(_ on: Bool) {
+        saveIfNeeded()
+        guard let url = fileURL else { return }
+        MeditationLibrary.shared.setEvergreen(url, on)
+        evergreen = on
+        NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
+    }
 
     /// The title, centered, with the Tags & Eras button just to its right.
     private var headerFields: some View {
@@ -334,16 +345,16 @@ struct MeditationEditorView: View {
                 }
             Button {
                 dismissKeyboard()
-                editingTags = true
+                editingOptions = true
             } label: {
-                Image(systemName: isFoundation ? "leaf" : "tag")
+                Image(systemName: evergreen ? "leaf" : "info.circle")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Tags and eras")
+            .accessibilityLabel("Options")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -549,32 +560,26 @@ struct MeditationEditorView: View {
         // Autosave runs mid-typing, so the name may match another meditation (two new ones on
         // the same day both start as the date). Never write over it: use the next free name.
         let target = freeName(for: name)
-        onSave(target, content)
-        // Renamed: the file was written under its new name, so remove the old one.
-        if let diskName, diskName != target {
-            let old = FileManager.default.meditationsDirectory.appendingPathComponent("\(diskName).med")
-            FileManager.default.deleteMeditation(at: old)
-            // Eras, listening stats and store links know it by name.
-            EraIndex.rename(diskName, to: target)
-            player.listeningHistory.rename(diskName, to: target)
-            MeditationStore.shared.renameLink(diskName, to: target)
+        // Renamed: the file moves to its new name where it is, then takes the new text. Its id
+        // stays, so its era, listening stats and store link come along.
+        if let diskName, diskName != target, let old = MeditationLibrary.shared.url(forName: diskName) {
+            MeditationLibrary.shared.rename(old, to: target)
         }
+        onSave(target, content)
         diskName = target
         saved = (content, filename)
         isNew = false
     }
 
-    /// `name`, or `name 2`, `name 3`… when another meditation already has it.
+    /// `name`, or `name-2`, `name-3`… when another meditation, in any folder, already has it.
     private func freeName(for name: String) -> String {
-        let dir = FileManager.default.meditationsDirectory
         func taken(_ candidate: String) -> Bool {
-            candidate != diskName
-                && FileManager.default.fileExists(atPath: dir.appendingPathComponent("\(candidate).med").path)
+            candidate != diskName && MeditationLibrary.shared.isNameTaken(candidate)
         }
         var candidate = name
         var n = 2
         while taken(candidate) {
-            candidate = "\(name) \(n)"
+            candidate = "\(name)-\(n)"
             n += 1
         }
         return candidate

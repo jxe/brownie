@@ -63,9 +63,11 @@ final class MeditationStore {
     private(set) var meditations: [SharedMeditation] = []
     private(set) var isLoading = false
     private(set) var loadError: String?
-    /// Keyed by local filename (without extension): downloads whose author shared a newer version.
+    /// Keyed by the local meditation's id (`MeditationLibrary`): downloads whose author shared
+    /// a newer version. (Where a `filename` parameter appears below, it's that id: the
+    /// filename it had when the library was first indexed, for one that was here by then.)
     private(set) var updates: [String: SharedMeditation] = [:]
-    /// Keyed by local filename (without extension).
+    /// Keyed by the local meditation's id.
     private(set) var links: [String: StoreLink]
     private(set) var hiddenAuthors: Set<String>
     private(set) var reported: Set<String>
@@ -99,17 +101,10 @@ final class MeditationStore {
         links[filename]
     }
 
-    /// Keeps a renamed file linked to its store record.
-    func renameLink(_ old: String, to new: String) {
-        guard old != new, let link = links.removeValue(forKey: old) else { return }
-        links[new] = link
-        if let update = updates.removeValue(forKey: old) { updates[new] = update }
-        saveLinks()
-    }
-
     /// Record names of store items that a file in the library (shared or downloaded) comes from.
     func recordsInLibrary() -> Set<String> {
-        let localNames = Set(FileManager.default.meditationFiles().map { $0.deletingPathExtension().lastPathComponent })
+        let localNames = Set((FileManager.default.meditationFiles() + FileManager.default.archivedMeditationFiles())
+            .map { MeditationLibrary.shared.id(for: $0) })
         return Set(links.filter { localNames.contains($0.key) }.map(\.value.recordName))
     }
 
@@ -169,7 +164,7 @@ final class MeditationStore {
         let content = item.body
         let filename = availableFilename(for: item.title)
         guard let url = FileManager.default.saveMeditation(content, filename: filename) else { return nil }
-        links[filename] = StoreLink(recordName: item.id, role: .downloaded, modified: item.modified)
+        links[MeditationLibrary.shared.id(for: url)] = StoreLink(recordName: item.id, role: .downloaded, modified: item.modified)
         saveLinks()
         NotificationCenter.default.post(name: .meditationsDidChange, object: nil)
         return url
@@ -196,27 +191,13 @@ final class MeditationStore {
         updates = found
     }
 
-    /// Replaces a downloaded file with its author's newer version, keeping the file's own
-    /// timeless tag.
+    /// Replaces a downloaded file with its author's newer version. It stays where it is
+    /// (Evergreen, say), since that's its folder, not its text.
     @discardableResult
     func applyUpdate(to filename: String) -> Bool {
-        guard let item = updates[filename], var link = links[filename] else { return false }
-        let localURL = FileManager.default.meditationFiles().first {
-            $0.deletingPathExtension().lastPathComponent == filename
-        }
-        let localTags = localURL
-            .flatMap { FileManager.default.readMeditation(at: $0) }
-            .map { MeditationParser.parseMetadata($0).tags } ?? []
-        let eras = EraIndex.load()
-        let keptTags = localTags.filter { eras.isEraTag($0) || $0 == EraIndex.timelessTag }
-
-        let meta = MeditationParser.parseMetadata(item.body)
-        var content = item.body
-        let mergedTags = meta.tags + keptTags.filter { !meta.tags.contains($0) }
-        if mergedTags != meta.tags {
-            content = MeditationMetadataWriter.rewrite(source: content, title: meta.title, tags: mergedTags)
-        }
-        guard FileManager.default.saveMeditation(content, filename: filename) != nil else { return false }
+        guard let item = updates[filename], var link = links[filename],
+              let localURL = MeditationLibrary.shared.url(forID: filename) else { return false }
+        guard FileManager.default.saveMeditation(item.body, filename: MeditationLibrary.name(of: localURL)) != nil else { return false }
 
         link.modified = item.modified
         links[filename] = link
@@ -340,13 +321,10 @@ final class MeditationStore {
             .filter { !$0.isEmpty }
             .joined(separator: "-")
         let base = "\(formatter.string(from: Date()))-\(slug.isEmpty ? "meditation" : slug)"
-        let taken = Set(
-            (FileManager.default.meditationFiles() + FileManager.default.archivedMeditationFiles())
-                .map { $0.deletingPathExtension().lastPathComponent }
-        )
-        guard taken.contains(base) else { return base }
+        let library = MeditationLibrary.shared
+        guard library.isNameTaken(base) else { return base }
         var counter = 2
-        while taken.contains("\(base)-\(counter)") { counter += 1 }
+        while library.isNameTaken("\(base)-\(counter)") { counter += 1 }
         return "\(base)-\(counter)"
     }
 

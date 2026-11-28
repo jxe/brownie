@@ -12,35 +12,40 @@ The first `#` line becomes the meditation title.
 
 Additional `#` lines are treated as comments and ignored.
 
-## Tags
+## Tags (old)
 
-Tags can appear on the title line itself:
+Older scripts may have `#tags` on the title line (`# Morning Prayer #prayer`) or on a `#` line just after it. The app no longer uses them: they stay in the file as they are and mean nothing. Evergreen and eras live outside the script, in folders and the library index.
 
-```
-# Morning Prayer #prayer #morning
-```
+## The library folder
 
-Or on a separate `#` line immediately after the title (the line must contain only `#tag` words):
+Scripts live in folders that say where they show up:
 
 ```
-# Morning Prayer
-#prayer #morning
+library.json        the index (below)
+eras.json           the eras, newest first
+2026-11-21/         an era's folder, named by the day it started: what belongs to that era,
+                    when it's the latest era it belongs to
+2026-09-19/
+Evergreen/          shown in every era
+Older/              made before the first era and never brought along
+Archive/            put away
 ```
 
-Tags are used by the meditation list to filter and group meditations.
+Files are named `yyyy-MM-dd-title-slug.med`, from the day it was made and its title, with `-2` (etc.) when another script in any folder has the name. Names don't matter to the app beyond that; rename or move files freely.
 
-### Evergreen and eras
+**Eras** are stretches of time, from the day one is started until the next one. A meditation belongs to the era it was made in, and to any later era it was brought along to; its file sits in the folder of the latest one, so the newest era's folder holds what that era shows. Bringing one along moves its file there.
 
-`#timeless` marks an **Evergreen** meditation: one that is always shown, whatever era it is. The list shows only this tag; other tags stay in the file but are hidden.
-
-**Eras** are stretches of time, from the day one is started until the next one, and they live outside the scripts. `eras.json`, next to the `.med` files, lists them newest first; the first one is the current era. A meditation belongs to the era it was made in (by its filename's date, else when the file was created), and to any era it was brought along to (`kept`, by filename):
+`library.json` keeps what folders can't: a stable `id` for each meditation (listening stats, store links and the journal know it by this, so renaming or moving the file loses nothing), the day it was `made`, and every era it belongs to (`eras`, by era id):
 
 ```json
-[{"id": "…", "started": "2026-11-19", "kept": ["2026-10-02-morning"]},
- {"id": "🎸", "started": "2026-09-19", "kept": [], "legacyTag": "🎸"}]
+{"version": 1, "meditations": [
+  {"id": "2026-10-02-morning", "name": "2026-10-02-morning", "folder": "2026-11-21",
+   "made": "2026-10-02", "eras": ["…the September era's id…", "…the November era's id…"]}]}
 ```
 
-Eras used to be tags in the header (`#🎸`). The app moves any such tag it finds into `kept` for that era and takes it out of the script.
+A `.med` the app hasn't seen (added on the Mac, say) gets an id and joins the era of the folder it's in; one dropped at the top of the folder joins the current era. Move a file between folders on the Mac and the app takes that as where it is now (into an era's folder: that era becomes its latest). If two files share a name, the newcomer gets `-2`.
+
+The first time this version opens a library from before folders (scripts at the top, `#timeless` for Evergreen, brought-along lists in `eras.json`), it copies everything to `Before Folders/`, then sorts it into folders.
 
 ## Spoken Text
 

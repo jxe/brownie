@@ -594,13 +594,13 @@ struct MedTextEditor: UIViewRepresentable {
                 guard let headerRange = MedHeader.range(in: script) else { return }
                 let source = (script as NSString).substring(with: headerRange)
                 let meta = MeditationParser.parseMetadata(script)
-                let editor = TagEditorView(
-                    title: "Title & Tags", initialName: meta.title, initialTags: meta.tags,
-                    suggestions: MedHeader.suggestedTags(),
-                    onSave: { [weak self, weak textView] name, tags in
+                let editor = MeditationOptionsView(
+                    title: "Title", initialName: meta.title,
+                    onSave: { [weak self, weak textView] name, _ in
                         let title = name?.trimmingCharacters(in: .whitespaces) ?? meta.title
-                        guard let self, let textView, title != meta.title || tags != meta.tags else { return }
-                        let header = MeditationMetadataWriter.rewrite(source: source, title: title, tags: tags)
+                        guard let self, let textView, title != meta.title else { return }
+                        // Any old #tags stay as they were.
+                        let header = MeditationMetadataWriter.rewrite(source: source, title: title, tags: meta.tags)
                         self.replace(headerRange, expecting: source, with: header, in: textView)
                     },
                     onClose: { [weak presenter] in presenter?.dismiss(animated: true) })

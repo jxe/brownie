@@ -171,11 +171,6 @@ enum MedHeader {
         guard let end else { return nil }
         return NSRange(location: 0, length: end)
     }
-
-    /// `timeless` is the one tag the list shows (as Evergreen).
-    static func suggestedTags() -> [String] {
-        [EraIndex.timelessTag]
-    }
 }
 
 enum MedQuickEdit {

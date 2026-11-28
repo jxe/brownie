@@ -486,17 +486,13 @@ private enum PastRow: Identifiable {
             .sorted { $0.date > $1.date }
     }
 
-    /// The meditation's file, here or archived, and its title; nil if it's gone.
+    /// The meditation's file, in whichever folder (archive included), and its title; nil if
+    /// it's gone. `filename` is its id, which listening is kept under.
     private static func meditationFile(_ filename: String) -> (url: URL, title: String)? {
-        let directory = FileManager.default.meditationsDirectory
-        for url in [directory.appendingPathComponent(filename + ".med"),
-                    directory.appendingPathComponent("Archive").appendingPathComponent(filename + ".med")] {
-            if let content = FileManager.default.readMeditation(at: url) {
-                let title = MeditationParser.parseMetadata(content).title
-                return (url, title.isEmpty ? filename : title)
-            }
-        }
-        return nil
+        guard let url = MeditationLibrary.shared.url(forID: filename),
+              let content = FileManager.default.readMeditation(at: url) else { return nil }
+        let title = MeditationParser.parseMetadata(content).title
+        return (url, title.isEmpty ? MeditationLibrary.name(of: url) : title)
     }
 
     /// The page its tap opens on the main screen. A meditation that helped has nothing more
@@ -750,22 +746,21 @@ struct PastErasView: View {
     private func load() async {
         let index = EraIndex.load()
         eraIndex = index
-        let metas: [(url: URL, title: String, tags: [String])] = await Task.detached {
+        let metas: [(url: URL, title: String)] = await Task.detached {
             FileManager.default.meditationFiles().map { url in
                 let meta = MeditationParser.parseMetadata(FileManager.default.readMeditation(at: url) ?? "")
-                return (url, meta.title.isEmpty ? EraIndex.name(of: url) : meta.title, meta.tags)
+                return (url, meta.title.isEmpty ? EraIndex.name(of: url) : meta.title)
             }
         }.value
-        let tags = Dictionary(uniqueKeysWithValues: metas.map { ($0.url, $0.tags) })
         let titles = Dictionary(uniqueKeysWithValues: metas.map { ($0.url, $0.title) })
         let files = metas.map(\.url)
         let history = player.listeningHistory
         var result: [EraSelection: Summary] = [:]
         let eras: [EraSelection] = index.eras.isEmpty ? [] : index.eras.dropFirst().map { .era($0.id) } + [.older]
         for era in eras {
-            let eraFiles = index.pastFiles(era, from: files) { tags[$0]?.contains(EraIndex.timelessTag) == true }
+            let eraFiles = index.pastFiles(era, from: files, isTimeless: MeditationLibrary.isEvergreen)
             let listened = eraFiles
-                .map { ($0, history.record(for: EraIndex.name(of: $0), at: Date())?.totalSeconds ?? 0) }
+                .map { ($0, history.record(for: MeditationLibrary.shared.id(for: $0), at: Date())?.totalSeconds ?? 0) }
                 .filter { $0.1 > 0 }
                 .max { $0.1 < $1.1 }
             result[era] = Summary(count: eraFiles.count, mostListened: listened.flatMap { titles[$0.0] })
