@@ -72,13 +72,12 @@ struct MeditationListView: View {
         return byRecentListening(base.filter { eraIndex.belongs($0, to: current) })
     }
 
-    /// Meditations made in the last 24 hours come first, newest first: a new one (an edited
+    /// Meditations made today come first, newest first: a new one (an edited
     /// copy, say) is what you're working on. Then those played in the last 24 hours, by their
     /// last 24 hours' listening; then the rest played in the last week, by the week's
     /// listening; then the rest in the order they came in. Ties keep that order too.
     private func byRecentListening(_ urls: [URL]) -> [URL] {
         let now = Date()
-        let dayAgo = now.addingTimeInterval(-86400)
         let weekAgo = now.addingTimeInterval(-7 * 86400)
         let history = player.listeningHistory
         var new: [(url: URL, made: Date)] = []
@@ -86,8 +85,10 @@ struct MeditationListView: View {
         var week: [(url: URL, seconds: TimeInterval)] = []
         var rest: [URL] = []
         for url in urls {
-            if let made = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate, made >= dayAgo {
-                new.append((url, made))
+            // Made today by its name's date (a save rewrites the file, so its creation date
+            // isn't a safe test); the creation date only orders today's among themselves.
+            if EraIndex.daysSinceMade(url) == 0 {
+                new.append((url, (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast))
                 continue
             }
             guard let record = history.record(for: EraIndex.name(of: url), at: now) else {
