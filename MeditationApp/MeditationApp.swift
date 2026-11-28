@@ -453,7 +453,7 @@ struct ContentView: View {
         buttonMorph = morph
         buttonMorphProgress = 0
         DispatchQueue.main.async {
-            withAnimation(.spring(duration: 0.45, bounce: 0.12)) {
+            withAnimation(.spring(duration: 0.3, bounce: 0.35), completionCriteria: .removed) {
                 buttonMorphProgress = 1
             } completion: {
                 guard buttonMorph?.id == morph.id else { return }
@@ -482,7 +482,7 @@ struct ContentView: View {
             nowPlayingBarShown = false
         }
         DispatchQueue.main.async {
-            withAnimation(.spring(duration: 0.4, bounce: 0.15)) {
+            withAnimation(.spring(duration: 0.28, bounce: 0.35), completionCriteria: .removed) {
                 buttonMorphProgress = 0
             } completion: {
                 guard buttonMorph?.id == morph.id else { return }
@@ -576,7 +576,8 @@ private struct ButtonMorph {
 /// The Play button stretched into the now-playing bar, or back. `progress` is 0 at the
 /// button (a circle in the bar's colour with the play glyph) and 1 at the bar (full width,
 /// square corners, run down under the home indicator, the bar's contents on it); a spring
-/// drives it, so it may overshoot a little either way.
+/// drives it with a real bounce: growing, the bar's top edge overshoots up and settles; shrinking,
+/// the circle squeezes small and springs back. The hand-off waits until it has fully settled.
 private struct ButtonMorphView: View, Animatable {
     var progress: CGFloat
     let button: CGRect
