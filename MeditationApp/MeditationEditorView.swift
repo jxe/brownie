@@ -50,6 +50,8 @@ struct MeditationEditorView: View {
     /// reading it back mid-word would reset the field and throw the caret to the end.
     @State private var titleDraft = ""
     @FocusState private var titleFocused: Bool
+    /// Set while the page writes out repeats as it opens, which isn't an edit.
+    @State private var layingOutRepeats = false
 
     /// Where this page's file is now, so a play counts for (and lights up) the right row after
     /// a new meditation's first autosave or a rename.
@@ -230,6 +232,14 @@ struct MeditationEditorView: View {
                     || (filename == derived && MeditationStore.shared.link(for: filename) == nil)
                 // Before `saved`, so naming a new meditation isn't an edit to save.
                 if followsTitle { filename = derived }
+                // Lines with several repeats show as boxes in boxes, written out in brackets.
+                // It plays the same, so it isn't an edit: not saved until something is, and
+                // what's playing carries on.
+                let laidOut = MedRepeatLayout.expandingRepeats(in: doc.script)
+                if laidOut != doc.script {
+                    layingOutRepeats = true
+                    update { $0.script = laidOut }
+                }
                 saved = (content, filename)
                 // Editing one meditation while another plays isn't supported: the now-playing
                 // bar would sit under the wrong script. What's playing stops; this script, if
@@ -254,6 +264,10 @@ struct MeditationEditorView: View {
         // Any edit stops this script's playback; the next play starts again from the top.
         .onChange(of: content) {
             syncDocument()
+            if layingOutRepeats {
+                layingOutRepeats = false
+                return
+            }
             stopIfPlaying()
         }
         .onChange(of: filename) { stopIfPlaying() }

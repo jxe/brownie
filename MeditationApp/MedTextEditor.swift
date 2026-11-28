@@ -291,6 +291,57 @@ struct MedTextEditor: UIViewRepresentable {
             revealCaret(in: textView)
         }
 
+        func textViewDidEndEditing(_ textView: UITextView) {
+            // Not written out here: a quick edit's popover ends editing too, and would find its
+            // line moved. The editor writes such lines out when it next opens.
+            caretLine = nil
+        }
+
+        // MARK: Writing out repeats
+
+        /// The line the caret is on, as it was last seen: when the caret leaves it, a line with
+        /// several repeats is written out in brackets (see `MedRepeatLayout`).
+        private var caretLine: (location: Int, text: String)?
+
+        private func noteCaretLine(in textView: MedTextView) {
+            guard !textView.isAdjustingSelection, textView.markedTextRange == nil else { return }
+            let ns = (textView.text ?? "") as NSString
+            let caret = textView.selectedRange.location
+            guard caret <= ns.length else { return }
+            var start = 0, end = 0, contentsEnd = 0
+            ns.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: caret, length: 0))
+            let left = caretLine
+            caretLine = (start, ns.substring(with: NSRange(location: start, length: contentsEnd - start)))
+            guard let left, left.location != start, MedRepeatLayout.expandedLine(left.text) != nil else { return }
+            // After the edit under way (a Return, say) is done.
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.expand(left, in: textView)
+            }
+        }
+
+        /// Writes `line` out in brackets if it's still there as it was, keeping the caret's place.
+        private func expand(_ line: (location: Int, text: String), in textView: MedTextView) {
+            let ns = (textView.text ?? "") as NSString
+            let range = NSRange(location: line.location, length: (line.text as NSString).length)
+            guard NSMaxRange(range) <= ns.length, ns.substring(with: range) == line.text,
+                  range.location == 0 || ns.character(at: range.location - 1) == 10,
+                  NSMaxRange(range) == ns.length || ns.character(at: NSMaxRange(range)) == 10,
+                  let expanded = MedRepeatLayout.expandedLine(line.text),
+                  let lineRange = self.textRange(range, in: textView) else { return }
+            let selection = textView.selectedRange
+            let wasEditing = textView.isFirstResponder
+            textView.isAdjustingSelection = true
+            textView.replace(lineRange, withText: expanded)
+            if wasEditing {
+                let delta = (expanded as NSString).length - range.length
+                let location = selection.location > range.location ? selection.location + delta : selection.location
+                textView.selectedRange = NSRange(location: location, length: 0)
+            }
+            textView.isAdjustingSelection = false
+            textViewDidChange(textView)
+        }
+
         func textViewDidBeginEditing(_ textView: UITextView) {
             // Again once the keyboard has come up and the page has made room for it.
             revealCaret(in: textView)
@@ -318,6 +369,7 @@ struct MedTextEditor: UIViewRepresentable {
         /// line. Leaving a blank stretch between pools, opened for typing, folds it away again.
         func textViewDidChangeSelection(_ textView: UITextView) {
             if textView.selectedRange.length == 0 { revealCaret(in: textView) }
+            if let medView = textView as? MedTextView, !medView.foldsPools { noteCaretLine(in: medView) }
             guard let medView = textView as? MedTextView, !medView.isAdjustingSelection,
                   medView.foldedText == textView.text else { return }
             let selection = textView.selectedRange
@@ -733,8 +785,12 @@ final class MedTextView: UITextView {
     /// Set while the caret is being moved on purpose, so the move isn't corrected again.
     var isAdjustingSelection = false
     /// Pool definitions in the text are folded into one row. Off when the pools are edited
-    /// outside this view.
+    /// outside this view; then repeats are drawn as boxes instead.
     var foldsPools = true
+    /// The repeat boxes to draw, worked out with the highlighting.
+    var repeatBoxes: [MedRepeatLayout.Box] = []
+    /// The text container width the highlighting last laid right-aligned pauses out for.
+    var highlightedWidth: CGFloat = 0
     private let chipView = UIView()
     private var chipLayers: [CALayer] = []
     private var chipsNeedUpdate = true
@@ -768,6 +824,13 @@ final class MedTextView: UITextView {
         guard chipsNeedUpdate || bounds.width != chipWidth else { return }
         chipsNeedUpdate = false
         chipWidth = bounds.width
+        // Right-aligned pauses are kerned for a width; lay them out again for a new one.
+        if !foldsPools, textContainer.size.width != highlightedWidth {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.markedTextRange == nil else { return }
+                applyMedHighlights(to: self)
+            }
+        }
         updateChips()
     }
 
@@ -842,6 +905,8 @@ final class MedTextView: UITextView {
         chipLayers = []
         chipView.frame = CGRect(origin: .zero, size: CGSize(width: bounds.width, height: max(contentSize.height, bounds.height)))
 
+        if !foldsPools { drawRepeatBoxes() }
+
         // Pool blocks get their own layers, added first, so the chips inside them draw on top.
         var blockPaths: [UIColor: UIBezierPath] = [:]
         var paths: [UIColor: UIBezierPath] = [:]
@@ -888,6 +953,36 @@ final class MedTextView: UITextView {
             layer.fillColor = resolved.withAlphaComponent(0.10).cgColor
             layer.strokeColor = resolved.withAlphaComponent(0.35).cgColor
             layer.lineWidth = 0.75
+            chipView.layer.addSublayer(layer)
+            chipLayers.append(layer)
+        }
+    }
+}
+
+extension MedTextView {
+    /// A rounded box behind each repeat, from its first line to its last, nested ones drawn
+    /// in a little from the right.
+    fileprivate func drawRepeatBoxes() {
+        let ns = (text ?? "") as NSString
+        let tint = UIColor.systemBlue.resolvedColor(with: traitCollection)
+        let right = textContainerInset.left + textContainer.size.width + 8
+        for box in repeatBoxes where NSMaxRange(box.lastLine) <= ns.length {
+            let firstText = ns.substring(with: box.firstLine)
+            let lead = firstText.prefix { $0 == " " || $0 == "\t" }.utf16.count
+            guard let start = position(from: beginningOfDocument, offset: box.firstLine.location + lead),
+                  let end = position(from: beginningOfDocument, offset: NSMaxRange(box.lastLine)) else { continue }
+            let top = caretRect(for: start)
+            let bottom = caretRect(for: end)
+            let left = max(4, top.minX - 10)
+            let frame = CGRect(x: left, y: top.minY - 8,
+                               width: right - CGFloat(box.depth) * medBoxNest - left,
+                               height: bottom.maxY - top.minY + 16)
+            guard frame.width > 20, frame.height > 0 else { continue }
+            let layer = CAShapeLayer()
+            layer.path = UIBezierPath(roundedRect: frame, cornerRadius: 12).cgPath
+            layer.fillColor = tint.withAlphaComponent(0.04).cgColor
+            layer.strokeColor = tint.withAlphaComponent(0.22).cgColor
+            layer.lineWidth = 1
             chipView.layer.addSublayer(layer)
             chipLayers.append(layer)
         }
@@ -1115,6 +1210,9 @@ private func applyMedHighlights(to textView: UITextView) {
         if before >= 0, ns.character(at: before) != 10 { addGap(at: before) }
         addGap(at: NSMaxRange(target.hitRange) - 1)
     }
+    if let boxView = textView as? MedTextView, !boxView.foldsPools {
+        layOutRepeats(in: boxView, storage: storage, text: ns, targets: targets)
+    }
     (textView as? MedTextView)?.setChipsNeedUpdate()
     // Diagnosed as a whole meditation, then shifted back to the script's own positions.
     let outsideLength = (outside as NSString).length
@@ -1156,6 +1254,73 @@ private func applyMedHighlights(to textView: UITextView) {
     textView.selectedRange = savedSelection
     medView?.isAdjustingSelection = false
     textView.typingAttributes = medBaseAttributes
+}
+
+// MARK: - Repeat boxes and right-aligned pauses
+
+/// Room above a box's first line and below its last, so neighboring boxes and chips stay apart.
+private let medBoxSpacing: CGFloat = 10
+/// How far each box inside another draws in from the right edge.
+private let medBoxNest: CGFloat = 10
+
+/// Spaces out the lines where boxes start and end, greys their brackets, and moves a pause
+/// that ends a line to the right edge (inside any boxes around it).
+private func layOutRepeats(in textView: MedTextView, storage: NSTextStorage, text ns: NSString,
+                           targets: [MedQuickEditTarget]) {
+    let boxes = MedRepeatLayout.boxes(in: ns as String)
+    textView.repeatBoxes = boxes
+
+    var spaceBefore: [Int: Int] = [:]
+    var spaceAfter: [Int: Int] = [:]
+    for box in boxes {
+        spaceBefore[box.firstLine.location, default: 0] += 1
+        spaceAfter[box.lastLine.location, default: 0] += 1
+    }
+    for location in Set(spaceBefore.keys).union(spaceAfter.keys) {
+        let paragraph = ns.paragraphRange(for: NSRange(location: location, length: 0))
+        guard paragraph.length > 0 else { continue }
+        let style = medParagraphStyle.mutableCopy() as! NSMutableParagraphStyle
+        style.paragraphSpacingBefore = CGFloat(spaceBefore[location] ?? 0) * medBoxSpacing
+        style.paragraphSpacing = CGFloat(spaceAfter[location] ?? 0) * medBoxSpacing
+        storage.addAttribute(.paragraphStyle, value: style, range: paragraph)
+    }
+    // The brackets are the box's edges now: keep them, quietly.
+    for box in boxes where box.isMultiLine {
+        for line in [box.firstLine, box.lastLine] {
+            let text = ns.substring(with: line)
+            let lead = text.prefix { $0 == " " || $0 == "\t" }.utf16.count
+            let at = line.location + lead
+            if at < ns.length, [0x5B, 0x5D].contains(ns.character(at: at)) {
+                storage.addAttribute(.foregroundColor, value: UIColor.tertiaryLabel,
+                                     range: NSRange(location: at, length: 1))
+            }
+        }
+    }
+
+    // A pause, dots or countdown that ends its line sits at the right edge.
+    let available = textView.textContainer.size.width - 2 * textView.textContainer.lineFragmentPadding
+    textView.highlightedWidth = textView.textContainer.size.width
+    guard available > 80, available < 4000 else { return }
+    for target in targets {
+        guard case .value(let edit) = target, [.pause, .dots, .countdown].contains(edit.kind) else { continue }
+        let hit = edit.hitRange
+        var lineStart = 0, lineEnd = 0, contentsEnd = 0
+        ns.getLineStart(&lineStart, end: &lineEnd, contentsEnd: &contentsEnd, for: NSRange(location: hit.location, length: 0))
+        let after = ns.substring(with: NSRange(location: NSMaxRange(hit), length: contentsEnd - NSMaxRange(hit)))
+        guard after.trimmingCharacters(in: .whitespaces).isEmpty, hit.location > lineStart else { continue }
+        let before = ns.substring(with: NSRange(location: lineStart, length: hit.location - lineStart))
+        guard before.contains(where: { !$0.isWhitespace }), before.last == " " || before.last == "\t" else { continue }
+        let depth = boxes.filter { $0.isMultiLine && $0.firstLine.location < lineStart && $0.lastLine.location > lineStart }.count
+        let line = NSRange(location: lineStart, length: NSMaxRange(hit) - lineStart)
+        let width = storage.attributedSubstring(from: line)
+            .boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
+                          options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).width
+        let room = available - medChipPadding.width - 2 - CGFloat(depth) * medBoxNest - width
+        guard room > 1 else { continue }
+        let space = hit.location - 1
+        let existing = (storage.attribute(.kern, at: space, effectiveRange: nil) as? CGFloat) ?? 0
+        storage.addAttribute(.kern, value: existing + room, range: NSRange(location: space, length: 1))
+    }
 }
 
 // MARK: - Folded pools

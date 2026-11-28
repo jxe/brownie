@@ -878,3 +878,84 @@ struct MedItemMarkerMenu: View {
         return parts.joined(separator: " ")
     }
 }
+
+// MARK: - Repeats as boxes
+
+/// The meditation editor shows each repeat as a box: a line that ends in `×N` is a box of one
+/// line, and a `[` line through its `] ×N` line is a box around everything between. A line
+/// with more than one repeat on it (`~x 7″ ×3 ‖23″ ×5`) reads better written out in brackets,
+/// one box inside another, so it's rewritten that way.
+enum MedRepeatLayout {
+    struct Box {
+        /// The first and last lines, without their line breaks (the same line for a one-line box).
+        let firstLine: NSRange
+        let lastLine: NSRange
+        /// How many bracket boxes this one sits inside.
+        let depth: Int
+        var isMultiLine: Bool { firstLine.location != lastLine.location }
+    }
+
+    private static let repeatRegex = try! NSRegularExpression(
+        pattern: #"(?:^|(?<=[\s\]]))([×x])(\d+)(?=$|[\s\[\]‖|])"#)
+
+    private static func isComment(_ trimmed: String) -> Bool { trimmed.hasPrefix("#") }
+
+    /// The repeat markers on a line that has no brackets, or nil if it has brackets or is a comment.
+    private static func markers(in line: String) -> [NSTextCheckingResult]? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !isComment(trimmed), !trimmed.contains("["), !trimmed.contains("]") else { return nil }
+        let ns = line as NSString
+        return repeatRegex.matches(in: line, range: NSRange(location: 0, length: ns.length))
+    }
+
+    /// The line written out in brackets, when it has two or more repeats and nothing after the
+    /// last one: `a ×3 ‖23″ ×5` becomes `[`, `  a ×3`, `  ‖23″`, `] ×5`. Plays the same.
+    static func expandedLine(_ line: String) -> String? {
+        guard let matches = markers(in: line), matches.count >= 2, let last = matches.last else { return nil }
+        let ns = line as NSString
+        guard ns.substring(from: NSMaxRange(last.range)).trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let indent = String(line.prefix { $0 == " " || $0 == "\t" })
+        var segments: [String] = []
+        var marks: [String] = []
+        var cursor = 0
+        for match in matches {
+            segments.append(ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+                .trimmingCharacters(in: .whitespaces))
+            marks.append(ns.substring(with: match.range))
+            cursor = NSMaxRange(match.range)
+        }
+        guard !segments[0].isEmpty else { return nil }
+        var body = [segments[0] + " " + marks[0]]
+        for i in 1..<marks.count {
+            if !segments[i].isEmpty { body.append(segments[i]) }
+            body = ["["] + body.map { "  " + $0 } + ["] " + marks[i]]
+        }
+        return body.map { indent + $0 }.joined(separator: "\n")
+    }
+
+    /// The script with every line that has several repeats written out in brackets.
+    static func expandingRepeats(in script: String) -> String {
+        script.components(separatedBy: "\n").map { expandedLine($0) ?? $0 }.joined(separator: "\n")
+    }
+
+    /// The boxes in the script, outer ones before the ones inside them.
+    static func boxes(in text: String) -> [Box] {
+        let ns = text as NSString
+        var boxes: [Box] = []
+        var open: [NSRange] = []
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: [.byLines]) { line, range, _, _ in
+            let line = line ?? ""
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "[" {
+                open.append(range)
+            } else if trimmed.hasPrefix("]"), let first = open.popLast() {
+                boxes.append(Box(firstLine: first, lastLine: range, depth: open.count))
+            } else if let matches = markers(in: line), matches.count == 1,
+                      line.trimmingCharacters(in: .whitespaces).hasSuffix((line as NSString).substring(with: matches[0].range)),
+                      (line as NSString).substring(to: matches[0].range.location).contains(where: { !$0.isWhitespace }) {
+                boxes.append(Box(firstLine: range, lastLine: range, depth: open.count))
+            }
+        }
+        return boxes.sorted { $0.firstLine.location < $1.firstLine.location || ($0.firstLine.location == $1.firstLine.location && $0.depth < $1.depth) }
+    }
+}
